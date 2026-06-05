@@ -1,0 +1,11 @@
+# Công cụ xem trước / phát triển (không cần đưa lên GitHub)
+.claude/
+
+# Hệ điều hành
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# File tạm / sao lưu dữ liệu xuất ra
+*.log
+partyworld-backup-*.json

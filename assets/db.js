@@ -1,0 +1,408 @@
+/* ============================================================
+   PARTY WORLD - Phần mềm kế toán
+   db.js — Lớp dữ liệu (lưu trong localStorage của trình duyệt)
+   ============================================================ */
+
+const PW = {
+  KEY: 'PARTY_WORLD_DB_V1',
+  data: null,
+};
+
+/* ---------- Khởi tạo / nạp dữ liệu ---------- */
+PW.load = function () {
+  const raw = localStorage.getItem(PW.KEY);
+  if (raw) {
+    try {
+      PW.data = JSON.parse(raw);
+    } catch (e) {
+      console.error('Lỗi đọc dữ liệu, tạo mới', e);
+      PW.data = PW.seed();
+    }
+  } else {
+    PW.data = PW.seed();
+  }
+  // Đảm bảo đủ các bảng
+  const tables = ['products', 'customers', 'suppliers', 'cashAccounts',
+    'receipts', 'payments', 'salesInvoices', 'purchases',
+    'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
+    'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
+    'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups'];
+  tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
+  if (!PW.data.meta) PW.data.meta = { companyName: 'PARTY WORLD', counters: {} };
+  if (!PW.data.meta.counters) PW.data.meta.counters = {};
+  return PW.data;
+};
+
+PW.save = function () {
+  localStorage.setItem(PW.KEY, JSON.stringify(PW.data));
+};
+
+/* ---------- Sinh mã / id ---------- */
+PW.uid = function () {
+  return 'id' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+};
+
+PW.nextCode = function (prefix) {
+  const c = PW.data.meta.counters;
+  c[prefix] = (c[prefix] || 0) + 1;
+  PW.save();
+  return prefix + String(c[prefix]).padStart(5, '0');
+};
+
+/* ---------- Truy vấn nhanh ---------- */
+PW.product = id => PW.data.products.find(p => p.id === id);
+PW.customer = id => PW.data.customers.find(c => c.id === id);
+PW.supplier = id => PW.data.suppliers.find(s => s.id === id);
+PW.account = id => PW.data.cashAccounts.find(a => a.id === id);
+
+/* ---------- Tính toán số dư / công nợ / tồn kho ---------- */
+
+// Tồn kho hiện tại của 1 sản phẩm
+PW.stockOf = function (productId) {
+  const p = PW.product(productId);
+  if (!p) return 0;
+  let qty = Number(p.openingStock || 0);
+  PW.data.purchases.forEach(pu => {
+    pu.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
+  });
+  PW.data.salesInvoices.forEach(si => {
+    si.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
+  });
+  // Trả lại hàng bán -> hàng nhập lại kho
+  PW.data.salesReturns.forEach(sr => {
+    sr.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
+  });
+  // Trả lại hàng mua -> xuất khỏi kho trả nhà cung cấp
+  PW.data.purchaseReturns.forEach(pr => {
+    pr.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
+  });
+  return qty;
+};
+
+// Tổng giá trị 1 phiếu trả lại hàng bán (theo giá bán)
+PW.returnTotal = function (sr) {
+  return sr.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0);
+};
+// Tổng giá trị 1 phiếu trả lại hàng mua (theo giá nhập)
+PW.purchaseReturnTotal = function (pr) {
+  return pr.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0);
+};
+// Giá vốn hàng trả lại
+PW.returnCost = function (sr) {
+  return sr.items.reduce((s, it) => {
+    const p = PW.product(it.productId);
+    return s + Number(it.qty) * Number(p ? p.cost : 0);
+  }, 0);
+};
+
+// Tổng tiền 1 hóa đơn bán
+PW.invoiceTotal = function (si) {
+  const sub = si.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0);
+  return sub - Number(si.discount || 0);
+};
+
+// Tổng tiền 1 phiếu nhập mua
+PW.purchaseTotal = function (pu) {
+  return pu.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0);
+};
+
+// Số dư tài khoản tiền
+PW.accountBalance = function (accountId) {
+  const a = PW.account(accountId);
+  if (!a) return 0;
+  let bal = Number(a.opening || 0);
+  PW.data.receipts.forEach(r => { if (r.accountId === accountId) bal += Number(r.amount); });
+  PW.data.payments.forEach(p => { if (p.accountId === accountId) bal -= Number(p.amount); });
+  PW.data.salesInvoices.forEach(si => {
+    if (si.paidAccountId === accountId) bal += Number(si.paid || 0);
+  });
+  PW.data.purchases.forEach(pu => {
+    if (pu.paidAccountId === accountId) bal -= Number(pu.paid || 0);
+  });
+  return bal;
+};
+
+PW.totalCash = function () {
+  return PW.data.cashAccounts.reduce((s, a) => s + PW.accountBalance(a.id), 0);
+};
+
+// Tổng số dư đầu kỳ của tất cả tài khoản tiền
+PW.openingCash = function () {
+  return PW.data.cashAccounts.reduce((s, a) => s + Number(a.opening || 0), 0);
+};
+
+// Tiền THU vào trong khoảng (phiếu thu + tiền thu từ bán hàng)
+PW.cashIn = function (fromYmd, toYmd) {
+  const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  let s = 0;
+  PW.data.receipts.forEach(r => { if (inR(r.date)) s += Number(r.amount); });
+  PW.data.salesInvoices.forEach(si => { if (inR(si.date)) s += Number(si.paid || 0); });
+  return s;
+};
+
+// Tiền CHI ra trong khoảng (phiếu chi + tiền trả khi mua hàng)
+PW.cashOut = function (fromYmd, toYmd) {
+  const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  let s = 0;
+  PW.data.payments.forEach(p => { if (inR(p.date)) s += Number(p.amount); });
+  PW.data.purchases.forEach(pu => { if (inR(pu.date)) s += Number(pu.paid || 0); });
+  return s;
+};
+
+// Công nợ phải thu của 1 khách hàng (dương = khách còn nợ mình)
+PW.customerDebt = function (customerId) {
+  const c = PW.customer(customerId);
+  if (!c) return 0;
+  let debt = Number(c.openingDebt || 0);
+  PW.data.salesInvoices.forEach(si => {
+    if (si.customerId === customerId) {
+      debt += PW.invoiceTotal(si) - Number(si.paid || 0);
+    }
+  });
+  // Phiếu thu gắn với khách hàng (thu nợ)
+  PW.data.receipts.forEach(r => {
+    if (r.customerId === customerId) debt -= Number(r.amount);
+  });
+  // Trả lại hàng bán -> giảm công nợ phải thu
+  PW.data.salesReturns.forEach(sr => {
+    if (sr.customerId === customerId) debt -= PW.returnTotal(sr);
+  });
+  // Giảm giá hàng bán -> giảm công nợ phải thu
+  PW.data.salesDiscounts.forEach(g => {
+    if (g.customerId === customerId) debt -= Number(g.amount);
+  });
+  return debt;
+};
+
+// Công nợ phải trả cho 1 nhà cung cấp
+PW.supplierDebt = function (supplierId) {
+  const s = PW.supplier(supplierId);
+  if (!s) return 0;
+  let debt = Number(s.openingDebt || 0);
+  PW.data.purchases.forEach(pu => {
+    if (pu.supplierId === supplierId) {
+      debt += PW.purchaseTotal(pu) - Number(pu.paid || 0);
+    }
+  });
+  PW.data.payments.forEach(p => {
+    if (p.supplierId === supplierId) debt -= Number(p.amount);
+  });
+  // Trả lại hàng mua -> giảm công nợ phải trả
+  PW.data.purchaseReturns.forEach(pr => {
+    if (pr.supplierId === supplierId) debt -= PW.purchaseReturnTotal(pr);
+  });
+  // Giảm giá hàng mua -> giảm công nợ phải trả
+  PW.data.purchaseDiscounts.forEach(g => {
+    if (g.supplierId === supplierId) debt -= Number(g.amount);
+  });
+  return debt;
+};
+
+PW.totalReceivable = function () {
+  return PW.data.customers.reduce((s, c) => s + PW.customerDebt(c.id), 0);
+};
+PW.totalPayable = function () {
+  return PW.data.suppliers.reduce((s, x) => s + PW.supplierDebt(x.id), 0);
+};
+
+// Tuổi nợ phải thu: quá hạn = công nợ còn lại của các hóa đơn đã quá hạn thanh toán
+PW.agingReceivable = function (todayYmd) {
+  const today = todayYmd || PW.todayStr();
+  let overdue = 0;
+  PW.data.salesInvoices.forEach(si => {
+    const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+    if (rem > 0 && si.dueDate && si.dueDate < today) overdue += rem;
+  });
+  const total = PW.totalReceivable();
+  overdue = Math.max(0, Math.min(overdue, total));
+  return { total, overdue, current: Math.max(0, total - overdue) };
+};
+
+// Tuổi nợ phải trả
+PW.agingPayable = function (todayYmd) {
+  const today = todayYmd || PW.todayStr();
+  let overdue = 0;
+  PW.data.purchases.forEach(pu => {
+    const rem = PW.purchaseTotal(pu) - Number(pu.paid || 0);
+    if (rem > 0 && pu.dueDate && pu.dueDate < today) overdue += rem;
+  });
+  const total = PW.totalPayable();
+  overdue = Math.max(0, Math.min(overdue, total));
+  return { total, overdue, current: Math.max(0, total - overdue) };
+};
+
+PW.todayStr = function () {
+  const d = new Date(), p = x => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// Giá trị tồn kho (theo giá vốn)
+PW.inventoryValue = function () {
+  return PW.data.products.reduce((s, p) => s + PW.stockOf(p.id) * Number(p.cost || 0), 0);
+};
+
+// Doanh thu thuần trong khoảng (đã trừ trả lại & giảm giá hàng bán)
+PW.revenue = function (fromYmd, toYmd) {
+  const inRange = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  let rev = PW.data.salesInvoices.filter(si => inRange(si.date))
+    .reduce((s, si) => s + PW.invoiceTotal(si), 0);
+  rev -= PW.data.salesReturns.filter(sr => inRange(sr.date))
+    .reduce((s, sr) => s + PW.returnTotal(sr), 0);
+  rev -= PW.data.salesDiscounts.filter(g => inRange(g.date))
+    .reduce((s, g) => s + Number(g.amount), 0);
+  return rev;
+};
+
+// Giá vốn hàng bán trong khoảng (đã trừ giá vốn hàng trả lại)
+PW.cogs = function (fromYmd, toYmd) {
+  const inRange = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  let total = 0;
+  PW.data.salesInvoices.filter(si => inRange(si.date))
+    .forEach(si => si.items.forEach(it => {
+      const p = PW.product(it.productId);
+      total += Number(it.qty) * Number(p ? p.cost : 0);
+    }));
+  total -= PW.data.salesReturns.filter(sr => inRange(sr.date))
+    .reduce((s, sr) => s + PW.returnCost(sr), 0);
+  return total;
+};
+
+// Chi phí (phiếu chi không gắn NCC = chi phí hoạt động)
+PW.expenses = function (fromYmd, toYmd) {
+  return PW.data.payments
+    .filter(p => !p.supplierId)
+    .filter(p => (!fromYmd || p.date >= fromYmd) && (!toYmd || p.date <= toYmd))
+    .reduce((s, p) => s + Number(p.amount), 0);
+};
+
+/* ---------- Xóa & nạp lại dữ liệu mẫu ---------- */
+PW.reset = function () {
+  PW.data = PW.seed();
+  PW.save();
+};
+
+/* ---------- Xuất / nhập dữ liệu (sao lưu) ---------- */
+PW.exportJSON = function () {
+  return JSON.stringify(PW.data, null, 2);
+};
+PW.importJSON = function (text) {
+  PW.data = JSON.parse(text);
+  PW.save();
+};
+
+/* ============================================================
+   DỮ LIỆU MẪU — chủ đề đồ tiệc / trang trí
+   ============================================================ */
+PW.seed = function () {
+  const today = '2026-06-03';
+  const d = ymd => ymd;
+  return {
+    meta: { companyName: 'PARTY WORLD', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1 } },
+    cashAccounts: [
+      { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 5000000 },
+      { id: 'acc_bank', name: 'Tiền gửi ngân hàng (Vietcombank)', type: 'bank', opening: 30000000 },
+    ],
+    products: [
+      { id: 'p1', code: 'BB001', name: 'Bóng bay latex 12" (gói 100)', unit: 'Gói', group: 'Bóng bay', cost: 45000, price: 75000, openingStock: 120 },
+      { id: 'p2', code: 'BB002', name: 'Bóng bay foil số (0-9)', unit: 'Cái', group: 'Bóng bay', cost: 18000, price: 35000, openingStock: 200 },
+      { id: 'p3', code: 'BB003', name: 'Bóng bay trang trí sinh nhật (set)', unit: 'Set', group: 'Bóng bay', cost: 85000, price: 150000, openingStock: 60 },
+      { id: 'p4', code: 'TT001', name: 'Băng rôn Happy Birthday', unit: 'Cái', group: 'Trang trí', cost: 12000, price: 25000, openingStock: 150 },
+      { id: 'p5', code: 'TT002', name: 'Dây kim tuyến trang trí', unit: 'Cuộn', group: 'Trang trí', cost: 8000, price: 20000, openingStock: 300 },
+      { id: 'p6', code: 'TT003', name: 'Nến sinh nhật số', unit: 'Cái', group: 'Trang trí', cost: 5000, price: 15000, openingStock: 250 },
+      { id: 'p7', code: 'PK001', name: 'Mũ sinh nhật giấy', unit: 'Cái', group: 'Phụ kiện', cost: 3000, price: 10000, openingStock: 400 },
+      { id: 'p8', code: 'PK002', name: 'Cốc giấy tiệc (gói 20)', unit: 'Gói', group: 'Phụ kiện', cost: 22000, price: 45000, openingStock: 90 },
+      { id: 'p9', code: 'PK003', name: 'Đĩa giấy tiệc (gói 20)', unit: 'Gói', group: 'Phụ kiện', cost: 24000, price: 48000, openingStock: 80 },
+      { id: 'p10', code: 'QT001', name: 'Pháo giấy kim tuyến', unit: 'Cái', group: 'Quà tặng', cost: 15000, price: 35000, openingStock: 100 },
+    ],
+    customers: [
+      { id: 'c1', code: 'KH001', name: 'Chị Lan - Tiệc cưới Hồng Phúc', phone: '0901234567', address: 'Q.1, TP.HCM', openingDebt: 0 },
+      { id: 'c2', code: 'KH002', name: 'Anh Minh - Sự kiện ABC', phone: '0912345678', address: 'Q.3, TP.HCM', openingDebt: 2500000 },
+      { id: 'c3', code: 'KH003', name: 'Shop Bé Xinh', phone: '0987654321', address: 'Q. Bình Thạnh', openingDebt: 0 },
+      { id: 'c4', code: 'KH004', name: 'Khách lẻ', phone: '', address: '', openingDebt: 0 },
+    ],
+    suppliers: [
+      { id: 's1', code: 'NCC001', name: 'Công ty Bóng bay Việt', phone: '02838123456', address: 'KCN Tân Bình', openingDebt: 0 },
+      { id: 's2', code: 'NCC002', name: 'Xưởng trang trí Sài Gòn', phone: '02839987654', address: 'Q.6, TP.HCM', openingDebt: 5000000 },
+      { id: 's3', code: 'NCC003', name: 'Nhập khẩu phụ kiện tiệc', phone: '0908111222', address: 'Q.7, TP.HCM', openingDebt: 0 },
+    ],
+    receipts: [
+      { id: 'r1', code: 'PT00001', date: d('2026-05-10'), accountId: 'acc_cash', customerId: 'c2', amount: 1500000, reason: 'Thu nợ khách hàng', note: '' },
+    ],
+    payments: [
+      { id: 'pm1', code: 'PC00001', date: d('2026-05-12'), accountId: 'acc_cash', supplierId: null, amount: 800000, reason: 'Chi phí vận chuyển', note: '' },
+      { id: 'pm2', code: 'PC00002', date: d('2026-05-20'), accountId: 'acc_bank', supplierId: 's2', amount: 3000000, reason: 'Trả nợ nhà cung cấp', note: '' },
+    ],
+    salesInvoices: [
+      { id: 'h1', code: 'HD00001', date: d('2026-05-05'), customerId: 'c1',
+        items: [{ productId: 'p3', qty: 10, price: 150000 }, { productId: 'p1', qty: 5, price: 75000 }],
+        discount: 0, paid: 1875000, paidAccountId: 'acc_cash', note: 'Tiệc cưới' },
+      { id: 'h2', code: 'HD00002', date: d('2026-05-15'), customerId: 'c2', dueDate: d('2026-05-30'),
+        items: [{ productId: 'p4', qty: 20, price: 25000 }, { productId: 'p5', qty: 30, price: 20000 }, { productId: 'p6', qty: 40, price: 15000 }],
+        discount: 100000, paid: 0, paidAccountId: null, note: 'Công nợ - đã quá hạn' },
+      { id: 'h3', code: 'HD00003', date: d('2026-05-25'), customerId: 'c3',
+        items: [{ productId: 'p7', qty: 100, price: 10000 }, { productId: 'p8', qty: 20, price: 45000 }],
+        discount: 0, paid: 1900000, paidAccountId: 'acc_bank', note: '' },
+    ],
+    purchases: [
+      { id: 'pu1', code: 'PN00001', date: d('2026-05-02'), supplierId: 's1',
+        items: [{ productId: 'p1', qty: 100, cost: 45000 }, { productId: 'p2', qty: 150, cost: 18000 }],
+        paid: 7200000, paidAccountId: 'acc_bank', note: 'Nhập đầu tháng' },
+      { id: 'pu2', code: 'PN00002', date: d('2026-05-18'), supplierId: 's2', dueDate: d('2026-06-20'),
+        items: [{ productId: 'p4', qty: 100, cost: 12000 }, { productId: 'p5', qty: 200, cost: 8000 }],
+        paid: 0, paidAccountId: null, note: 'Công nợ - trong hạn' },
+    ],
+    quotations: [
+      { id: 'q1', code: 'BG00001', date: d('2026-05-28'), customerId: 'c3',
+        items: [{ productId: 'p3', qty: 20, price: 150000 }, { productId: 'p10', qty: 30, price: 35000 }],
+        discount: 0, status: 'open', note: 'Báo giá tiệc khai trương' },
+    ],
+    salesOrders: [
+      { id: 'o1', code: 'DH00001', date: d('2026-05-30'), customerId: 'c1',
+        items: [{ productId: 'p1', qty: 30, price: 75000 }, { productId: 'p6', qty: 50, price: 15000 }],
+        discount: 0, status: 'open', note: 'Đơn đặt tiệc cưới tháng 6' },
+    ],
+    salesReturns: [],
+    salesDiscounts: [],
+    purchaseOrders: [
+      { id: 'po1', code: 'DMH00001', date: d('2026-05-29'), supplierId: 's1',
+        items: [{ productId: 'p2', qty: 100, cost: 18000 }, { productId: 'p3', qty: 40, cost: 85000 }],
+        discount: 0, status: 'open', note: 'Đặt mua bổ sung tháng 6' },
+    ],
+    purchaseReturns: [],
+    purchaseDiscounts: [],
+    employees: [
+      { id: 'nv1', code: 'NV00001', name: 'Nguyễn Thị Hoa', phone: '0903111222', position: 'Quản lý cửa hàng' },
+      { id: 'nv2', code: 'NV00002', name: 'Trần Văn Nam', phone: '0903333444', position: 'Nhân viên bán hàng' },
+      { id: 'nv3', code: 'NV00003', name: 'Lê Thị Mai', phone: '0903555666', position: 'Kế toán' },
+    ],
+    productGroups: [
+      { id: 'g1', name: 'Bóng bay' }, { id: 'g2', name: 'Trang trí' },
+      { id: 'g3', name: 'Phụ kiện' }, { id: 'g4', name: 'Quà tặng' },
+    ],
+    units: [
+      { id: 'u1', name: 'Cái' }, { id: 'u2', name: 'Gói' }, { id: 'u3', name: 'Set' },
+      { id: 'u4', name: 'Cuộn' }, { id: 'u5', name: 'Hộp' }, { id: 'u6', name: 'Chiếc' },
+    ],
+    warehouses: [
+      { id: 'w1', code: 'KHO00001', name: 'Kho chính', address: 'Cửa hàng Party World' },
+    ],
+    expenseItems: [
+      { id: 'e1', name: 'Chi phí vận chuyển' }, { id: 'e2', name: 'Chi phí mặt bằng' },
+      { id: 'e3', name: 'Lương nhân viên' }, { id: 'e4', name: 'Chi phí điện nước' },
+      { id: 'e5', name: 'Chi phí marketing' }, { id: 'e6', name: 'Chi phí khác' },
+    ],
+    paymentTerms: [
+      { id: 't0', name: 'Trả ngay', days: 0 }, { id: 't1', name: 'Nợ 15 ngày', days: 15 },
+      { id: 't2', name: 'Nợ 30 ngày', days: 30 }, { id: 't3', name: 'Nợ 45 ngày', days: 45 },
+    ],
+    partnerGroups: [
+      { id: 'pg1', name: 'Khách lẻ' }, { id: 'pg2', name: 'Đại lý' },
+      { id: 'pg3', name: 'Cộng tác viên (CTV)' }, { id: 'pg4', name: 'Khách sỉ' },
+    ],
+  };
+};
+
+/* ---------- Truy vấn nhanh (bổ sung) ---------- */
+PW.quotation = id => PW.data.quotations.find(x => x.id === id);
+PW.salesOrder = id => PW.data.salesOrders.find(x => x.id === id);
+PW.purchaseOrder = id => PW.data.purchaseOrders.find(x => x.id === id);

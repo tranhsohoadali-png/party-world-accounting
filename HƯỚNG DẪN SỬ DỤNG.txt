@@ -1,0 +1,69 @@
+╔══════════════════════════════════════════════════════════╗
+║   PARTY WORLD — PHẦN MỀM KẾ TOÁN ĐỒ TIỆC / TRANG TRÍ      ║
+╚══════════════════════════════════════════════════════════╝
+
+▶ CÁCH MỞ PHẦN MỀM
+   Nhấp đúp vào file:  index.html
+   (Phần mềm sẽ mở trong trình duyệt web — Chrome / Edge / Cốc Cốc...)
+   Không cần cài đặt gì thêm, không cần internet.
+
+▶ DỮ LIỆU
+   • Toàn bộ số liệu được lưu NGAY TRÊN MÁY TÍNH này (trong trình duyệt).
+   • Mỗi máy / mỗi trình duyệt là một bộ sổ riêng.
+   • HÃY SAO LƯU ĐỊNH KỲ: vào mục "Dữ liệu & Sao lưu" → bấm
+     "Tải file sao lưu (.json)". Khi cần, dùng "Phục hồi từ file sao lưu".
+
+▶ CÁC PHÂN HỆ
+   • Tổng quan      : Bảng điều khiển — tổng tiền, công nợ, tồn kho,
+                      doanh thu/lợi nhuận, biểu đồ theo tháng, hàng bán chạy.
+   • Biểu đồ        : Doanh thu & lợi nhuận theo tháng, cơ cấu tài sản, công nợ,
+                      top hàng bán chạy, top khách hàng.
+   ─ MẸO ─
+   • Tổng quan có ô "Kỳ xem" (Tháng này / Quý này / Năm nay) ở góc phải.
+   • Thẻ "Nợ phải thu/phải trả theo hạn nợ" tách Quá hạn / Trong hạn.
+     (Quá hạn dựa trên "Hạn thanh toán" nhập khi lập hóa đơn/phiếu nhập.)
+   • Trong Khách hàng / Nhà cung cấp: bấm "Sổ công nợ" để xem chi tiết
+     phát sinh + số dư từng đối tượng, in được.
+   • Tiền (Thu/Chi) : Lập phiếu thu, phiếu chi; theo dõi số dư quỹ tiền mặt
+                      và tiền gửi ngân hàng.
+   • Quy trình      : Sơ đồ nghiệp vụ bán hàng + thao tác nhanh + báo cáo.
+   • Báo giá        : Lập báo giá cho khách, in, "➜ Lập hóa đơn" khi chốt đơn.
+   • Đơn đặt hàng   : Theo dõi đơn khách đặt trước, chuyển thành hóa đơn khi giao.
+   • Hóa đơn bán    : Lập hóa đơn bán nhiều mặt hàng, thu tiền ngay hoặc ghi
+                      công nợ; tự động trừ tồn kho; in hóa đơn.
+   • Trả lại hàng   : Khách trả hàng — nhập lại kho, giảm doanh thu & công nợ.
+   • Giảm giá hàng  : Giảm giá/chiết khấu sau bán — giảm công nợ phải thu.
+   ─ MUA HÀNG ─
+   • Quy trình mua  : Sơ đồ nghiệp vụ mua hàng + thao tác nhanh + báo cáo.
+   • Đơn mua hàng   : Đặt mua từ NCC, nút "➜ Nhập kho" tạo phiếu nhập khi hàng về.
+   • Phiếu nhập mua : Nhập hàng → tự tăng tồn kho, theo dõi công nợ phải trả.
+   • Trả lại hàng mua: Trả hàng cho NCC — xuất kho, giảm công nợ phải trả.
+   • Giảm giá hàng mua: NCC giảm giá — giảm công nợ phải trả.
+   ─ DANH MỤC ─
+   • Tất cả danh mục: Trang tổng hợp mọi danh mục, bấm để mở từng loại.
+   • Hàng hóa       : Danh mục sản phẩm (giá vốn, giá bán, tồn kho).
+   • Khách hàng     : 3 thẻ (nợ quá hạn / tổng phải thu / đã thu 30 ngày),
+                      cột Mã số thuế, chọn nhiều dòng để xóa, phân trang,
+                      Xuất Excel; mỗi dòng có nút nhanh "Lập hóa đơn", "Thu
+                      tiền", "Sổ" (sổ công nợ), Sửa, Xóa.
+   • Nhà cung cấp   : Tương tự (Lập phiếu nhập / Trả tiền / Sổ); xuất Excel.
+   • Nhân viên      : Danh sách nhân viên.
+   • Nhóm hàng hóa / Đơn vị tính / Kho : gợi ý khi tạo hàng hóa.
+   • Khoản mục chi phí : gợi ý khi lập phiếu chi (để phân loại chi phí).
+   • Điều khoản thanh toán : chọn khi lập hóa đơn/phiếu nhập để tự tính
+     "Hạn thanh toán" (vd: Nợ 30 ngày → hạn = ngày CT + 30).
+   • Báo cáo        : Kết quả kinh doanh (lãi/lỗ), doanh thu theo mặt hàng,
+                      tồn kho, Nhập-Xuất-Tồn, công nợ phải thu/phải trả, sổ quỹ.
+                      In được.
+   • Dữ liệu        : Sao lưu / phục hồi / nạp dữ liệu mẫu / xóa trắng.
+
+▶ BẮT ĐẦU DÙNG THẬT
+   Phần mềm đang chứa DỮ LIỆU MẪU để bạn xem thử.
+   Khi muốn bắt đầu sổ sách thật:
+   → Vào "Dữ liệu & Sao lưu" → bấm "Xóa trắng (bắt đầu sổ sách mới)".
+   → Sau đó nhập Hàng hóa, Khách hàng, Nhà cung cấp và số dư đầu kỳ.
+
+▶ GHI CHÚ KỸ THUẬT
+   • Thư mục "assets" chứa mã nguồn phần mềm — không xóa.
+   • File "dev-server.ps1" và thư mục ".claude" chỉ phục vụ kiểm thử,
+     bạn KHÔNG cần dùng đến.

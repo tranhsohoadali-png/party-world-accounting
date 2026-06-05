@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" font-family="'Arial Rounded MT Bold','Trebuchet MS',Arial,sans-serif">
+  <defs>
+    <linearGradient id="mBlue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#aed3f0"/>
+      <stop offset="1" stop-color="#7fb3e0"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="108" height="108" rx="30" fill="#1a3a6b"/>
+  <rect x="12" y="12" width="96" height="96" rx="26" fill="#ffffff"/>
+  <text x="60" y="92" font-size="92" font-weight="900" text-anchor="middle"
+        fill="url(#mBlue)" stroke="#13315e" stroke-width="5" stroke-linejoin="round" paint-order="stroke">P</text>
+</svg>
