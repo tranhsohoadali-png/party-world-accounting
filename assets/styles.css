@@ -258,6 +258,20 @@ input.inp:focus, select.inp:focus, textarea.inp:focus, input.search:focus { outl
 .pager .spacer { flex: 1; }
 .pager .btn.sm { min-width: 32px; justify-content: center; }
 
+/* Thanh người dùng + đăng nhập */
+.userbar { display: flex; align-items: center; gap: 10px; }
+.userbar.hidden { display: none; }
+.userbar-name { font-size: 13px; }
+.userbar-role { color: var(--muted); }
+body.login-mode .app { filter: blur(2px); pointer-events: none; }
+.login-overlay { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #cfe3f7, #eaf4fd); padding: 20px; }
+.login-card { background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(26,58,107,.25);
+  padding: 28px 30px; width: 100%; max-width: 380px; }
+.login-logo { width: 200px; max-width: 80%; display: block; margin: 0 auto 4px; }
+.login-sub { text-align: center; color: var(--muted); margin-bottom: 18px; font-size: 13px; }
+.login-err { color: var(--red); font-size: 13px; min-height: 18px; margin: 4px 0; }
+
 .empty { text-align: center; padding: 40px; color: var(--muted); }
 .right { text-align: right; }
 .mt8 { margin-top: 8px; } .mt16 { margin-top: 16px; }

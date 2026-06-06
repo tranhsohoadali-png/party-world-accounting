@@ -1,0 +1,265 @@
+/* ============================================================
+   modules7.js — Tính lương nhân viên (theo bảng lương Google Sheet)
+   ============================================================ */
+
+/* ---------- Công thức tính lương 1 nhân viên trong 1 kỳ ---------- */
+M.payrollCompute = function (emp, line, standardDays) {
+  emp = emp || {};
+  const sd = Number(standardDays) || 26;
+  const base = Number(emp.salaryBase || 0);
+  const totalDays = Number(line.totalDays || 0);   // tổng ngày công thực tế (gồm cả ngày lễ)
+  const allowDays = Number(line.allowDays || 0);   // ngày công có phụ cấp (ngày đi làm thực tế)
+  const dayWage = sd ? base / sd : 0;              // lương 1 ngày
+  const hourWage = dayWage / 8;                     // lương 1 giờ
+  const luongChinh = dayWage * totalDays;
+  const luongTN = (Number(emp.allowResp || 0) / sd) * allowDays;
+  const pcXang = (Number(emp.allowTransport || 0) / sd) * allowDays;
+  const pcAn = (Number(emp.allowLunch || 0) / sd) * allowDays;
+  const pcTN = (Number(emp.allowSeniority || 0) / sd) * allowDays;
+  const lamThem = hourWage * Number(line.otHours || 0);
+  const thuong = Number(line.bonus || 0);
+  const extra = Number(line.extra || 0);
+  const congThem = thuong + lamThem + pcXang + pcAn + pcTN + extra;
+  const phat = Number(line.lateFine || 0), bhxh = Number(line.bhxh || 0),
+        ung = Number(line.advance || 0), dt = Number(line.phoneUse || 0);
+  const tongTru = phat + bhxh + ung + dt;
+  const thucLinh = luongChinh + luongTN + congThem - tongTru;
+  return { dayWage, hourWage, luongChinh, luongTN, pcXang, pcAn, pcTN, lamThem, thuong, extra,
+    congThem, phat, bhxh, ung, dt, tongTru, thucLinh };
+};
+
+function empById(id) { return PW.data.employees.find(e => e.id === id); }
+M.payrollNetTotal = function (p) {
+  return p.lines.reduce((s, ln) => s + M.payrollCompute(empById(ln.employeeId), ln, p.standardDays).thucLinh, 0);
+};
+
+/* ---------- Danh sách bảng lương theo tháng ---------- */
+M.payrolls = function (root) {
+  const card = U.el('div', { class: 'card' });
+  const toolbar = U.el('div', { class: 'toolbar' });
+  toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' }, '💰 Bảng lương theo tháng'));
+  toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('+ Tạo bảng lương tháng', () => M.payrollCreate(), 'primary'));
+  card.appendChild(toolbar);
+  const host = U.el('div');
+  card.appendChild(host);
+  root.appendChild(card);
+
+  function draw() {
+    const rows = PW.data.payrolls.slice().sort((a, b) => (b.month).localeCompare(a.month));
+    host.innerHTML = '';
+    host.appendChild(C.table(rows, [
+      { label: 'Kỳ lương', render: p => 'Tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) },
+      { label: 'Ngày công chuẩn', center: true, render: p => U.num(p.standardDays) },
+      { label: 'Số nhân viên', center: true, render: p => p.lines.length },
+      { label: 'Tổng thực lĩnh', num: true, render: p => U.money(M.payrollNetTotal(p)) },
+      { label: '', render: p => C.actions([
+          { label: 'Mở / Tính lương', cls: 'primary', onClick: () => M.payrollDetail(p.id) },
+          { label: 'Xóa', cls: 'danger', onClick: () => {
+              if (U.confirm('Xóa bảng lương tháng ' + p.month + '?')) {
+                PW.data.payrolls = PW.data.payrolls.filter(x => x.id !== p.id);
+                PW.save(); draw(); U.toast('Đã xóa');
+              }
+            } },
+        ]) },
+    ], { empty: 'Chưa có bảng lương. Bấm "Tạo bảng lương tháng".' }));
+  }
+  draw();
+};
+
+/* ---------- Tạo bảng lương tháng mới ---------- */
+M.payrollCreate = function () {
+  const monthI = C.input({ type: 'month', value: U.today().slice(0, 7) });
+  const sdI = C.input({ type: 'number', value: 26, min: 1 });
+  const body = U.el('div', { class: 'form-grid' }, [
+    C.field('Kỳ lương (tháng)', monthI, { required: true }),
+    C.field('Ngày công chuẩn trong tháng', sdI, { required: true }),
+    U.el('div', { class: 'section-sub full' }, 'Hệ thống sẽ tạo dòng lương cho tất cả nhân viên. Bạn nhập ngày công & các khoản cộng/trừ ở bước sau.'),
+  ]);
+  C.modal({
+    title: 'Tạo bảng lương tháng', body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo', () => {
+      const month = monthI.value;
+      if (!month) return U.toast('Chọn tháng', 'error');
+      if (PW.data.payrolls.some(p => p.month === month)) return U.toast('Đã có bảng lương tháng này', 'error');
+      const sd = Number(sdI.value) || 26;
+      const p = {
+        id: PW.uid(), month, standardDays: sd, note: '',
+        lines: PW.data.employees.map(e => ({
+          employeeId: e.id, totalDays: sd, allowDays: sd, otHours: 0,
+          bonus: 0, extra: 0, lateFine: 0, bhxh: 0, advance: 0, phoneUse: 0, note: '',
+        })),
+      };
+      PW.data.payrolls.push(p);
+      PW.save(); C.closeModal(); M.payrollDetail(p.id);
+    }, 'primary')],
+  });
+};
+
+/* ---------- Chi tiết / nhập liệu bảng lương ---------- */
+M.payrollDetail = function (id) {
+  App.current = 'payroll';
+  const root = document.getElementById('content');
+  root.innerHTML = '';
+  document.getElementById('page-title').textContent = 'Bảng lương';
+  const p = PW.data.payrolls.find(x => x.id === id);
+  if (!p) { App.go('payroll'); return; }
+
+  const card = U.el('div', { class: 'card' });
+  const toolbar = U.el('div', { class: 'toolbar' });
+  toolbar.appendChild(U.el('button', { class: 'btn ghost', onclick: () => App.go('payroll') }, '← Danh sách'));
+  toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' },
+    '💰 Bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) + ' (ngày công chuẩn: ' + p.standardDays + ')'));
+  toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('📊 Xuất Excel', () => exportXls(), 'sm'));
+  toolbar.appendChild(C.btn('💸 Ghi nhận chi lương', () => M.payrollPay(p), 'sm'));
+  toolbar.appendChild(C.btn('💾 Lưu', () => { PW.save(); U.toast('Đã lưu bảng lương'); }, 'primary'));
+  card.appendChild(toolbar);
+
+  const totalCell = U.el('span', { style: 'font-weight:700' });
+  const wrap = U.el('div', { class: 'table-wrap' });
+  const tbl = U.el('table', { class: 'tbl payroll-tbl' });
+  const heads = ['NV', 'Lương CB', 'Tổng NC', 'NC có PC', 'Tăng ca (h)',
+    'Lương chính', 'Trách nhiệm', 'Phụ cấp', 'Làm thêm', 'Thưởng',
+    'Phạt', 'BHXH', 'Ứng', 'ĐT', 'Thực lĩnh', ''];
+  const htr = U.el('tr');
+  heads.forEach((h, i) => htr.appendChild(U.el('th', { class: i >= 1 && i <= 14 ? 'num' : '' }, h)));
+  tbl.appendChild(U.el('thead', null, htr));
+  const tb = U.el('tbody');
+  tbl.appendChild(tb);
+  wrap.appendChild(tbl);
+  card.appendChild(wrap);
+  card.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right;font-size:16px' },
+    [U.el('span', { class: 'text-muted' }, 'TỔNG THỰC LĨNH CẢ THÁNG: '), totalCell]));
+  root.appendChild(card);
+
+  function numInput(ln, key, width) {
+    const i = U.el('input', { type: 'number', value: ln[key] != null ? ln[key] : 0, style: 'width:' + (width || 70) + 'px;text-align:right' });
+    i.addEventListener('input', () => { ln[key] = Number(i.value) || 0; recalc(); });
+    return i;
+  }
+  const netCells = [];
+  function recalc() {
+    let total = 0;
+    netCells.forEach(nc => {
+      const r = M.payrollCompute(empById(nc.ln.employeeId), nc.ln, p.standardDays);
+      nc.luongChinh.textContent = U.money(r.luongChinh);
+      nc.tn.textContent = U.money(r.luongTN);
+      nc.pc.textContent = U.money(r.pcXang + r.pcAn + r.pcTN);
+      nc.lamThem.textContent = U.money(r.lamThem);
+      nc.net.textContent = U.money(r.thucLinh);
+      total += r.thucLinh;
+    });
+    totalCell.textContent = U.money(total) + ' đ';
+  }
+  function draw() {
+    tb.innerHTML = ''; netCells.length = 0;
+    p.lines.forEach(ln => {
+      const e = empById(ln.employeeId) || { name: '(đã xóa)', salaryBase: 0 };
+      const luongChinh = U.el('span'), tn = U.el('span'), pc = U.el('span'), lamThem = U.el('span'), net = U.el('span', { style: 'font-weight:700' });
+      const tr = U.el('tr', null, [
+        U.el('td', null, U.esc(e.name)),
+        U.el('td', { class: 'num' }, U.money(e.salaryBase || 0)),
+        U.el('td', { class: 'num' }, numInput(ln, 'totalDays', 60)),
+        U.el('td', { class: 'num' }, numInput(ln, 'allowDays', 60)),
+        U.el('td', { class: 'num' }, numInput(ln, 'otHours', 55)),
+        U.el('td', { class: 'num' }, luongChinh),
+        U.el('td', { class: 'num' }, tn),
+        U.el('td', { class: 'num' }, pc),
+        U.el('td', { class: 'num' }, lamThem),
+        U.el('td', { class: 'num' }, numInput(ln, 'bonus', 85)),
+        U.el('td', { class: 'num' }, numInput(ln, 'lateFine', 75)),
+        U.el('td', { class: 'num' }, numInput(ln, 'bhxh', 75)),
+        U.el('td', { class: 'num' }, numInput(ln, 'advance', 80)),
+        U.el('td', { class: 'num' }, numInput(ln, 'phoneUse', 70)),
+        U.el('td', { class: 'num' }, net),
+        U.el('td', { class: 'center' }, U.el('button', { class: 'btn sm', onclick: () => M.payslip(p, ln) }, 'Phiếu')),
+      ]);
+      tb.appendChild(tr);
+      netCells.push({ ln, luongChinh, tn, pc, lamThem, net });
+    });
+    recalc();
+  }
+  draw();
+
+  function exportXls() {
+    const headers = ['Nhân viên', 'Lương CB', 'Tổng NC', 'NC có PC', 'Tăng ca (h)', 'Lương chính', 'Trách nhiệm', 'Phụ cấp', 'Làm thêm', 'Thưởng', 'Phạt', 'BHXH', 'Ứng', 'ĐT', 'Thực lĩnh'];
+    const rows = p.lines.map(ln => {
+      const e = empById(ln.employeeId) || {};
+      const r = M.payrollCompute(e, ln, p.standardDays);
+      return [e.name || '', e.salaryBase || 0, ln.totalDays, ln.allowDays, ln.otHours,
+        Math.round(r.luongChinh), Math.round(r.luongTN), Math.round(r.pcXang + r.pcAn + r.pcTN),
+        Math.round(r.lamThem), ln.bonus, ln.lateFine, ln.bhxh, ln.advance, ln.phoneUse, Math.round(r.thucLinh)];
+    });
+    U.exportExcel('BangLuong_' + p.month, headers, rows, 'BẢNG LƯƠNG THÁNG ' + p.month);
+  }
+};
+
+/* ---------- Phiếu lương cá nhân (in) ---------- */
+M.payslip = function (p, ln) {
+  const e = empById(ln.employeeId) || {};
+  const r = M.payrollCompute(e, ln, p.standardDays);
+  const row = (no, name, val, note) => `<tr><td style="text-align:center">${no}</td><td>${name}</td><td style="text-align:right">${val === '' ? '' : U.money(val)}</td><td>${note || ''}</td></tr>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Phiếu lương ${U.esc(e.name || '')}</title>
+    <style>body{font-family:'Segoe UI',Arial;padding:30px;color:#222}
+    .company{text-align:center;color:#1a3a6b;font-weight:700;font-size:18px}
+    h2{text-align:center;margin:6px 0} table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #999;padding:6px 9px;font-size:13px} th{background:#eaf2fc}
+    .sec{background:#f0f0f0;font-weight:700} .meta{margin-top:8px;font-size:14px;line-height:1.6}
+    .big{text-align:right;margin-top:10px;font-size:16px;font-weight:700;color:#1a3a6b}</style></head><body>
+    <div class="company">PARTY WORLD — Thế giới đồ tiệc</div>
+    <h2>PHIẾU LƯƠNG THÁNG ${p.month.slice(5)}/${p.month.slice(0, 4)}</h2>
+    <div class="meta"><b>Họ và tên:</b> ${U.esc(e.name || '')} &nbsp;|&nbsp; <b>Mã NV:</b> ${U.esc(e.code || '')} &nbsp;|&nbsp; <b>Chức vụ:</b> ${U.esc(e.position || '')}</div>
+    <table>
+      <tr><th style="width:36px">STT</th><th>Nội dung</th><th style="width:130px">Số tiền</th><th style="width:160px">Ghi chú</th></tr>
+      <tr><td colspan="4" class="sec">A. THÔNG TIN CÔNG / MỨC LƯƠNG</td></tr>
+      ${row(1, 'Lương cơ bản', e.salaryBase || 0, '')}
+      ${row(2, 'Ngày công chuẩn trong tháng', '', String(p.standardDays))}
+      ${row(3, 'Tổng ngày công thực tế', '', String(ln.totalDays))}
+      ${row(4, 'Ngày công có phụ cấp', '', String(ln.allowDays))}
+      ${row(5, 'Lương theo ngày', Math.round(r.dayWage), '')}
+      ${row(6, 'Lương theo giờ', Math.round(r.hourWage), '')}
+      <tr><td colspan="4" class="sec">B. CÁC KHOẢN THỰC NHẬN</td></tr>
+      ${row(1, 'Lương chính', Math.round(r.luongChinh), '')}
+      ${row(2, 'Lương trách nhiệm', Math.round(r.luongTN), '')}
+      ${row(3, 'Thưởng doanh số', r.thuong, '')}
+      ${row(4, 'Làm thêm giờ', Math.round(r.lamThem), ln.otHours ? ln.otHours + ' giờ' : '')}
+      ${row(5, 'Phụ cấp xăng xe', Math.round(r.pcXang), '')}
+      ${row(6, 'Phụ cấp ăn trưa', Math.round(r.pcAn), '')}
+      ${row(7, 'Phụ cấp thâm niên', Math.round(r.pcTN), '')}
+      <tr><td colspan="4" class="sec">C. CÁC KHOẢN GIẢM TRỪ</td></tr>
+      ${row(1, 'Phạt đi muộn', r.phat, '')}
+      ${row(2, 'BHXH', r.bhxh, '')}
+      ${row(3, 'Ứng lương', r.ung, '')}
+      ${row(4, 'Dùng ĐT trong giờ làm', r.dt, '')}
+    </table>
+    <div class="big">THỰC LĨNH: ${U.money(r.thucLinh)} đ</div>
+    <div style="display:flex;justify-content:space-around;margin-top:50px;text-align:center">
+      <div>Người nhận<br/><i>(Ký, ghi rõ họ tên)</i></div><div>Người lập<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
+    <script>window.onload=function(){window.print();}</script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
+  w.document.write(html); w.document.close();
+};
+
+/* ---------- Ghi nhận chi lương (tạo phiếu chi) ---------- */
+M.payrollPay = function (p) {
+  const total = M.payrollNetTotal(p);
+  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+  const body = U.el('div', { class: 'form-grid' }, [
+    U.el('div', { class: 'section-sub full' }, 'Tạo 1 phiếu chi cho tổng lương thực lĩnh tháng ' + p.month + '.'),
+    U.el('div', { class: 'full', style: 'font-size:18px;font-weight:700' }, 'Tổng chi: ' + U.money(total) + ' đ'),
+    C.field('Chi từ tài khoản', accSel, { full: true }),
+  ]);
+  C.modal({
+    title: 'Ghi nhận chi lương', body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo phiếu chi', () => {
+      PW.data.payments.push({
+        id: PW.uid(), code: PW.nextCode('PC'), date: p.month + '-28',
+        accountId: accSel.value, supplierId: null, amount: total,
+        reason: 'Lương nhân viên tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4), note: '',
+      });
+      PW.save(); C.closeModal(); U.toast('Đã tạo phiếu chi lương ' + U.money(total) + ' đ');
+    }, 'primary')],
+  });
+};

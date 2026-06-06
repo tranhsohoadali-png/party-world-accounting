@@ -6,35 +6,110 @@
 const PW = {
   KEY: 'PARTY_WORLD_DB_V1',
   data: null,
+  mode: 'local',     // 'local' (localStorage) | 'server' (PHP+MySQL)
+  user: null,        // người dùng đang đăng nhập (chế độ server)
+  _version: 0,       // phiên bản dữ liệu (chống ghi đè)
+  _saveTimer: null,
 };
 
-/* ---------- Khởi tạo / nạp dữ liệu ---------- */
-PW.load = function () {
-  const raw = localStorage.getItem(PW.KEY);
-  if (raw) {
-    try {
-      PW.data = JSON.parse(raw);
-    } catch (e) {
-      console.error('Lỗi đọc dữ liệu, tạo mới', e);
-      PW.data = PW.seed();
-    }
-  } else {
-    PW.data = PW.seed();
-  }
-  // Đảm bảo đủ các bảng
+/* ---------- Chuẩn hóa cấu trúc dữ liệu ---------- */
+PW._normalize = function () {
   const tables = ['products', 'customers', 'suppliers', 'cashAccounts',
     'receipts', 'payments', 'salesInvoices', 'purchases',
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
-    'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups'];
+    'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
+    'payrolls'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'PARTY WORLD', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
+};
+
+/* ---------- Gọi API server ---------- */
+PW.api = async function (path, opts) {
+  const res = await fetch('api/' + path, Object.assign({
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+  }, opts));
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  return { status: res.status, data };
+};
+
+/* ---------- Phát hiện chế độ: có server PHP hay không ---------- */
+PW.detectSession = async function () {
+  try {
+    const r = await PW.api('auth.php?action=me');
+    if (r.status === 200 && r.data && 'user' in r.data) {
+      PW.mode = 'server';
+      PW.user = r.data.user;       // null nếu chưa đăng nhập
+      return { server: true, user: r.data.user };
+    }
+  } catch (e) {}
+  PW.mode = 'local';               // không có PHP -> chạy offline như cũ
+  return { server: false, user: null };
+};
+
+/* ---------- Nạp dữ liệu ---------- */
+PW.load = async function () {
+  if (PW.mode === 'server') {
+    const r = await PW.api('data.php?action=get');
+    if (r.status === 200 && r.data) {
+      PW._version = r.data.version || 0;
+      if (r.data.data) {
+        PW.data = r.data.data;
+        PW._normalize();
+        return PW.data;
+      }
+    }
+    // Server chưa có dữ liệu -> tạo dữ liệu mẫu lần đầu rồi lưu lên
+    PW.data = PW.seed();
+    PW._normalize();
+    await PW.saveNow();
+    return PW.data;
+  }
+  // ----- Chế độ offline (localStorage) -----
+  const raw = localStorage.getItem(PW.KEY);
+  if (raw) {
+    try { PW.data = JSON.parse(raw); }
+    catch (e) { console.error('Lỗi đọc dữ liệu, tạo mới', e); PW.data = PW.seed(); }
+  } else {
+    PW.data = PW.seed();
+  }
+  PW._normalize();
   return PW.data;
 };
 
+/* ---------- Lưu dữ liệu ---------- */
 PW.save = function () {
+  if (PW.mode === 'server') {
+    // Gộp nhiều thay đổi liên tiếp, lưu sau 600ms
+    clearTimeout(PW._saveTimer);
+    PW._saveTimer = setTimeout(() => { PW.saveNow(); }, 600);
+    return;
+  }
   localStorage.setItem(PW.KEY, JSON.stringify(PW.data));
+};
+
+// Lưu ngay lên server (chế độ server)
+PW.saveNow = async function () {
+  if (PW.mode !== 'server') return;
+  clearTimeout(PW._saveTimer);
+  const r = await PW.api('data.php?action=save', {
+    method: 'POST',
+    body: JSON.stringify({ data: PW.data, version: PW._version }),
+  });
+  if (r.status === 200 && r.data && r.data.ok) {
+    PW._version = r.data.version;
+  } else if (r.status === 409) {
+    // Người khác vừa cập nhật -> tải lại để tránh mất dữ liệu
+    if (typeof U !== 'undefined') U.toast('Dữ liệu vừa được người khác cập nhật, đang tải lại...', 'error');
+    setTimeout(() => location.reload(), 1500);
+  } else if (r.status === 401) {
+    location.reload();
+  } else if (typeof U !== 'undefined') {
+    U.toast('Lỗi lưu dữ liệu lên server', 'error');
+  }
 };
 
 /* ---------- Sinh mã / id ---------- */
@@ -371,9 +446,12 @@ PW.seed = function () {
     purchaseReturns: [],
     purchaseDiscounts: [],
     employees: [
-      { id: 'nv1', code: 'NV00001', name: 'Nguyễn Thị Hoa', phone: '0903111222', position: 'Quản lý cửa hàng' },
-      { id: 'nv2', code: 'NV00002', name: 'Trần Văn Nam', phone: '0903333444', position: 'Nhân viên bán hàng' },
-      { id: 'nv3', code: 'NV00003', name: 'Lê Thị Mai', phone: '0903555666', position: 'Kế toán' },
+      { id: 'nv1', code: 'NV00001', name: 'Nguyễn Thị Hoa', phone: '0903111222', position: 'Quản lý cửa hàng',
+        salaryBase: 5500000, allowResp: 4500000, allowTransport: 1500000, allowLunch: 1500000, allowSeniority: 500000 },
+      { id: 'nv2', code: 'NV00002', name: 'Trần Văn Nam', phone: '0903333444', position: 'Nhân viên bán hàng',
+        salaryBase: 5000000, allowResp: 0, allowTransport: 1500000, allowLunch: 1500000, allowSeniority: 0 },
+      { id: 'nv3', code: 'NV00003', name: 'Lê Thị Mai', phone: '0903555666', position: 'Kế toán',
+        salaryBase: 5000000, allowResp: 0, allowTransport: 1500000, allowLunch: 1500000, allowSeniority: 0 },
     ],
     productGroups: [
       { id: 'g1', name: 'Bóng bay' }, { id: 'g2', name: 'Trang trí' },
@@ -399,6 +477,7 @@ PW.seed = function () {
       { id: 'pg1', name: 'Khách lẻ' }, { id: 'pg2', name: 'Đại lý' },
       { id: 'pg3', name: 'Cộng tác viên (CTV)' }, { id: 'pg4', name: 'Khách sỉ' },
     ],
+    payrolls: [],
   };
 };
 

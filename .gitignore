@@ -9,3 +9,6 @@ Desktop.ini
 # File tạm / sao lưu dữ liệu xuất ra
 *.log
 partyworld-backup-*.json
+
+# Cấu hình CSDL chứa mật khẩu — KHÔNG đẩy lên GitHub
+api/config.php

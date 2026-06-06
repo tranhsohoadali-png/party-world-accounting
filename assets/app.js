@@ -6,7 +6,7 @@ const App = { current: 'dashboard' };
 App.menu = [
   { group: 'TỔNG QUAN', items: [
     { id: 'dashboard', label: 'Tổng quan', icon: '🏠', title: 'Tổng quan' },
-    { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích' },
+    { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁN HÀNG', items: [
     { id: 'sales-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình bán hàng' },
@@ -16,35 +16,50 @@ App.menu = [
     { id: 'returns', label: 'Trả lại hàng bán', icon: '↩️', title: 'Trả lại hàng bán' },
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: '🏷️', title: 'Giảm giá hàng bán' },
   ]},
-  { group: 'MUA HÀNG', items: [
-    { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng' },
-    { id: 'purchase-orders', label: 'Đơn mua hàng', icon: '📝', title: 'Đơn mua hàng' },
-    { id: 'purchases', label: 'Phiếu nhập mua', icon: '📦', title: 'Mua hàng & Công nợ phải trả' },
-    { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: '↪️', title: 'Trả lại hàng mua' },
-    { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: '🏷️', title: 'Giảm giá hàng mua' },
+  { group: 'MUA HÀNG', roles: ['admin', 'ketoan'], items: [
+    { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-orders', label: 'Đơn mua hàng', icon: '📝', title: 'Đơn mua hàng', roles: ['admin', 'ketoan'] },
+    { id: 'purchases', label: 'Phiếu nhập mua', icon: '📦', title: 'Mua hàng & Công nợ phải trả', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: '↪️', title: 'Trả lại hàng mua', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: '🏷️', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'TIỀN', items: [
-    { id: 'cash', label: 'Tiền (Thu / Chi)', icon: '💵', title: 'Quỹ tiền — Thu / Chi' },
+    { id: 'cash', label: 'Tiền (Thu / Chi)', icon: '💵', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
+  ]},
+  { group: 'NHÂN SỰ', items: [
+    { id: 'payroll', label: 'Tính lương', icon: '💰', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'DANH MỤC', items: [
-    { id: 'catalog', label: 'Tất cả danh mục', icon: '📚', title: 'Danh mục' },
+    { id: 'catalog', label: 'Tất cả danh mục', icon: '📚', title: 'Danh mục', roles: ['admin', 'ketoan'] },
     { id: 'products', label: 'Hàng hóa', icon: '📦', title: 'Danh mục hàng hóa' },
     { id: 'customers', label: 'Khách hàng', icon: '👥', title: 'Danh mục khách hàng' },
-    { id: 'suppliers', label: 'Nhà cung cấp', icon: '🏭', title: 'Danh mục nhà cung cấp' },
-    { id: 'cat-employees', label: 'Nhân viên', icon: '🧑‍💼', title: 'Danh mục nhân viên' },
+    { id: 'suppliers', label: 'Nhà cung cấp', icon: '🏭', title: 'Danh mục nhà cung cấp', roles: ['admin', 'ketoan'] },
+    { id: 'cat-employees', label: 'Nhân viên', icon: '🧑‍💼', title: 'Danh mục nhân viên', roles: ['admin', 'ketoan'] },
   ]},
-  { group: 'BÁO CÁO', items: [
-    { id: 'reports', label: 'Báo cáo', icon: '📊', title: 'Báo cáo' },
-    { id: 'settings', label: 'Dữ liệu & Sao lưu', icon: '⚙️', title: 'Cài đặt — Sao lưu dữ liệu' },
+  { group: 'BÁO CÁO', roles: ['admin', 'ketoan'], items: [
+    { id: 'reports', label: 'Báo cáo', icon: '📊', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
+  ]},
+  { group: 'HỆ THỐNG', items: [
+    { id: 'settings', label: 'Dữ liệu & Sao lưu', icon: '⚙️', title: 'Cài đặt — Sao lưu dữ liệu', roles: ['admin', 'ketoan'] },
+    { id: 'users', label: 'Người dùng', icon: '👤', title: 'Quản lý người dùng', roles: ['admin'] },
   ]},
 ];
+
+// Có được xem mục này không (theo vai trò). Chế độ offline (không đăng nhập) thấy tất cả.
+App.canSee = function (item) {
+  if (PW.mode !== 'server' || !PW.user) return true;
+  if (!item.roles) return true;
+  return item.roles.includes(PW.user.role);
+};
 
 App.render = function () {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
   App.menu.forEach(g => {
+    const items = g.items.filter(App.canSee);
+    if (!items.length) return; // ẩn cả nhóm nếu không có mục nào được phép
     nav.appendChild(U.el('div', { class: 'group-label' }, g.group));
-    g.items.forEach(it => {
+    items.forEach(it => {
       const a = U.el('a', {
         class: 'item' + (App.current === it.id ? ' active' : ''),
         href: '#' + it.id,
@@ -53,6 +68,7 @@ App.render = function () {
       nav.appendChild(a);
     });
   });
+  App.renderUserbar();
 };
 
 App.findItem = function (id) {
@@ -72,11 +88,18 @@ App.go = function (id) {
 App.refresh = function () {
   const root = document.getElementById('content');
   root.innerHTML = '';
+  // Chặn truy cập mục không đủ quyền (kể cả gõ thẳng #hash)
+  const item = App.findItem(App.current);
+  if (!App.canSee(item)) {
+    document.getElementById('page-title').textContent = 'Không đủ quyền';
+    root.appendChild(U.el('div', { class: 'card' }, U.el('div', { class: 'empty' }, 'Bạn không có quyền truy cập mục này.')));
+    return;
+  }
   // Tiêu đề trang
   let title;
   if (App.current === 'catalog') title = 'Danh mục';
   else if (M.CATALOGS && M.CATALOGS[App.current]) title = 'Danh mục ' + M.CATALOGS[App.current].title.toLowerCase();
-  else title = App.findItem(App.current).title;
+  else title = item.title;
   document.getElementById('page-title').textContent = title;
   // Danh mục đơn giản (cat-*)
   if (M.CATALOGS && M.CATALOGS[App.current]) return M.simpleCatalog(root, App.current);
@@ -101,6 +124,8 @@ App.refresh = function () {
     case 'suppliers': return M.partners(root, 'supplier');
     case 'reports': return M.reports(root);
     case 'settings': return App.settings(root);
+    case 'users': return M.usersAdmin(root);
+    case 'payroll': return M.payrolls(root);
   }
 };
 
@@ -155,6 +180,7 @@ App.settings = function (root) {
         quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
         purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
+        payrolls: [],
       };
       PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }
@@ -203,13 +229,50 @@ App.settings = function (root) {
   root.appendChild(accCard);
 };
 
+/* ---------- Thanh người dùng (góc trên phải) — chỉ chế độ server ---------- */
+App.renderUserbar = function () {
+  const bar = document.getElementById('userbar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  if (PW.mode !== 'server' || !PW.user) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  bar.appendChild(U.el('span', { class: 'userbar-name' },
+    [U.el('b', null, PW.user.fullname || PW.user.username),
+     U.el('span', { class: 'userbar-role' }, ' · ' + (M.ROLE_LABEL[PW.user.role] || PW.user.role))]));
+  bar.appendChild(U.el('button', { class: 'btn sm', onclick: () => M.changePwForm() }, '🔑 Đổi mật khẩu'));
+  bar.appendChild(U.el('button', { class: 'btn sm danger', onclick: () => App.logout() }, 'Đăng xuất'));
+};
+
+App.logout = async function () {
+  if (!U.confirm('Đăng xuất khỏi phần mềm?')) return;
+  await PW.saveNow();
+  await PW.api('auth.php?action=logout', { method: 'POST' });
+  location.reload();
+};
+
 /* ---------- Khởi động ---------- */
-window.addEventListener('DOMContentLoaded', () => {
-  PW.load();
-  App.render();
+App.boot = async function () {
+  const ses = await PW.detectSession();        // xác định offline hay server
+  if (ses.server && !ses.user) { M.loginScreen(); return; } // server nhưng chưa đăng nhập
+  await PW.load();
+  PW.user = ses.user || PW.user;
+  // Trang mặc định theo quyền
   const hash = (window.location.hash || '').replace('#', '');
-  if (hash && App.findItem(hash).id === hash) App.current = hash;
+  if (hash && App.findItem(hash).id === hash && App.canSee(App.findItem(hash))) App.current = hash;
+  else App.current = 'dashboard';
+  App.render();
   App.refresh();
+};
+
+window.addEventListener('DOMContentLoaded', () => { App.boot(); });
+// Lưu nốt thay đổi trước khi đóng/tải lại trang (chế độ server)
+window.addEventListener('beforeunload', () => {
+  if (PW.mode === 'server' && PW._saveTimer) {
+    try {
+      navigator.sendBeacon('api/data.php?action=save',
+        new Blob([JSON.stringify({ data: PW.data, version: PW._version })], { type: 'application/json' }));
+    } catch (e) {}
+  }
 });
 window.addEventListener('hashchange', () => {
   const hash = (window.location.hash || '').replace('#', '');
