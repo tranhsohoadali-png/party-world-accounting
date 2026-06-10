@@ -16,3 +16,5 @@ api/config.php
 # Công cụ tự động đẩy GitHub (chỉ dùng ở máy)
 auto-push.ps1
 DAY LEN GITHUB.bat
+register-schedule.ps1
+CAI-LICH-MOI-GIO.bat
