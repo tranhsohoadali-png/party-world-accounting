@@ -170,6 +170,10 @@ M.docForm = function (cfg) {
   }
   partnerI.addEventListener('change', applyPartnerTerm);
   if (isNew && !doc.dueDate) applyPartnerTerm();
+  // Nhân viên bán (chỉ cho hóa đơn bán)
+  const empSel = isSale ? C.select(
+    [{ value: '', label: '-- Chọn nhân viên --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name }))),
+    doc.employeeId || '') : null;
   const noteI = C.input({ value: doc.note || '' });
 
   // Items
@@ -253,6 +257,7 @@ M.docForm = function (cfg) {
     C.field('Điều khoản thanh toán', termSel),
     C.field('Hạn thanh toán (để trống = không hạn)', dueI),
     C.field(partnerLabel, partnerI, { required: true, full: true }),
+    isSale ? C.field('Nhân viên bán', empSel) : null,
   ]);
 
   const summary = U.el('div', { style: 'margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-end' }, [
@@ -285,6 +290,7 @@ M.docForm = function (cfg) {
         id: doc.id || PW.uid(),
         code: codeI.value, date: dateI.value, dueDate: dueI.value || null,
         [partnerKey]: partnerI.value,
+        employeeId: empSel ? (empSel.value || null) : (doc.employeeId || null),
         items: valid.map(it => ({ productId: it.productId, qty: Number(it.qty), [unitField]: Number(it[unitField]) })),
         discount: Number(discountI.value) || 0,
         paid: Number(paidI.value) || 0,

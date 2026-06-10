@@ -10,6 +10,7 @@ M.reports = function (root) {
   const typeSel = C.select([
     { value: 'pl', label: 'Kết quả kinh doanh (Lãi/Lỗ)' },
     { value: 'revenue', label: 'Doanh thu theo mặt hàng' },
+    { value: 'revenueByEmployee', label: 'Doanh thu theo nhân viên bán' },
     { value: 'purchaseByItem', label: 'Tổng hợp mua hàng theo mặt hàng' },
     { value: 'inventory', label: 'Tồn kho hiện tại' },
     { value: 'inout', label: 'Nhập - Xuất - Tồn kho' },
@@ -24,6 +25,7 @@ M.reports = function (root) {
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Từ ngày'), fromI]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Đến ngày'), toI]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('Xem báo cáo', run, 'primary')]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('📊 Xuất Excel', exportReport)]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('🖨 In', () => window.print())]));
 
   const card = U.el('div', { class: 'card' });
@@ -41,6 +43,7 @@ M.reports = function (root) {
 
     if (type === 'pl') return M.reportPL(host, from, to);
     if (type === 'revenue') return M.reportRevenue(host, from, to);
+    if (type === 'revenueByEmployee') return M.reportRevenueByEmployee(host, from, to);
     if (type === 'purchaseByItem') return M.reportPurchaseByItem(host, from, to);
     if (type === 'inventory') return M.reportInventory(host);
     if (type === 'inout') return M.reportInOut(host, from, to);
@@ -48,6 +51,30 @@ M.reports = function (root) {
     if (type === 'payable') return M.reportPayable(host);
     if (type === 'cashbook') return M.reportCashbook(host, from, to);
   }
+  function exCell(s) {
+    if (s === '' || s === '-') return '';
+    const neg = /^\(.*\)$/.test(s);
+    const core = s.replace(/[()₫đ\s]/g, '').replace(/\./g, '').replace(',', '.');
+    if (/^-?\d+(\.\d+)?$/.test(core)) { const n = parseFloat(core); return neg ? -n : n; }
+    return s;
+  }
+  function exportReport() {
+    const t = host.querySelector('table');
+    if (!t) return U.toast('Chưa có dữ liệu để xuất', 'error');
+    let headers = [].map.call(t.querySelectorAll('thead th'), th => th.textContent.trim());
+    const rows = [];
+    t.querySelectorAll('tr').forEach(tr => {
+      if (tr.closest('thead') || tr.closest('tfoot')) return; // bỏ dòng tiêu đề & tổng cộng
+      const tds = tr.querySelectorAll('td');
+      if (!tds.length) return;
+      rows.push([].map.call(tds, td => exCell(td.textContent.trim())));
+    });
+    if (!rows.length) return U.toast('Báo cáo trống', 'error');
+    if (!headers.length) headers = rows[0].map((_, i) => (rows[0].length === 2 ? ['Nội dung', 'Số tiền'][i] : 'Cột ' + (i + 1)));
+    const label = typeSel.options[typeSel.selectedIndex].text;
+    U.exportExcel('BaoCao_' + typeSel.value, headers, rows, label + ' (' + U.date(fromI.value) + ' - ' + U.date(toI.value) + ')');
+  }
+
   typeSel.addEventListener('change', run);
   run();
 };
@@ -102,6 +129,36 @@ M.reportRevenue = function (host, from, to) {
     { html: U.money(totRev), num: true },
     { html: U.money(totCogs), num: true },
     { html: U.money(totRev - totCogs), num: true },
+  ] }));
+};
+
+M.reportRevenueByEmployee = function (host, from, to) {
+  const agg = {}; const noEmp = { rev: 0, cnt: 0 };
+  PW.data.salesInvoices.filter(si => si.date >= from && si.date <= to).forEach(si => {
+    const total = PW.invoiceTotal(si);
+    if (si.employeeId) {
+      agg[si.employeeId] = agg[si.employeeId] || { rev: 0, cnt: 0 };
+      agg[si.employeeId].rev += total; agg[si.employeeId].cnt++;
+    } else { noEmp.rev += total; noEmp.cnt++; }
+  });
+  const rows = Object.keys(agg).map(eid => {
+    const e = PW.data.employees.find(x => x.id === eid);
+    return { name: e ? e.name : '(NV đã xóa)', code: e ? e.code : '', rev: agg[eid].rev, cnt: agg[eid].cnt };
+  }).sort((a, b) => b.rev - a.rev);
+  if (noEmp.cnt) rows.push({ name: '(Chưa gán nhân viên)', code: '', rev: noEmp.rev, cnt: noEmp.cnt });
+  const tot = rows.reduce((s, r) => s + r.rev, 0);
+  const totCnt = rows.reduce((s, r) => s + r.cnt, 0);
+  host.appendChild(C.table(rows, [
+    { label: 'Mã NV', render: r => U.esc(r.code) },
+    { label: 'Nhân viên bán', render: r => U.esc(r.name) },
+    { label: 'Số hóa đơn', num: true, render: r => U.num(r.cnt) },
+    { label: 'Doanh thu', num: true, render: r => U.money(r.rev) },
+    { label: 'Tỷ trọng', num: true, render: r => (tot > 0 ? (r.rev / tot * 100).toFixed(1) : '0') + '%' },
+  ], { empty: 'Chưa có hóa đơn bán trong kỳ', footer: [
+    { html: 'TỔNG CỘNG', colspan: 2 },
+    { html: U.num(totCnt), num: true },
+    { html: U.money(tot), num: true },
+    { html: '100%', num: true },
   ] }));
 };
 
