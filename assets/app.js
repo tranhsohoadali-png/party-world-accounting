@@ -20,6 +20,7 @@ App.menu = [
     { id: 'sales', label: 'Hóa đơn bán', icon: '🛒', title: 'Bán hàng & Công nợ phải thu' },
     { id: 'returns', label: 'Trả lại hàng bán', icon: '↩️', title: 'Trả lại hàng bán' },
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: '🏷️', title: 'Giảm giá hàng bán' },
+    { id: 'reconcile', label: 'Đối soát sàn', icon: '💸', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'MUA HÀNG', roles: ['admin', 'ketoan'], items: [
     { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
@@ -149,6 +150,7 @@ App.refresh = function () {
     case 'orders': return M.salesOrdersPage(root);
     case 'returns': return M.returns(root);
     case 'discounts': return M.discounts(root);
+    case 'reconcile': return M.reconcile(root);
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
     case 'purchases': return M.purchases(root);
@@ -218,7 +220,7 @@ App.settings = function (root) {
         quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
         purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
-        payrolls: [], productionOrders: [],
+        payrolls: [], productionOrders: [], channels: [],
       };
       PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }

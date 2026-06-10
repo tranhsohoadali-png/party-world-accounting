@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders'];
+    'payrolls', 'productionOrders', 'channels'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -203,6 +203,24 @@ PW.returnCost = function (sr) {
 PW.invoiceTotal = function (si) {
   const sub = si.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0);
   return sub - Number(si.discount || 0);
+};
+
+// ----- Kênh bán & phí sàn -----
+PW.channel = id => PW.data.channels.find(c => c.id === id);
+PW.invoiceFees = si => Number(si.platformFee || 0) + Number(si.shippingFee || 0); // phí sàn + phí ship
+PW.invoiceNet = si => PW.invoiceTotal(si) - PW.invoiceFees(si);                  // thực nhận sau phí
+PW.channelPrice = function (product, channelId) {
+  if (product && product.channelPrices && channelId &&
+      product.channelPrices[channelId] != null && product.channelPrices[channelId] !== '') {
+    return Number(product.channelPrices[channelId]);
+  }
+  return product ? Number(product.price || 0) : 0;
+};
+// Tổng phí sàn + vận chuyển (chi phí bán hàng) trong khoảng
+PW.sellingFees = function (from, to) {
+  return PW.data.salesInvoices
+    .filter(si => (!from || si.date >= from) && (!to || si.date <= to))
+    .reduce((s, si) => s + PW.invoiceFees(si), 0);
 };
 
 // Tổng tiền 1 phiếu nhập mua
@@ -408,7 +426,8 @@ PW.seed = function () {
     ],
     products: [
       { id: 'p1', code: 'TSH4050', name: 'Tranh số hóa 40x50 - Phong cảnh', unit: 'Bức', group: 'Tranh thành phẩm', cost: 45000, price: 75000, openingStock: 120,
-        bom: [{ materialId: 'p7', qty: 1.2 }, { materialId: 'p5', qty: 0.3 }, { materialId: 'p4', qty: 1 }, { materialId: 'p10', qty: 1 }] },
+        bom: [{ materialId: 'p7', qty: 1.2 }, { materialId: 'p5', qty: 0.3 }, { materialId: 'p4', qty: 1 }, { materialId: 'p10', qty: 1 }],
+        channelPrices: { ch_dl: 60000, ch_shopee: 89000, ch_fahasa: 99000 } },
       { id: 'p2', code: 'TSH3040', name: 'Tranh số hóa 30x40 - Hoa', unit: 'Bức', group: 'Tranh thành phẩm', cost: 18000, price: 35000, openingStock: 200 },
       { id: 'p3', code: 'TTM-A3', name: 'Tranh tô màu theo số A3 (bộ)', unit: 'Bộ', group: 'Tranh thành phẩm', cost: 85000, price: 150000, openingStock: 60 },
       { id: 'p4', code: 'KH4050', name: 'Khung tranh gỗ 40x50', unit: 'Cái', group: 'Khung', cost: 12000, price: 25000, openingStock: 150 },
@@ -438,15 +457,16 @@ PW.seed = function () {
       { id: 'pm2', code: 'PC00002', date: d('2026-05-20'), accountId: 'acc_bank', supplierId: 's2', amount: 3000000, reason: 'Trả nợ nhà cung cấp', note: '' },
     ],
     salesInvoices: [
-      { id: 'h1', code: 'HD00001', date: d('2026-05-05'), customerId: 'c1',
+      { id: 'h1', code: 'HD00001', date: d('2026-05-05'), customerId: 'c1', channelId: 'ch_dl',
         items: [{ productId: 'p3', qty: 10, price: 150000 }, { productId: 'p1', qty: 5, price: 75000 }],
         discount: 0, paid: 1875000, paidAccountId: 'acc_cash', note: 'Bán sỉ shop tranh' },
-      { id: 'h2', code: 'HD00002', date: d('2026-05-15'), customerId: 'c2', dueDate: d('2026-05-30'),
+      { id: 'h2', code: 'HD00002', date: d('2026-05-15'), customerId: 'c2', dueDate: d('2026-05-30'), channelId: 'ch_le',
         items: [{ productId: 'p4', qty: 20, price: 25000 }, { productId: 'p5', qty: 30, price: 20000 }, { productId: 'p6', qty: 40, price: 15000 }],
         discount: 100000, paid: 0, paidAccountId: null, note: 'Công nợ - đã quá hạn' },
-      { id: 'h3', code: 'HD00003', date: d('2026-05-25'), customerId: 'c3',
+      { id: 'h3', code: 'HD00003', date: d('2026-05-25'), customerId: 'c3', channelId: 'ch_shopee',
+        platformFee: 209000, shippingFee: 30000,
         items: [{ productId: 'p7', qty: 100, price: 10000 }, { productId: 'p8', qty: 20, price: 45000 }],
-        discount: 0, paid: 1900000, paidAccountId: 'acc_bank', note: '' },
+        discount: 0, paid: 1661000, paidAccountId: 'acc_bank', note: 'Đơn Shopee đã đối soát' },
     ],
     purchases: [
       { id: 'pu1', code: 'PN00001', date: d('2026-05-02'), supplierId: 's1',
@@ -512,6 +532,13 @@ PW.seed = function () {
       { id: 'sx1', code: 'SX00001', date: d('2026-05-22'), productId: 'p1', qty: 50,
         materials: [{ productId: 'p7', qty: 60 }, { productId: 'p5', qty: 15 }, { productId: 'p4', qty: 50 }, { productId: 'p10', qty: 50 }],
         laborCost: 750000, otherCost: 50000, note: 'Sản xuất tranh 40x50 đợt 1' },
+    ],
+    channels: [
+      { id: 'ch_le', name: 'Bán lẻ', feePercent: 0, isPlatform: false },
+      { id: 'ch_dl', name: 'Đại lý / Sỉ', feePercent: 0, isPlatform: false },
+      { id: 'ch_shopee', name: 'Shopee', feePercent: 11, isPlatform: true },
+      { id: 'ch_fahasa', name: 'Fahasa (ký gửi)', feePercent: 30, isPlatform: true },
+      { id: 'ch_tiktok', name: 'TikTok Shop', feePercent: 8, isPlatform: true },
     ],
   };
 };

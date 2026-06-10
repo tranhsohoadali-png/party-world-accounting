@@ -18,7 +18,8 @@ M.dashboard = function (root) {
   const rev = PW.revenue(period.from, period.to);
   const cogs = PW.cogs(period.from, period.to);
   const exp = PW.expenses(period.from, period.to);
-  const profit = rev - cogs - exp;
+  const fees = PW.sellingFees(period.from, period.to);
+  const profit = rev - cogs - exp - fees;
 
   // Banner thương hiệu
   root.appendChild(U.el('img', { src: 'assets/banner.svg', alt: 'DALI', class: 'hero-banner' }));
@@ -143,7 +144,7 @@ M.dashboard = function (root) {
   const pl = U.el('div', { class: 'grid c3' });
   [
     ['DOANH THU', rev, 'text-green'],
-    ['CHI PHÍ', cogs + exp, 'text-red'],
+    ['CHI PHÍ', cogs + exp + fees, 'text-red'],
     ['LỢI NHUẬN', profit, profit >= 0 ? 'text-green' : 'text-red'],
   ].forEach(([l, v, cls]) => {
     pl.appendChild(U.el('div', null, [
@@ -368,6 +369,20 @@ M.productForm = function (p) {
   ]);
   drawBom();
 
+  // ----- Bảng giá theo kênh -----
+  const chInputs = {};
+  const chPriceGrid = U.el('div', { class: 'form-grid' });
+  (PW.data.channels || []).forEach(c => {
+    const cur = (p.channelPrices || {})[c.id];
+    const inp = C.input({ type: 'number', min: 0, value: cur != null ? cur : '', placeholder: 'mặc định' });
+    chInputs[c.id] = inp;
+    chPriceGrid.appendChild(C.field('Giá ' + c.name, inp));
+  });
+  const chSection = (PW.data.channels || []).length ? U.el('div', null, [
+    U.el('div', { class: 'card-title mt16', style: 'font-size:14px' }, '🛒 Bảng giá theo kênh (để trống = dùng giá bán mặc định)'),
+    chPriceGrid,
+  ]) : null;
+
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
       C.field('Mã hàng', f.code, { required: true }),
@@ -380,6 +395,7 @@ M.productForm = function (p) {
     ]),
     M.datalist('dl-pgroups', PW.data.productGroups.map(g => g.name)),
     M.datalist('dl-punits', PW.data.units.map(u => u.name)),
+    chSection,
     bomSection,
   ]);
   C.modal({
@@ -395,6 +411,7 @@ M.productForm = function (p) {
           cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
           openingStock: Number(f.stock.value) || 0,
           bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
+          channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
         };
         if (isNew) PW.data.products.push(obj);
         else Object.assign(p, obj);

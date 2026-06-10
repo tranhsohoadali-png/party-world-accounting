@@ -174,6 +174,24 @@ M.docForm = function (cfg) {
   const empSel = isSale ? C.select(
     [{ value: '', label: '-- Chọn nhân viên --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name }))),
     doc.employeeId || '') : null;
+  // Kênh bán + phí sàn (chỉ hóa đơn bán)
+  const channelSel = isSale ? C.select(
+    [{ value: '', label: '-- Chọn kênh --' }].concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))),
+    doc.channelId || '') : null;
+  const platformFeeI = isSale ? C.input({ type: 'number', value: doc.platformFee || 0, min: 0, style: 'width:140px;text-align:right' }) : null;
+  const shippingFeeI = isSale ? C.input({ type: 'number', value: doc.shippingFee || 0, min: 0, style: 'width:140px;text-align:right' }) : null;
+  const netCell = isSale ? U.el('span', { style: 'font-weight:700;color:var(--teal-d)' }) : null;
+  function curChannel() { return channelSel ? channelSel.value : null; }
+  function suggestFee() {
+    const c = PW.channel(curChannel());
+    let sub = 0; items.forEach(it => sub += (Number(it.qty) || 0) * (Number(it[unitField]) || 0));
+    const grand = sub - (Number(discountI.value) || 0);
+    if (c && Number(c.feePercent) > 0) platformFeeI.value = Math.round(grand * Number(c.feePercent) / 100);
+  }
+  if (channelSel) channelSel.addEventListener('change', () => {
+    items.forEach(it => { const p = PW.product(it.productId); if (p) it[unitField] = PW.channelPrice(p, curChannel()); });
+    suggestFee(); drawItems(); calc();
+  });
   const noteI = C.input({ value: doc.note || '' });
 
   // Items
@@ -198,6 +216,10 @@ M.docForm = function (cfg) {
     grandCell.textContent = U.money(grand) + ' đ';
     remainCell.textContent = U.money(grand - paid) + ' đ';
     remainCell.className = (grand - paid) > 0 ? 'text-red' : 'text-green';
+    if (isSale && netCell) {
+      const fees = (Number(platformFeeI.value) || 0) + (Number(shippingFeeI.value) || 0);
+      netCell.textContent = U.money(grand - fees) + ' đ';
+    }
   }
 
   function drawItems() {
@@ -209,7 +231,7 @@ M.docForm = function (cfg) {
       prodSel.addEventListener('change', () => {
         it.productId = prodSel.value;
         const p = PW.product(prodSel.value);
-        if (p) { it[unitField] = p[priceKey]; }
+        if (p) { it[unitField] = isSale ? PW.channelPrice(p, curChannel()) : p[priceKey]; }
         drawItems(); calc();
       });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
@@ -248,6 +270,8 @@ M.docForm = function (cfg) {
 
   discountI.addEventListener('input', calc);
   paidI.addEventListener('input', calc);
+  if (platformFeeI) platformFeeI.addEventListener('input', calc);
+  if (shippingFeeI) shippingFeeI.addEventListener('input', calc);
 
   const addBtn = C.btn('+ Thêm dòng', () => { items.push({ productId: '', qty: 1, [unitField]: 0 }); drawItems(); calc(); }, 'sm');
 
@@ -257,6 +281,7 @@ M.docForm = function (cfg) {
     C.field('Điều khoản thanh toán', termSel),
     C.field('Hạn thanh toán (để trống = không hạn)', dueI),
     C.field(partnerLabel, partnerI, { required: true, full: true }),
+    isSale ? C.field('Kênh bán', channelSel) : null,
     isSale ? C.field('Nhân viên bán', empSel) : null,
   ]);
 
@@ -264,6 +289,9 @@ M.docForm = function (cfg) {
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Tổng tiền hàng: '), totalCell, ' đ']),
     U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Giảm giá: '), discountI]),
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'THÀNH TIỀN: '), grandCell]),
+    isSale ? U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Phí sàn: '), platformFeeI]) : null,
+    isSale ? U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Phí vận chuyển: '), shippingFeeI]) : null,
+    isSale ? U.el('div', null, [U.el('span', { class: 'text-muted' }, 'THỰC NHẬN (sau phí): '), netCell]) : null,
     U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, (isSale ? 'Đã thu: ' : 'Đã trả: ')), paidI]),
     U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Vào/ra tài khoản: '), paidAccI]),
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Còn nợ: '), remainCell]),
@@ -291,6 +319,9 @@ M.docForm = function (cfg) {
         code: codeI.value, date: dateI.value, dueDate: dueI.value || null,
         [partnerKey]: partnerI.value,
         employeeId: empSel ? (empSel.value || null) : (doc.employeeId || null),
+        channelId: channelSel ? (channelSel.value || null) : (doc.channelId || null),
+        platformFee: platformFeeI ? (Number(platformFeeI.value) || 0) : (doc.platformFee || 0),
+        shippingFee: shippingFeeI ? (Number(shippingFeeI.value) || 0) : (doc.shippingFee || 0),
         items: valid.map(it => ({ productId: it.productId, qty: Number(it.qty), [unitField]: Number(it[unitField]) })),
         discount: Number(discountI.value) || 0,
         paid: Number(paidI.value) || 0,

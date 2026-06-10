@@ -48,6 +48,13 @@ M.CATALOGS = {
     data: 'partnerGroups', title: 'Nhóm khách hàng / NCC', icon: '🏷️',
     fields: [{ k: 'name', l: 'Tên nhóm', req: true, full: true }],
   },
+  'cat-channels': {
+    data: 'channels', title: 'Kênh bán hàng', icon: '🛒',
+    fields: [
+      { k: 'name', l: 'Tên kênh (Shopee, Đại lý, Lẻ...)', req: true, full: true },
+      { k: 'feePercent', l: 'Phí sàn mặc định (%)', type: 'number' },
+    ],
+  },
 };
 
 /* ---------- Trang hub Danh mục ---------- */
@@ -64,6 +71,7 @@ M.catalogHub = function (root) {
       { label: 'Nhóm hàng hóa', go: 'cat-groups' },
       { label: 'Đơn vị tính', go: 'cat-units' },
       { label: 'Kho', go: 'cat-warehouses' },
+      { label: 'Kênh bán hàng', go: 'cat-channels' },
     ]},
     { title: 'Tài chính', items: [
       { label: 'Tài khoản tiền / ngân hàng', go: 'settings' },

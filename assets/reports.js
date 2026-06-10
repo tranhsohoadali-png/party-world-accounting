@@ -11,6 +11,7 @@ M.reports = function (root) {
     { value: 'pl', label: 'Kết quả kinh doanh (Lãi/Lỗ)' },
     { value: 'revenue', label: 'Doanh thu theo mặt hàng' },
     { value: 'revenueByEmployee', label: 'Doanh thu theo nhân viên bán' },
+    { value: 'revenueByChannel', label: 'Doanh thu & lãi theo kênh bán' },
     { value: 'purchaseByItem', label: 'Tổng hợp mua hàng theo mặt hàng' },
     { value: 'inventory', label: 'Tồn kho hiện tại' },
     { value: 'productCost', label: 'Giá thành sản phẩm (sản xuất)' },
@@ -45,6 +46,7 @@ M.reports = function (root) {
     if (type === 'pl') return M.reportPL(host, from, to);
     if (type === 'revenue') return M.reportRevenue(host, from, to);
     if (type === 'revenueByEmployee') return M.reportRevenueByEmployee(host, from, to);
+    if (type === 'revenueByChannel') return M.reportRevenueByChannel(host, from, to);
     if (type === 'purchaseByItem') return M.reportPurchaseByItem(host, from, to);
     if (type === 'inventory') return M.reportInventory(host);
     if (type === 'productCost') return M.reportProductCost(host, from, to);
@@ -85,12 +87,14 @@ M.reportPL = function (host, from, to) {
   const rev = PW.revenue(from, to);
   const cogs = PW.cogs(from, to);
   const gross = rev - cogs;
+  const fees = PW.sellingFees(from, to);
   const exp = PW.expenses(from, to);
-  const profit = gross - exp;
+  const profit = gross - fees - exp;
   const rows = [
     ['Doanh thu bán hàng', rev, 'text-green'],
     ['Giá vốn hàng bán', -cogs, 'text-red'],
     ['Lợi nhuận gộp', gross, gross >= 0 ? 'text-green' : 'text-red'],
+    ['Phí sàn & vận chuyển', -fees, 'text-red'],
     ['Chi phí hoạt động (phiếu chi)', -exp, 'text-red'],
     ['LỢI NHUẬN THUẦN', profit, profit >= 0 ? 'text-green' : 'text-red'],
   ];
@@ -131,6 +135,36 @@ M.reportRevenue = function (host, from, to) {
     { html: U.money(totRev), num: true },
     { html: U.money(totCogs), num: true },
     { html: U.money(totRev - totCogs), num: true },
+  ] }));
+};
+
+M.reportRevenueByChannel = function (host, from, to) {
+  const agg = {};
+  function cogsOf(si) { return si.items.reduce((s, it) => { const p = PW.product(it.productId); return s + Number(it.qty) * Number(p ? p.cost : 0); }, 0); }
+  PW.data.salesInvoices.filter(si => si.date >= from && si.date <= to).forEach(si => {
+    const key = si.channelId || '_none';
+    agg[key] = agg[key] || { cnt: 0, rev: 0, fees: 0, cogs: 0 };
+    agg[key].cnt++; agg[key].rev += PW.invoiceTotal(si);
+    agg[key].fees += PW.invoiceFees(si); agg[key].cogs += cogsOf(si);
+  });
+  const rows = Object.keys(agg).map(k => {
+    const c = k === '_none' ? null : PW.channel(k);
+    const a = agg[k];
+    return { name: c ? c.name : '(Chưa gán kênh)', cnt: a.cnt, rev: a.rev, fees: a.fees, cogs: a.cogs, profit: a.rev - a.fees - a.cogs };
+  }).sort((a, b) => b.rev - a.rev);
+  const T = rows.reduce((t, r) => ({ cnt: t.cnt + r.cnt, rev: t.rev + r.rev, fees: t.fees + r.fees, cogs: t.cogs + r.cogs, profit: t.profit + r.profit }), { cnt: 0, rev: 0, fees: 0, cogs: 0, profit: 0 });
+  host.appendChild(C.table(rows, [
+    { label: 'Kênh bán', render: r => U.esc(r.name) },
+    { label: 'Số đơn', num: true, render: r => U.num(r.cnt) },
+    { label: 'Doanh thu', num: true, render: r => U.money(r.rev) },
+    { label: 'Phí sàn + ship', num: true, render: r => `<span class="text-red">${U.money(r.fees)}</span>` },
+    { label: 'Giá vốn', num: true, render: r => U.money(r.cogs) },
+    { label: 'Lãi thuần', num: true, render: r => `<b class="${r.profit >= 0 ? 'text-green' : 'text-red'}">${U.money(r.profit)}</b>` },
+    { label: '% lãi/DT', num: true, render: r => (r.rev > 0 ? (r.profit / r.rev * 100).toFixed(1) : '0') + '%' },
+  ], { empty: 'Chưa có hóa đơn bán trong kỳ', footer: [
+    { html: 'TỔNG CỘNG' }, { html: U.num(T.cnt), num: true }, { html: U.money(T.rev), num: true },
+    { html: U.money(T.fees), num: true }, { html: U.money(T.cogs), num: true }, { html: U.money(T.profit), num: true },
+    { html: (T.rev > 0 ? (T.profit / T.rev * 100).toFixed(1) : '0') + '%', num: true },
   ] }));
 };
 
