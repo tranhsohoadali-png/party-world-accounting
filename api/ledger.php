@@ -10,10 +10,26 @@ require_login();
 $pdo = pdo();
 $action = $_GET['action'] ?? 'list';
 
-// Bảng accounting_entries có thể chưa được cài (package MCP) -> trả rỗng
+// Bảng do package MCP tạo, có thể chưa cài -> trả rỗng
 function pw_table_exists(PDO $pdo, string $t): bool {
   try { $pdo->query("SELECT 1 FROM `$t` LIMIT 1"); return true; }
   catch (Throwable $e) { return false; }
+}
+
+// Tồn kho (inventory_items) từ sổ MCP
+if ($action === 'inventory') {
+  if (!pw_table_exists($pdo, 'inventory_items')) json_out(['ok' => true, 'installed' => false, 'items' => []]);
+  $rows = $pdo->query("SELECT id, code, name, unit, category, current_qty, cost_per_unit, is_active, updated_at
+                       FROM inventory_items ORDER BY is_active DESC, name")->fetchAll();
+  json_out(['ok' => true, 'installed' => true, 'items' => $rows]);
+}
+
+// Đối tác (counterparties: NCC + KH) từ sổ MCP
+if ($action === 'counterparties') {
+  if (!pw_table_exists($pdo, 'counterparties')) json_out(['ok' => true, 'installed' => false, 'parties' => []]);
+  $rows = $pdo->query("SELECT id, type, name, short_name, tax_code, phone, bank_account, bank_name, current_balance, is_active
+                       FROM counterparties ORDER BY name")->fetchAll();
+  json_out(['ok' => true, 'installed' => true, 'parties' => $rows]);
 }
 if (!pw_table_exists($pdo, 'accounting_entries')) {
   json_out(['ok' => true, 'installed' => false, 'entries' => [], 'summary' => null,

@@ -7,7 +7,11 @@ App.menu = [
   { group: 'TỔNG QUAN', items: [
     { id: 'dashboard', label: 'Tổng quan', icon: '🏠', title: 'Tổng quan' },
     { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
+  ]},
+  { group: 'SỔ CLAUDE (MCP)', items: [
     { id: 'ledger', label: 'Sổ giao dịch', icon: '📒', title: 'Sổ giao dịch (Claude / hóa đơn)', roles: ['admin', 'ketoan'] },
+    { id: 'mcp-inventory', label: 'Tồn kho (MCP)', icon: '🏬', title: 'Tồn kho (sổ Claude)', roles: ['admin', 'ketoan'] },
+    { id: 'mcp-parties', label: 'Đối tác (MCP)', icon: '🤝', title: 'Đối tác (sổ Claude)', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁN HÀNG', items: [
     { id: 'sales-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình bán hàng' },
@@ -83,7 +87,31 @@ App.go = function (id) {
   App.current = id;
   App.render();
   App.refresh();
+  if (App._closeMenu) App._closeMenu(); // đóng menu trên điện thoại sau khi chọn
   if (window.location.hash !== '#' + id) window.location.hash = '#' + id;
+};
+
+/* ---------- Giao diện: sáng/tối + menu điện thoại ---------- */
+App.initUI = function () {
+  if (App._uiReady) return;
+  App._uiReady = true;
+  const themeBtn = document.getElementById('theme-toggle');
+  const applyTheme = dark => {
+    document.body.classList.toggle('dark', dark);
+    if (themeBtn) themeBtn.textContent = dark ? '☀️' : '🌙';
+  };
+  applyTheme(localStorage.getItem('PW_THEME') === 'dark');
+  if (themeBtn) themeBtn.onclick = () => {
+    const dark = !document.body.classList.contains('dark');
+    localStorage.setItem('PW_THEME', dark ? 'dark' : 'light');
+    applyTheme(dark);
+  };
+  const sidebar = document.querySelector('.sidebar');
+  const backdrop = document.getElementById('menu-backdrop');
+  const mt = document.getElementById('menu-toggle');
+  App._closeMenu = () => { if (sidebar) sidebar.classList.remove('open'); if (backdrop) backdrop.classList.remove('show'); };
+  if (mt) mt.onclick = () => { sidebar.classList.toggle('open'); backdrop.classList.toggle('show'); };
+  if (backdrop) backdrop.onclick = App._closeMenu;
 };
 
 App.refresh = function () {
@@ -111,6 +139,8 @@ App.refresh = function () {
     case 'dashboard': return M.dashboard(root);
     case 'charts': return M.charts(root);
     case 'ledger': return M.ledger(root);
+    case 'mcp-inventory': return M.mcpInventory(root);
+    case 'mcp-parties': return M.mcpCounterparties(root);
     case 'sales-flow': return M.salesWorkflow(root);
     case 'quotes': return M.quotations(root);
     case 'orders': return M.salesOrdersPage(root);
@@ -256,6 +286,7 @@ App.logout = async function () {
 
 /* ---------- Khởi động ---------- */
 App.boot = async function () {
+  App.initUI();                                 // sáng/tối + menu điện thoại
   const ses = await PW.detectSession();        // xác định offline hay server
   if (ses.server && !ses.user) { M.loginScreen(); return; } // server nhưng chưa đăng nhập
   await PW.load();

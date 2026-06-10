@@ -86,6 +86,37 @@ M.dashboard = function (root) {
   agingRow.appendChild(agingCard('📤 Nợ phải trả theo hạn nợ', PW.agingPayable(), 'var(--orange)'));
   root.appendChild(agingRow);
 
+  // ===== Sổ giao dịch (Claude/MCP) — chỉ chế độ server =====
+  if (PW.mode === 'server') {
+    const mcpCard = U.el('div', { class: 'card' });
+    mcpCard.appendChild(U.el('div', { class: 'card-title' }, '📒 Sổ giao dịch — hóa đơn Claude ghi (' + period.label + ')'));
+    const mcpBody = U.el('div', null, U.el('div', { class: 'section-sub' }, 'Đang tải...'));
+    mcpCard.appendChild(mcpBody);
+    root.appendChild(mcpCard);
+    (async function () {
+      const qs = new URLSearchParams({ action: 'summary', from: period.from, to: period.to });
+      const r = await PW.api('ledger.php?' + qs.toString());
+      mcpBody.innerHTML = '';
+      if (r.status === 200 && r.data && r.data.ok && r.data.installed !== false && r.data.summary) {
+        const s = r.data.summary;
+        const g = U.el('div', { class: 'grid c4' });
+        [['Thu (Claude)', s.income || 0, 'var(--green)'], ['Chi (Claude)', s.expense || 0, 'var(--red)'],
+         ['Chênh lệch', (s.income || 0) - (s.expense || 0), 'var(--teal)'], ['Số giao dịch', s.count || 0, 'var(--navy)', true]]
+          .forEach(a => g.appendChild(U.el('div', null, [
+            U.el('div', { style: 'font-size:20px;font-weight:700;color:' + a[2] }, a[3] ? U.num(a[1]) : U.money(a[1])),
+            U.el('div', { class: 'sub text-muted', style: 'font-size:12px' }, a[0]),
+          ])));
+        mcpBody.appendChild(g);
+        mcpBody.appendChild(U.el('div', { class: 'section-sub mt8' },
+          U.el('a', { href: '#ledger', onclick: e => { e.preventDefault(); App.go('ledger'); } }, 'Xem chi tiết Sổ giao dịch →')));
+      } else if (r.data && r.data.installed === false) {
+        mcpBody.appendChild(U.el('div', { class: 'section-sub' }, 'Chưa cài Sổ giao dịch (package MCP) — chạy install.sh trên VPS.'));
+      } else {
+        mcpBody.appendChild(U.el('div', { class: 'section-sub' }, 'Chưa tải được sổ giao dịch.'));
+      }
+    })();
+  }
+
   // Tình hình tài chính + Doanh thu chi phí lợi nhuận
   const row2 = U.el('div', { class: 'grid c2' });
 
