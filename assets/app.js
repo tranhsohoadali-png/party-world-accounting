@@ -6,6 +6,7 @@ const App = { current: 'dashboard' };
 App.menu = [
   { group: 'TỔNG QUAN', items: [
     { id: 'dashboard', label: 'Tổng quan', icon: '🏠', title: 'Tổng quan' },
+    { id: 'analytics', label: 'Phân tích KD', icon: '📊', title: 'Phân tích kinh doanh', roles: ['admin', 'ketoan'] },
     { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'SỔ CLAUDE (MCP)', items: [
@@ -21,6 +22,7 @@ App.menu = [
     { id: 'returns', label: 'Trả lại hàng bán', icon: '↩️', title: 'Trả lại hàng bán' },
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: '🏷️', title: 'Giảm giá hàng bán' },
     { id: 'reconcile', label: 'Đối soát sàn', icon: '💸', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
+    { id: 'crm', label: 'CRM khách hàng', icon: '👑', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'MUA HÀNG', roles: ['admin', 'ketoan'], items: [
     { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
@@ -28,6 +30,7 @@ App.menu = [
     { id: 'purchases', label: 'Phiếu nhập mua', icon: '📦', title: 'Mua hàng & Công nợ phải trả', roles: ['admin', 'ketoan'] },
     { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: '↪️', title: 'Trả lại hàng mua', roles: ['admin', 'ketoan'] },
     { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: '🏷️', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
+    { id: 'stockcount', label: 'Kiểm kê kho', icon: '📋', title: 'Kiểm kê kho', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'TIỀN', items: [
     { id: 'cash', label: 'Tiền (Thu / Chi)', icon: '💵', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
@@ -142,6 +145,9 @@ App.refresh = function () {
     case 'catalog': return M.catalogHub(root);
     case 'dashboard': return M.dashboard(root);
     case 'charts': return M.charts(root);
+    case 'analytics': return M.analytics(root);
+    case 'crm': return M.crm(root);
+    case 'stockcount': return M.stockCount(root);
     case 'ledger': return M.ledger(root);
     case 'mcp-inventory': return M.mcpInventory(root);
     case 'mcp-parties': return M.mcpCounterparties(root);
@@ -220,7 +226,7 @@ App.settings = function (root) {
         quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
         purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
-        payrolls: [], productionOrders: [], channels: [],
+        payrolls: [], productionOrders: [], channels: [], stockAdjustments: [],
       };
       PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }

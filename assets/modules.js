@@ -38,6 +38,16 @@ M.dashboard = function (root) {
   periodBar.appendChild(periodSel);
   root.appendChild(periodBar);
 
+  // Cảnh báo tồn tối thiểu
+  const lowStock = PW.stockBelowMin();
+  if (lowStock.length) {
+    root.appendChild(U.el('div', { class: 'alert-bar' }, [
+      U.el('span', { class: 'a-ic' }, '⚠️'),
+      U.el('span', null, 'Có ' + lowStock.length + ' mặt hàng dưới mức tồn tối thiểu, cần nhập thêm.'),
+      U.el('a', { href: '#reports', onclick: e => { e.preventDefault(); App._reportPreset = 'lowstock'; App.go('reports'); } }, 'Xem chi tiết →'),
+    ]));
+  }
+
   // KPI badges
   const kpiRow = U.el('div', { class: 'grid c4' });
   const kpis = [
@@ -332,6 +342,7 @@ M.productForm = function (p) {
     cost: C.input({ type: 'number', value: p.cost, min: 0 }),
     price: C.input({ type: 'number', value: p.price, min: 0 }),
     stock: C.input({ type: 'number', value: p.openingStock, min: 0 }),
+    minStock: C.input({ type: 'number', value: p.minStock || 0, min: 0 }),
   };
   // ----- Định mức NVL (BOM) cho thành phẩm sản xuất -----
   let bom = (p.bom || []).map(b => Object.assign({}, b));
@@ -390,6 +401,7 @@ M.productForm = function (p) {
       C.field('Tên hàng hóa', f.name, { required: true, full: true }),
       C.field('Đơn vị tính', f.unit),
       C.field('Tồn kho đầu kỳ', f.stock),
+      C.field('Tồn tối thiểu (cảnh báo)', f.minStock),
       C.field('Giá vốn (đ)', f.cost),
       C.field('Giá bán (đ)', f.price),
     ]),
@@ -410,6 +422,7 @@ M.productForm = function (p) {
           group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
           cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
           openingStock: Number(f.stock.value) || 0,
+          minStock: Number(f.minStock.value) || 0,
           bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
           channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
         };
@@ -624,6 +637,8 @@ M.partnerForm = function (kind, x) {
   const empSel = C.select([{ value: '', label: '-- Không --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name }))), x.employeeId || '');
   // Điều khoản TT mặc định
   const termSel = C.select([{ value: '', label: '-- Mặc định --' }].concat(PW.data.paymentTerms.map(t => ({ value: t.id, label: t.name }))), x.paymentTermId || '');
+  // Hoa hồng CTV (chỉ khách hàng)
+  const commI = isCus ? C.input({ type: 'number', value: x.commissionPercent || 0, min: 0, max: 100 }) : null;
 
   const header = U.el('div', { class: 'form-grid' }, [
     typeRow,
@@ -637,6 +652,7 @@ M.partnerForm = function (kind, x) {
     C.field('Nợ đầu kỳ ' + (isCus ? 'phải thu' : 'phải trả') + ' (đ)', f.debt),
     C.field('Nhóm ' + (isCus ? 'khách hàng' : 'NCC'), groupRow),
     C.field('Nhân viên phụ trách', empSel),
+    isCus ? C.field('Hoa hồng CTV (%) — để 0 nếu không phải CTV', commI) : null,
   ]);
 
   const tabs = C.tabs([
@@ -670,6 +686,8 @@ M.partnerForm = function (kind, x) {
       contactPhone: f.contactPhone.value.trim(), rep: f.rep.value.trim(),
       bankName: f.bankName.value.trim(), bankAccount: f.bankAccount.value.trim(),
       note: noteTa.value.trim(), openingDebt: Number(f.debt.value) || 0,
+      commissionPercent: commI ? (Number(commI.value) || 0) : (x.commissionPercent || 0),
+      isCollaborator: commI ? (Number(commI.value) > 0) : (x.isCollaborator || false),
     };
   }
   function save(addAnother) {

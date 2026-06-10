@@ -234,6 +234,25 @@ input.inp:focus, select.inp:focus, textarea.inp:focus, input.search:focus { outl
 .hero-banner { width: 100%; height: auto; display: block; border-radius: 14px; margin-bottom: 18px;
   box-shadow: 0 6px 20px rgba(26,58,107,.14); }
 
+/* Thẻ KPI gradient (trang Phân tích) */
+.kpi-fancy { border-radius: 14px; padding: 18px 20px; color: #fff; box-shadow: 0 8px 22px rgba(0,0,0,.14);
+  position: relative; overflow: hidden; }
+.kpi-fancy .kf-top { display: flex; justify-content: space-between; align-items: center; }
+.kpi-fancy .kf-label { font-size: 13px; opacity: .96; font-weight: 600; letter-spacing: .3px; }
+.kpi-fancy .kf-ic { font-size: 22px; opacity: .92; }
+.kpi-fancy .kf-value { font-size: 26px; font-weight: 800; margin: 10px 0 8px; letter-spacing: .3px; }
+.kpi-fancy .kf-trend { font-size: 12px; }
+.trend { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.22);
+  padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+.trend.down { background: rgba(0,0,0,.16); }
+
+/* Cảnh báo tồn kho trên dashboard */
+.alert-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px;
+  background: #fff6e5; border: 1px solid #f3d79b; color: #8a5a00; margin-bottom: 18px; }
+body.dark .alert-bar { background: #2e2812; border-color: #5a4a1e; color: #e0c97a; }
+.alert-bar .a-ic { font-size: 20px; }
+.alert-bar a { margin-left: auto; font-weight: 700; }
+
 /* Trang Danh mục (hub) */
 .cat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px 32px; margin-top: 8px; }
 @media (max-width: 900px) { .cat-grid { grid-template-columns: 1fr 1fr; } }

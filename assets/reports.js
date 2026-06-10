@@ -19,6 +19,10 @@ M.reports = function (root) {
     { value: 'receivable', label: 'Công nợ phải thu' },
     { value: 'payable', label: 'Công nợ phải trả' },
     { value: 'cashbook', label: 'Sổ quỹ tiền (thu/chi)' },
+    { value: 'lowstock', label: 'Cảnh báo tồn tối thiểu' },
+    { value: 'vat', label: 'Thuế GTGT (đầu ra - đầu vào)' },
+    { value: 'commission', label: 'Hoa hồng CTV' },
+    { value: 'balance', label: 'Cân đối kế toán (đơn giản)' },
   ], App._reportPreset || 'pl');
   App._reportPreset = null;
 
@@ -54,6 +58,10 @@ M.reports = function (root) {
     if (type === 'receivable') return M.reportReceivable(host);
     if (type === 'payable') return M.reportPayable(host);
     if (type === 'cashbook') return M.reportCashbook(host, from, to);
+    if (type === 'lowstock') return M.reportLowStock(host);
+    if (type === 'vat') return M.reportVAT(host, from, to);
+    if (type === 'commission') return M.reportCommission(host, from, to);
+    if (type === 'balance') return M.reportBalance(host);
   }
   function exCell(s) {
     if (s === '' || s === '-') return '';
@@ -369,4 +377,68 @@ M.reportCashbook = function (host, from, to) {
   ] }));
   host.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right;font-weight:700' },
     'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
+};
+
+M.reportLowStock = function (host) {
+  const rows = PW.stockBelowMin().sort((a, b) => (a.stock - a.min) - (b.stock - b.min));
+  host.appendChild(C.table(rows, [
+    { label: 'Mã', render: r => U.esc(r.p.code) },
+    { label: 'Tên hàng', render: r => U.esc(r.p.name) },
+    { label: 'ĐVT', center: true, render: r => U.esc(r.p.unit) },
+    { label: 'Tồn hiện tại', num: true, render: r => `<b class="text-red">${U.num(r.stock)}</b>` },
+    { label: 'Tồn tối thiểu', num: true, render: r => U.num(r.min) },
+    { label: 'Cần nhập thêm', num: true, render: r => `<b>${U.num(Math.max(0, r.min - r.stock))}</b>` },
+  ], { empty: 'Tất cả hàng hóa đều trên mức tồn tối thiểu 👍' }));
+};
+
+M.reportVAT = function (host, from, to) {
+  const out = PW.vatOutput(from, to), inp = PW.vatInput(from, to), pay = out - inp;
+  const t = U.el('table', { class: 'tbl' });
+  [['Thuế GTGT đầu ra (bán hàng)', out, 'text-green'],
+   ['Thuế GTGT đầu vào (mua hàng)', -inp, 'text-red'],
+   [pay >= 0 ? 'Thuế GTGT phải nộp' : 'Thuế GTGT còn được khấu trừ', pay, pay >= 0 ? 'text-red' : 'text-green']]
+    .forEach((r, i) => t.appendChild(U.el('tr', null, [
+      U.el('td', { style: i === 2 ? 'font-weight:700' : '' }, r[0]),
+      U.el('td', { class: 'num ' + r[2], style: i === 2 ? 'font-weight:700' : '' }, U.money(r[1])),
+    ])));
+  host.appendChild(U.el('div', { class: 'table-wrap' }, t));
+};
+
+M.reportCommission = function (host, from, to) {
+  const rows = PW.data.customers.filter(c => Number(c.commissionPercent || 0) > 0).map(c => {
+    const rev = PW.data.salesInvoices.filter(si => si.customerId === c.id && si.date >= from && si.date <= to).reduce((s, si) => s + PW.invoiceTotal(si), 0);
+    return { c, pct: Number(c.commissionPercent), rev, comm: Math.round(rev * Number(c.commissionPercent) / 100) };
+  }).sort((a, b) => b.comm - a.comm);
+  const totC = rows.reduce((s, r) => s + r.comm, 0);
+  host.appendChild(C.table(rows, [
+    { label: 'Mã', render: r => U.esc(r.c.code) },
+    { label: 'CTV / Đại lý', render: r => U.esc(r.c.name) },
+    { label: '% HH', num: true, render: r => r.pct + '%' },
+    { label: 'Doanh số', num: true, render: r => U.money(r.rev) },
+    { label: 'Hoa hồng', num: true, render: r => `<b class="text-green">${U.money(r.comm)}</b>` },
+  ], { empty: 'Chưa có CTV (đặt % hoa hồng trong form khách hàng)', footer: [
+    { html: 'TỔNG HOA HỒNG', colspan: 4 }, { html: U.money(totC), num: true },
+  ] }));
+};
+
+M.reportBalance = function (host) {
+  const cash = PW.totalCash(), ar = PW.totalReceivable(), inv = PW.inventoryValue();
+  const assets = cash + ar + inv, ap = PW.totalPayable(), equity = assets - ap;
+  const t = U.el('table', { class: 'tbl' });
+  const sec = txt => U.el('tr', { style: 'background:#f7f9fb' }, [U.el('td', { style: 'font-weight:700' }, txt), U.el('td')]);
+  const row = (label, val, indent, bold, cls) => U.el('tr', null, [
+    U.el('td', { style: (indent ? 'padding-left:24px;' : '') + (bold ? 'font-weight:700' : '') }, label),
+    U.el('td', { class: 'num ' + (cls || ''), style: bold ? 'font-weight:700' : '' }, U.money(val)),
+  ]);
+  t.appendChild(sec('TÀI SẢN'));
+  t.appendChild(row('Tiền (mặt + ngân hàng)', cash, true));
+  t.appendChild(row('Phải thu khách hàng', ar, true));
+  t.appendChild(row('Hàng tồn kho', inv, true));
+  t.appendChild(row('TỔNG TÀI SẢN', assets, false, true));
+  t.appendChild(sec('NGUỒN VỐN'));
+  t.appendChild(row('Phải trả nhà cung cấp', ap, true, false, 'text-red'));
+  t.appendChild(row('Vốn chủ sở hữu (ước tính)', equity, true));
+  t.appendChild(row('TỔNG NGUỒN VỐN', ap + equity, false, true));
+  host.appendChild(U.el('div', { class: 'table-wrap' }, t));
+  host.appendChild(U.el('div', { class: 'section-sub mt8' }, 'Cân đối đơn giản (snapshot hiện tại). Vốn chủ sở hữu = Tổng tài sản − Nợ phải trả.'));
 };

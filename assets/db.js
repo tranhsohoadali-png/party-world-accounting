@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders', 'channels'];
+    'payrolls', 'productionOrders', 'channels', 'stockAdjustments'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -156,7 +156,46 @@ PW.stockOf = function (productId) {
     if (po.productId === productId) qty += Number(po.qty);
     (po.materials || []).forEach(m => { if (m.productId === productId) qty -= Number(m.qty); });
   });
+  // Điều chỉnh kiểm kê (delta + hoặc -)
+  PW.data.stockAdjustments.forEach(ad => {
+    (ad.items || []).forEach(it => { if (it.productId === productId) qty += Number(it.delta || 0); });
+  });
   return qty;
+};
+
+// Danh sách hàng dưới mức tồn tối thiểu
+PW.stockBelowMin = function () {
+  return PW.data.products
+    .filter(p => Number(p.minStock || 0) > 0 && PW.stockOf(p.id) < Number(p.minStock))
+    .map(p => ({ p, stock: PW.stockOf(p.id), min: Number(p.minStock) }));
+};
+
+// Thuế GTGT đầu ra / đầu vào trong khoảng
+PW.vatOutput = function (from, to) {
+  return PW.data.salesInvoices.filter(si => (!from || si.date >= from) && (!to || si.date <= to))
+    .reduce((s, si) => s + Math.round(PW.invoiceTotal(si) * Number(si.vatRate || 0) / 100), 0);
+};
+PW.vatInput = function (from, to) {
+  return PW.data.purchases.filter(pu => (!from || pu.date >= from) && (!to || pu.date <= to))
+    .reduce((s, pu) => s + Math.round(PW.purchaseTotal(pu) * Number(pu.vatRate || 0) / 100), 0);
+};
+
+// Hoa hồng CTV của 1 khách trong khoảng
+PW.commissionOf = function (customer, from, to) {
+  const pct = Number(customer.commissionPercent || 0);
+  if (pct <= 0) return 0;
+  const rev = PW.data.salesInvoices
+    .filter(si => si.customerId === customer.id && (!from || si.date >= from) && (!to || si.date <= to))
+    .reduce((s, si) => s + PW.invoiceTotal(si), 0);
+  return Math.round(rev * pct / 100);
+};
+
+// Thống kê 1 khách hàng (cho CRM): tổng mua, số đơn, lần mua cuối
+PW.customerStats = function (customerId) {
+  const invs = PW.data.salesInvoices.filter(si => si.customerId === customerId);
+  let total = 0, last = '';
+  invs.forEach(si => { total += PW.invoiceTotal(si); if (si.date > last) last = si.date; });
+  return { total, count: invs.length, last };
 };
 
 // Giá vốn NVL theo định mức (BOM) cho 1 thành phẩm
@@ -419,7 +458,7 @@ PW.seed = function () {
   const today = '2026-06-03';
   const d = ymd => ymd;
   return {
-    meta: { companyName: 'DALI', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1, SX: 1 } },
+    meta: { companyName: 'DALI', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1, SX: 1, KK: 0 } },
     cashAccounts: [
       { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 5000000 },
       { id: 'acc_bank', name: 'Tiền gửi ngân hàng (Vietcombank)', type: 'bank', opening: 30000000 },
@@ -431,16 +470,16 @@ PW.seed = function () {
       { id: 'p2', code: 'TSH3040', name: 'Tranh số hóa 30x40 - Hoa', unit: 'Bức', group: 'Tranh thành phẩm', cost: 18000, price: 35000, openingStock: 200 },
       { id: 'p3', code: 'TTM-A3', name: 'Tranh tô màu theo số A3 (bộ)', unit: 'Bộ', group: 'Tranh thành phẩm', cost: 85000, price: 150000, openingStock: 60 },
       { id: 'p4', code: 'KH4050', name: 'Khung tranh gỗ 40x50', unit: 'Cái', group: 'Khung', cost: 12000, price: 25000, openingStock: 150 },
-      { id: 'p5', code: 'MAU24', name: 'Bộ màu acrylic 24 màu', unit: 'Bộ', group: 'Vật tư', cost: 8000, price: 20000, openingStock: 300 },
+      { id: 'p5', code: 'MAU24', name: 'Bộ màu acrylic 24 màu', unit: 'Bộ', group: 'Vật tư', cost: 8000, price: 20000, openingStock: 300, minStock: 280 },
       { id: 'p6', code: 'COVE12', name: 'Bộ cọ vẽ 12 cây', unit: 'Bộ', group: 'Vật tư', cost: 5000, price: 15000, openingStock: 250 },
-      { id: 'p7', code: 'CANVAS', name: 'Toan canvas (mét)', unit: 'Mét', group: 'Vật tư', cost: 3000, price: 10000, openingStock: 400 },
+      { id: 'p7', code: 'CANVAS', name: 'Toan canvas (mét)', unit: 'Mét', group: 'Vật tư', cost: 3000, price: 10000, openingStock: 400, minStock: 300 },
       { id: 'p8', code: 'TDD3040', name: 'Tranh đính đá 30x40', unit: 'Bức', group: 'Tranh thành phẩm', cost: 22000, price: 45000, openingStock: 90 },
       { id: 'p9', code: 'GIAYA3', name: 'Giấy in tranh A3 (ream)', unit: 'Ream', group: 'Vật tư', cost: 24000, price: 48000, openingStock: 80 },
       { id: 'p10', code: 'STK-SO', name: 'Sticker số dán tranh', unit: 'Bộ', group: 'Phụ liệu', cost: 15000, price: 35000, openingStock: 100 },
     ],
     customers: [
       { id: 'c1', code: 'KH001', name: 'Shop Tranh Hồng Hà', phone: '0901234567', address: 'Cầu Giấy, Hà Nội', openingDebt: 0 },
-      { id: 'c2', code: 'KH002', name: 'Đại lý Tranh ABC', phone: '0912345678', address: 'Q.3, TP.HCM', openingDebt: 2500000 },
+      { id: 'c2', code: 'KH002', name: 'Đại lý Tranh ABC', phone: '0912345678', address: 'Q.3, TP.HCM', openingDebt: 2500000, isCollaborator: true, commissionPercent: 5 },
       { id: 'c3', code: 'KH003', name: 'Shopee DALI Official', phone: '0987654321', address: 'Online', openingDebt: 0 },
       { id: 'c4', code: 'KH004', name: 'Khách lẻ', phone: '', address: '', openingDebt: 0 },
     ],
@@ -457,7 +496,7 @@ PW.seed = function () {
       { id: 'pm2', code: 'PC00002', date: d('2026-05-20'), accountId: 'acc_bank', supplierId: 's2', amount: 3000000, reason: 'Trả nợ nhà cung cấp', note: '' },
     ],
     salesInvoices: [
-      { id: 'h1', code: 'HD00001', date: d('2026-05-05'), customerId: 'c1', channelId: 'ch_dl',
+      { id: 'h1', code: 'HD00001', date: d('2026-05-05'), customerId: 'c1', channelId: 'ch_dl', vatRate: 8,
         items: [{ productId: 'p3', qty: 10, price: 150000 }, { productId: 'p1', qty: 5, price: 75000 }],
         discount: 0, paid: 1875000, paidAccountId: 'acc_cash', note: 'Bán sỉ shop tranh' },
       { id: 'h2', code: 'HD00002', date: d('2026-05-15'), customerId: 'c2', dueDate: d('2026-05-30'), channelId: 'ch_le',
@@ -533,6 +572,7 @@ PW.seed = function () {
         materials: [{ productId: 'p7', qty: 60 }, { productId: 'p5', qty: 15 }, { productId: 'p4', qty: 50 }, { productId: 'p10', qty: 50 }],
         laborCost: 750000, otherCost: 50000, note: 'Sản xuất tranh 40x50 đợt 1' },
     ],
+    stockAdjustments: [],
     channels: [
       { id: 'ch_le', name: 'Bán lẻ', feePercent: 0, isPlatform: false },
       { id: 'ch_dl', name: 'Đại lý / Sỉ', feePercent: 0, isPlatform: false },
