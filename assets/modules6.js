@@ -10,6 +10,7 @@ M.CATALOGS = {
       { k: 'name', l: 'Họ và tên', req: true, full: true },
       { k: 'phone', l: 'Điện thoại' },
       { k: 'position', l: 'Chức vụ' },
+      { k: 'tkCode', l: 'Mã chấm công (mau.tranhdali.vn)' },
       { k: 'salaryBase', l: 'Lương cơ bản (đ)', type: 'number' },
       { k: 'allowResp', l: 'Phụ cấp trách nhiệm (đ)', type: 'number' },
       { k: 'allowTransport', l: 'Phụ cấp xăng xe (đ)', type: 'number' },

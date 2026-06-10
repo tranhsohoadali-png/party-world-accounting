@@ -111,6 +111,8 @@ M.payrollDetail = function (id) {
   toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' },
     '💰 Bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) + ' (ngày công chuẩn: ' + p.standardDays + ')'));
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('📥 Lấy chấm công', () => M.payrollImportServer(p), 'sm'));
+  toolbar.appendChild(C.btn('📋 Dán chấm công', () => M.payrollPasteTK(p), 'sm'));
   toolbar.appendChild(C.btn('📊 Xuất Excel', () => exportXls(), 'sm'));
   toolbar.appendChild(C.btn('💸 Ghi nhận chi lương', () => M.payrollPay(p), 'sm'));
   toolbar.appendChild(C.btn('💾 Lưu', () => { PW.save(); U.toast('Đã lưu bảng lương'); }, 'primary'));
@@ -240,6 +242,123 @@ M.payslip = function (p, ln) {
   const w = window.open('', '_blank');
   if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
   w.document.write(html); w.document.close();
+};
+
+/* ============================================================
+   KẾT NỐI DỮ LIỆU CHẤM CÔNG (mau.tranhdali.vn/api/luong)
+   Bộ ánh xạ linh hoạt: tự nhận nhiều kiểu tên trường.
+   ============================================================ */
+
+// Chuyển giá trị về số (chấp nhận "25,75" kiểu VN, "1.000", số thật)
+M._tkNum = function (v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return v;
+  let s = String(v).trim();
+  if (s.indexOf(',') >= 0) s = s.replace(/\./g, '').replace(',', '.'); // VN: . ngăn nghìn, , thập phân
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+};
+function _pick(obj, keys) {
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
+    // thử không phân biệt hoa thường
+    const found = Object.keys(obj).find(o => o.toLowerCase() === k.toLowerCase());
+    if (found && obj[found] !== '' && obj[found] != null) return obj[found];
+  }
+  return undefined;
+}
+
+// Lấy mảng bản ghi từ nhiều dạng JSON khác nhau
+M.tkExtractList = function (raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== 'object') return [];
+  const cands = ['data', 'employees', 'nhanvien', 'nhan_vien', 'result', 'results', 'items', 'rows', 'list', 'luong', 'salary', 'cham_cong', 'chamcong'];
+  for (const k of cands) if (Array.isArray(raw[k])) return raw[k];
+  if (raw.data && typeof raw.data === 'object') for (const k of cands) if (Array.isArray(raw.data[k])) return raw.data[k];
+  const vals = Object.values(raw).filter(v => v && typeof v === 'object');
+  if (vals.length && vals.every(v => !Array.isArray(v))) return vals;
+  return [];
+};
+
+// Chuẩn hóa 1 bản ghi chấm công -> {code, name, totalDays, allowDays, otHours, lateCount}
+M.tkNormalize = function (r) {
+  return {
+    code: _pick(r, ['ma', 'maNV', 'ma_nv', 'maNhanVien', 'ma_nhan_vien', 'code', 'employeeCode', 'msnv', 'id', 'manv']),
+    name: _pick(r, ['ten', 'tenNV', 'ten_nv', 'tenNhanVien', 'ten_nhan_vien', 'hoTen', 'ho_ten', 'hoVaTen', 'ho_va_ten', 'name', 'fullname', 'full_name', 'tennhanvien']),
+    totalDays: M._tkNum(_pick(r, ['tong_ngay_cong', 'tongNgayCong', 'tong_ngay_cong_thuc_te', 'tongNgayCongThucTe', 'tongcong', 'tong_cong', 'totalDays', 'tongNgayCongThanhToan'])),
+    allowDays: M._tkNum(_pick(r, ['ngay_cong_phu_cap', 'ngayCongPhuCap', 'ngay_cong_co_phu_cap', 'ngay_cong_thuc_te', 'ngayCongThucTe', 'di_lam', 'diLam', 'ngay_di_lam', 'ngaycong', 'ngay_cong', 'ngayCong', 'cong', 'allowDays'])),
+    otHours: M._tkNum(_pick(r, ['tang_ca', 'tangCa', 'tang_ca_gio', 'tangCaGio', 'gio_tang_ca', 'gioTangCa', 'otHours', 'overtime', 'overtime_hours', 'tangca'])),
+    lateCount: M._tkNum(_pick(r, ['di_muon', 'diMuon', 'so_lan_di_muon', 'soLanDiMuon', 'late', 'lateCount', 'dimuon'])),
+  };
+};
+
+function _norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+
+// Ghép dữ liệu chấm công vào các dòng lương + báo cáo
+M.tkApplyAndReport = function (p, rawList) {
+  const recs = (rawList || []).map(M.tkNormalize);
+  if (!recs.length) { U.toast('Không đọc được dữ liệu nhân viên từ nguồn chấm công', 'error'); return; }
+  let matched = 0; const unmatched = [];
+  recs.forEach(rec => {
+    let line = null;
+    // 1) theo mã chấm công / mã NV
+    if (rec.code != null) {
+      line = p.lines.find(ln => { const e = empById(ln.employeeId); return e && (_norm(e.tkCode) === _norm(rec.code) || _norm(e.code) === _norm(rec.code)); });
+    }
+    // 2) theo tên
+    if (!line && rec.name) {
+      line = p.lines.find(ln => { const e = empById(ln.employeeId); return e && _norm(e.name) === _norm(rec.name); });
+    }
+    if (line) {
+      if (rec.totalDays != null) line.totalDays = rec.totalDays;
+      line.allowDays = (rec.allowDays != null) ? rec.allowDays : (rec.totalDays != null ? rec.totalDays : line.allowDays);
+      if (rec.otHours != null) line.otHours = rec.otHours;
+      matched++;
+    } else {
+      unmatched.push(rec.name || rec.code || '(không rõ)');
+    }
+  });
+  PW.save();
+  M.payrollDetail(p.id); // dựng lại bảng để hiện số mới
+  let msg = 'Đã cập nhật chấm công cho ' + matched + '/' + recs.length + ' nhân viên.';
+  if (unmatched.length) msg += ' Chưa khớp (' + unmatched.length + '): ' + unmatched.slice(0, 6).join(', ') + (unmatched.length > 6 ? '...' : '') + '. Hãy điền "Mã chấm công" cho NV này trong Danh mục.';
+  U.toast(msg, unmatched.length ? 'error' : 'success');
+};
+
+// Lấy tự động từ server (proxy PHP)
+M.payrollImportServer = async function (p) {
+  if (PW.mode !== 'server') {
+    return U.toast('Lấy tự động chỉ chạy khi phần mềm chạy trên server (ketoan.tranhdali.vn). Hãy dùng nút "Dán chấm công".', 'error');
+  }
+  U.toast('Đang lấy dữ liệu chấm công tháng ' + p.month + '...');
+  const r = await PW.api('timekeeping.php?month=' + p.month);
+  if (r.status !== 200 || !r.data || !r.data.ok) {
+    return U.toast((r.data && r.data.error) || 'Lỗi gọi API chấm công', 'error');
+  }
+  if (r.data.raw != null) {
+    return U.toast('Nguồn chấm công trả về không phải JSON. Hãy gửi tôi mẫu dữ liệu để chỉnh.', 'error');
+  }
+  M.tkApplyAndReport(p, M.tkExtractList(r.data.data));
+};
+
+// Dán JSON chấm công thủ công (dùng được cả offline)
+M.payrollPasteTK = function (p) {
+  const ta = C.textarea({ rows: 10, placeholder: 'Dán nội dung JSON từ:\nhttps://mau.tranhdali.vn/api/luong?key=...&month=' + p.month });
+  ta.style.fontFamily = 'monospace'; ta.style.fontSize = '12px';
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' }, 'Mở link API chấm công (có khoá) trên trình duyệt, copy toàn bộ kết quả JSON rồi dán vào đây. Hệ thống sẽ tự điền ngày công, tăng ca cho nhân viên khớp.'),
+    ta,
+  ]);
+  C.modal({
+    title: '📋 Dán dữ liệu chấm công (JSON)', wide: true, body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Đọc & điền', () => {
+      let data;
+      try { data = JSON.parse(ta.value); }
+      catch (e) { return U.toast('JSON không hợp lệ', 'error'); }
+      C.closeModal();
+      M.tkApplyAndReport(p, M.tkExtractList(data));
+    }, 'primary')],
+  });
 };
 
 /* ---------- Ghi nhận chi lương (tạo phiếu chi) ---------- */

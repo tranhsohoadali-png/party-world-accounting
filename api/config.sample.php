@@ -12,4 +12,8 @@ return [
   'db_user' => 'partyworld_user', // user MySQL
   'db_pass' => 'ĐỔI_MẬT_KHẨU',    // mật khẩu MySQL
   'db_charset' => 'utf8mb4',
+
+  // Kết nối nguồn chấm công (mau.tranhdali.vn)
+  'timekeeping_url' => 'https://mau.tranhdali.vn/api/luong',
+  'timekeeping_key' => 'DAN_KHOA_API_CHAM_CONG_VAO_DAY',
 ];
