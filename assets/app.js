@@ -31,6 +31,9 @@ App.menu = [
   { group: 'TIỀN', items: [
     { id: 'cash', label: 'Tiền (Thu / Chi)', icon: '💵', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
   ]},
+  { group: 'SẢN XUẤT', items: [
+    { id: 'production', label: 'Lệnh sản xuất', icon: '🏭', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
+  ]},
   { group: 'NHÂN SỰ', items: [
     { id: 'payroll', label: 'Tính lương', icon: '💰', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
   ]},
@@ -160,6 +163,7 @@ App.refresh = function () {
     case 'settings': return App.settings(root);
     case 'users': return M.usersAdmin(root);
     case 'payroll': return M.payrolls(root);
+    case 'production': return M.production(root);
   }
 };
 
@@ -214,7 +218,7 @@ App.settings = function (root) {
         quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
         purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
-        payrolls: [],
+        payrolls: [], productionOrders: [],
       };
       PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }

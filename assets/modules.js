@@ -332,6 +332,42 @@ M.productForm = function (p) {
     price: C.input({ type: 'number', value: p.price, min: 0 }),
     stock: C.input({ type: 'number', value: p.openingStock, min: 0 }),
   };
+  // ----- Định mức NVL (BOM) cho thành phẩm sản xuất -----
+  let bom = (p.bom || []).map(b => Object.assign({}, b));
+  const bomBody = U.el('tbody');
+  const bomCostCell = U.el('span', { class: 'text-muted' });
+  function bomCost() { return bom.reduce((s, b) => { const m = PW.product(b.materialId); return s + (Number(b.qty) || 0) * Number(m ? m.cost : 0); }, 0); }
+  function refreshBomCost() { bomCostCell.textContent = U.money(bomCost()) + ' đ'; }
+  function drawBom() {
+    bomBody.innerHTML = '';
+    bom.forEach((b, idx) => {
+      const sel = C.select([{ value: '', label: '-- Chọn NVL --' }].concat(
+        PW.data.products.filter(x => x.id !== (p.id || '')).map(x => ({ value: x.id, label: x.code + ' - ' + x.name }))), b.materialId);
+      sel.addEventListener('change', () => { b.materialId = sel.value; drawBom(); refreshBomCost(); });
+      const q = U.el('input', { type: 'number', value: b.qty, min: 0, step: 'any', style: 'text-align:right' });
+      q.addEventListener('input', () => { b.qty = Number(q.value) || 0; refreshBomCost(); });
+      bomBody.appendChild(U.el('tr', null, [
+        U.el('td', null, sel),
+        U.el('td', { style: 'width:120px' }, q),
+        U.el('td', { class: 'center', style: 'width:40px' }, U.el('button', { class: 'btn sm danger', onclick: () => { bom.splice(idx, 1); drawBom(); refreshBomCost(); } }, '×')),
+      ]));
+    });
+    refreshBomCost();
+  }
+  const bomTable = U.el('table', { class: 'items-tbl' });
+  bomTable.appendChild(U.el('thead', null, U.el('tr', null, [U.el('th', null, 'Nguyên vật liệu'), U.el('th', null, 'Định mức /1 thành phẩm'), U.el('th', null, '')])));
+  bomTable.appendChild(bomBody);
+  const bomSection = U.el('div', null, [
+    U.el('div', { class: 'card-title mt16', style: 'font-size:14px' }, '🧩 Định mức NVL (nếu là thành phẩm sản xuất)'),
+    U.el('div', { class: 'section-sub' }, 'Khai báo NVL cần để làm ra 1 đơn vị thành phẩm — dùng cho Lệnh sản xuất tính giá thành. Để trống nếu đây là NVL/hàng mua.'),
+    U.el('div', { class: 'table-wrap' }, bomTable),
+    U.el('div', { class: 'mt8', style: 'display:flex;justify-content:space-between;align-items:center' }, [
+      C.btn('+ Thêm NVL', () => { bom.push({ materialId: '', qty: 1 }); drawBom(); }, 'sm'),
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Giá vốn NVL theo định mức: '), bomCostCell]),
+    ]),
+  ]);
+  drawBom();
+
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
       C.field('Mã hàng', f.code, { required: true }),
@@ -344,9 +380,10 @@ M.productForm = function (p) {
     ]),
     M.datalist('dl-pgroups', PW.data.productGroups.map(g => g.name)),
     M.datalist('dl-punits', PW.data.units.map(u => u.name)),
+    bomSection,
   ]);
   C.modal({
-    title: isNew ? 'Thêm hàng hóa' : 'Sửa hàng hóa',
+    title: isNew ? 'Thêm hàng hóa' : 'Sửa hàng hóa', wide: true,
     body,
     footer: [
       C.btn('Hủy', C.closeModal),
@@ -357,6 +394,7 @@ M.productForm = function (p) {
           group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
           cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
           openingStock: Number(f.stock.value) || 0,
+          bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
         };
         if (isNew) PW.data.products.push(obj);
         else Object.assign(p, obj);

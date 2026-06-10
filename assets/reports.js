@@ -13,6 +13,7 @@ M.reports = function (root) {
     { value: 'revenueByEmployee', label: 'Doanh thu theo nhân viên bán' },
     { value: 'purchaseByItem', label: 'Tổng hợp mua hàng theo mặt hàng' },
     { value: 'inventory', label: 'Tồn kho hiện tại' },
+    { value: 'productCost', label: 'Giá thành sản phẩm (sản xuất)' },
     { value: 'inout', label: 'Nhập - Xuất - Tồn kho' },
     { value: 'receivable', label: 'Công nợ phải thu' },
     { value: 'payable', label: 'Công nợ phải trả' },
@@ -46,6 +47,7 @@ M.reports = function (root) {
     if (type === 'revenueByEmployee') return M.reportRevenueByEmployee(host, from, to);
     if (type === 'purchaseByItem') return M.reportPurchaseByItem(host, from, to);
     if (type === 'inventory') return M.reportInventory(host);
+    if (type === 'productCost') return M.reportProductCost(host, from, to);
     if (type === 'inout') return M.reportInOut(host, from, to);
     if (type === 'receivable') return M.reportReceivable(host);
     if (type === 'payable') return M.reportPayable(host);
@@ -192,6 +194,35 @@ M.reportPurchaseByItem = function (host, from, to) {
     { html: U.num(totQty), num: true },
     { html: U.money(totVal), num: true },
   ] }));
+};
+
+M.reportProductCost = function (host, from, to) {
+  // Giá thành SX trung bình từ các lệnh sản xuất trong kỳ (theo từng thành phẩm)
+  const prodAgg = {};
+  PW.data.productionOrders.filter(po => po.date >= from && po.date <= to).forEach(po => {
+    prodAgg[po.productId] = prodAgg[po.productId] || { qty: 0, cost: 0 };
+    prodAgg[po.productId].qty += Number(po.qty);
+    prodAgg[po.productId].cost += PW.productionTotalCost(po);
+  });
+  // Thành phẩm = có BOM hoặc từng được sản xuất
+  const rows = PW.data.products.filter(p => (p.bom && p.bom.length) || prodAgg[p.id]).map(p => {
+    const nvl = PW.bomMaterialCost(p);
+    const ag = prodAgg[p.id];
+    const avgCost = ag && ag.qty > 0 ? ag.cost / ag.qty : null;
+    const cost = avgCost != null ? avgCost : Number(p.cost || 0);
+    const profit = Number(p.price || 0) - cost;
+    return { p, nvl, avgCost, cost, price: Number(p.price || 0), profit };
+  });
+  host.appendChild(C.table(rows, [
+    { label: 'Mã', render: r => U.esc(r.p.code) },
+    { label: 'Thành phẩm', render: r => U.esc(r.p.name) },
+    { label: 'NVL/đv (định mức)', num: true, render: r => U.money(r.nvl) },
+    { label: 'Giá thành SX TB', num: true, render: r => r.avgCost != null ? U.money(r.avgCost) : '<span class="text-muted">—</span>' },
+    { label: 'Giá vốn đang dùng', num: true, render: r => U.money(r.cost) },
+    { label: 'Giá bán', num: true, render: r => U.money(r.price) },
+    { label: 'Lãi gộp/đv', num: true, render: r => `<b class="${r.profit >= 0 ? 'text-green' : 'text-red'}">${U.money(r.profit)}</b>` },
+    { label: '% lãi', num: true, render: r => (r.price > 0 ? (r.profit / r.price * 100).toFixed(1) : '0') + '%' },
+  ], { empty: 'Chưa có thành phẩm nào có định mức hoặc lệnh sản xuất trong kỳ' }));
 };
 
 M.reportInventory = function (host) {

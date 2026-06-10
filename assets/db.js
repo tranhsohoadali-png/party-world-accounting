@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls'];
+    'payrolls', 'productionOrders'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -151,7 +151,36 @@ PW.stockOf = function (productId) {
   PW.data.purchaseReturns.forEach(pr => {
     pr.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
   });
+  // Sản xuất: thành phẩm nhập kho (+), NVL tiêu hao (-)
+  PW.data.productionOrders.forEach(po => {
+    if (po.productId === productId) qty += Number(po.qty);
+    (po.materials || []).forEach(m => { if (m.productId === productId) qty -= Number(m.qty); });
+  });
   return qty;
+};
+
+// Giá vốn NVL theo định mức (BOM) cho 1 thành phẩm
+PW.bomMaterialCost = function (product) {
+  return (product.bom || []).reduce((s, b) => {
+    const p = PW.product(b.materialId);
+    return s + Number(b.qty) * Number(p ? p.cost : 0);
+  }, 0);
+};
+// Giá thành 1 đơn vị của 1 lệnh sản xuất = (NVL + công + chi phí khác) / số lượng
+PW.productionUnitCost = function (po) {
+  const matCost = (po.materials || []).reduce((s, m) => {
+    const p = PW.product(m.productId);
+    return s + Number(m.qty) * Number(p ? p.cost : 0);
+  }, 0);
+  const total = matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
+  return Number(po.qty) > 0 ? total / Number(po.qty) : 0;
+};
+PW.productionTotalCost = function (po) {
+  const matCost = (po.materials || []).reduce((s, m) => {
+    const p = PW.product(m.productId);
+    return s + Number(m.qty) * Number(p ? p.cost : 0);
+  }, 0);
+  return matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
 };
 
 // Tổng giá trị 1 phiếu trả lại hàng bán (theo giá bán)
@@ -372,13 +401,14 @@ PW.seed = function () {
   const today = '2026-06-03';
   const d = ymd => ymd;
   return {
-    meta: { companyName: 'DALI', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1 } },
+    meta: { companyName: 'DALI', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1, SX: 1 } },
     cashAccounts: [
       { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 5000000 },
       { id: 'acc_bank', name: 'Tiền gửi ngân hàng (Vietcombank)', type: 'bank', opening: 30000000 },
     ],
     products: [
-      { id: 'p1', code: 'TSH4050', name: 'Tranh số hóa 40x50 - Phong cảnh', unit: 'Bức', group: 'Tranh thành phẩm', cost: 45000, price: 75000, openingStock: 120 },
+      { id: 'p1', code: 'TSH4050', name: 'Tranh số hóa 40x50 - Phong cảnh', unit: 'Bức', group: 'Tranh thành phẩm', cost: 45000, price: 75000, openingStock: 120,
+        bom: [{ materialId: 'p7', qty: 1.2 }, { materialId: 'p5', qty: 0.3 }, { materialId: 'p4', qty: 1 }, { materialId: 'p10', qty: 1 }] },
       { id: 'p2', code: 'TSH3040', name: 'Tranh số hóa 30x40 - Hoa', unit: 'Bức', group: 'Tranh thành phẩm', cost: 18000, price: 35000, openingStock: 200 },
       { id: 'p3', code: 'TTM-A3', name: 'Tranh tô màu theo số A3 (bộ)', unit: 'Bộ', group: 'Tranh thành phẩm', cost: 85000, price: 150000, openingStock: 60 },
       { id: 'p4', code: 'KH4050', name: 'Khung tranh gỗ 40x50', unit: 'Cái', group: 'Khung', cost: 12000, price: 25000, openingStock: 150 },
@@ -478,6 +508,11 @@ PW.seed = function () {
       { id: 'pg3', name: 'Cộng tác viên (CTV)' }, { id: 'pg4', name: 'Khách sỉ' },
     ],
     payrolls: [],
+    productionOrders: [
+      { id: 'sx1', code: 'SX00001', date: d('2026-05-22'), productId: 'p1', qty: 50,
+        materials: [{ productId: 'p7', qty: 60 }, { productId: 'p5', qty: 15 }, { productId: 'p4', qty: 50 }, { productId: 'p10', qty: 50 }],
+        laborCost: 750000, otherCost: 50000, note: 'Sản xuất tranh 40x50 đợt 1' },
+    ],
   };
 };
 
