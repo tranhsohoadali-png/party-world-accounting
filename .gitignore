@@ -12,3 +12,7 @@ partyworld-backup-*.json
 
 # Cấu hình CSDL chứa mật khẩu — KHÔNG đẩy lên GitHub
 api/config.php
+
+# Công cụ tự động đẩy GitHub (chỉ dùng ở máy)
+auto-push.ps1
+DAY LEN GITHUB.bat
