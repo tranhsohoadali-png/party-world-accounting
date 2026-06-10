@@ -7,6 +7,7 @@ App.menu = [
   { group: 'TỔNG QUAN', items: [
     { id: 'dashboard', label: 'Tổng quan', icon: '🏠', title: 'Tổng quan' },
     { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
+    { id: 'ledger', label: 'Sổ giao dịch', icon: '📒', title: 'Sổ giao dịch (Claude / hóa đơn)', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁN HÀNG', items: [
     { id: 'sales-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình bán hàng' },
@@ -109,6 +110,7 @@ App.refresh = function () {
     case 'catalog': return M.catalogHub(root);
     case 'dashboard': return M.dashboard(root);
     case 'charts': return M.charts(root);
+    case 'ledger': return M.ledger(root);
     case 'sales-flow': return M.salesWorkflow(root);
     case 'quotes': return M.quotations(root);
     case 'orders': return M.salesOrdersPage(root);

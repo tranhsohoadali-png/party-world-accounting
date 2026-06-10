@@ -1,0 +1,108 @@
+/* ============================================================
+   modules8.js — Sổ giao dịch (đọc accounting_entries do Claude/MCP ghi)
+   Tích hợp 1 sổ chung: Claude ghi qua MCP -> hiển thị ở đây.
+   ============================================================ */
+
+M.LEDGER_TYPES = {
+  expense:       { label: 'Chi phí',  cls: 'red' },
+  income:        { label: 'Thu nhập', cls: 'green' },
+  receivable:    { label: 'Phải thu', cls: 'blue' },
+  payable:       { label: 'Phải trả', cls: 'orange' },
+  inventory_in:  { label: 'Nhập kho', cls: 'gray' },
+  inventory_out: { label: 'Xuất kho', cls: 'gray' },
+};
+
+M.ledger = function (root) {
+  // Sổ này lưu trên server (MySQL) -> chỉ chạy ở chế độ server
+  if (PW.mode !== 'server') {
+    root.appendChild(U.el('div', { class: 'card' }, [
+      U.el('div', { class: 'card-title' }, '📒 Sổ giao dịch (Claude / hóa đơn)'),
+      U.el('div', { class: 'empty' },
+        'Sổ này lưu trên server và chỉ hoạt động khi mở phần mềm tại https://ketoan.tranhdali.vn (không chạy ở chế độ offline).'),
+    ]));
+    return;
+  }
+
+  const period = U.period('month');
+  const f = {
+    type: C.select([{ value: '', label: 'Tất cả loại' }].concat(
+      Object.keys(M.LEDGER_TYPES).map(k => ({ value: k, label: M.LEDGER_TYPES[k].label }))), ''),
+    from: C.input({ type: 'date', value: period.from, style: 'width:150px' }),
+    to: C.input({ type: 'date', value: U.today(), style: 'width:150px' }),
+    q: U.el('input', { class: 'search', placeholder: '🔍 Tìm mô tả / danh mục...' }),
+  };
+
+  const card = U.el('div', { class: 'card' });
+  card.appendChild(U.el('div', { class: 'card-title' }, '📒 Sổ giao dịch — ghi từ Claude / hóa đơn'));
+  card.appendChild(U.el('div', { class: 'section-sub' },
+    'Mọi khoản chi/thu/công nợ/tồn kho do bạn gửi hóa đơn cho Claude ghi nhận sẽ hiện ở đây (cập nhật trực tiếp từ server).'));
+
+  const sumRow = U.el('div', { class: 'grid c4' });
+  card.appendChild(sumRow);
+
+  const toolbar = U.el('div', { class: 'toolbar mt16' });
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Loại'), f.type]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Từ ngày'), f.from]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Đến ngày'), f.to]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0;flex:1' }, [U.el('label', null, 'Tìm'), f.q]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('Xem', load, 'primary')]));
+  card.appendChild(toolbar);
+
+  const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
+  card.appendChild(host);
+  root.appendChild(card);
+
+  [f.type, f.from, f.to].forEach(x => x.addEventListener('change', load));
+  let qTimer = null;
+  f.q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(load, 400); });
+
+  async function load() {
+    const qs = new URLSearchParams({ action: 'list', type: f.type.value, from: f.from.value, to: f.to.value, q: f.q.value.trim() });
+    const r = await PW.api('ledger.php?' + qs.toString());
+    if (r.status !== 200 || !r.data || !r.data.ok) {
+      host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, (r.data && r.data.error) || 'Lỗi tải sổ giao dịch'));
+      sumRow.innerHTML = ''; return;
+    }
+    if (r.data.installed === false) {
+      host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty' }, r.data.note || 'Chưa cài Sổ giao dịch.'));
+      sumRow.innerHTML = ''; return;
+    }
+    // Thẻ tổng hợp
+    const s = r.data.summary || {};
+    sumRow.innerHTML = '';
+    [
+      { l: 'Tổng thu', v: s.income || 0, c: 'var(--green)' },
+      { l: 'Tổng chi', v: s.expense || 0, c: 'var(--red)' },
+      { l: 'Chênh lệch (thu-chi)', v: (s.income || 0) - (s.expense || 0), c: 'var(--teal)' },
+      { l: 'Số giao dịch', v: s.count || 0, c: 'var(--navy)', count: true },
+    ].forEach(k => sumRow.appendChild(U.el('div', { class: 'kpi' }, [
+      U.el('div', { class: 'value', style: 'color:' + k.c + ';font-size:20px' }, k.count ? U.num(k.v) : U.money(k.v)),
+      U.el('div', { class: 'sub text-muted' }, k.l),
+    ])));
+
+    // Bảng entries
+    const rows = r.data.entries || [];
+    host.innerHTML = '';
+    host.appendChild(C.table(rows, [
+      { label: 'Ngày', render: e => U.date(e.entry_date) },
+      { label: 'Loại', center: true, render: e => {
+          const t = M.LEDGER_TYPES[e.entry_type] || { label: e.entry_type, cls: 'gray' };
+          return `<span class="tag ${t.cls}">${t.label}</span>`;
+        } },
+      { label: 'Mô tả', render: e => U.esc(e.description || '') },
+      { label: 'Danh mục', render: e => U.esc(e.category || '') },
+      { label: 'Đối tác / Hàng', render: e => U.esc(e.counterparty_name || e.item_name || '') },
+      { label: 'SL', num: true, render: e => e.quantity != null ? U.num(e.quantity) : '' },
+      { label: 'Số tiền', num: true, render: e => {
+          const cls = e.entry_type === 'expense' || e.entry_type === 'payable' ? 'text-red'
+            : (e.entry_type === 'income' || e.entry_type === 'receivable' ? 'text-green' : '');
+          return `<span class="${cls}">${U.money(e.amount)}</span>`;
+        } },
+      { label: 'Nguồn', center: true, render: e => {
+          const src = e.source === 'mcp' ? '🤖 Claude' : (e.source === 'import' ? '📥 Nhập' : (e.source || 'manual'));
+          return `<span class="text-muted" style="font-size:12px">${U.esc(src)}</span>`;
+        } },
+    ], { empty: 'Chưa có giao dịch nào trong kỳ. Hãy gửi hóa đơn cho Claude để ghi.' }));
+  }
+  load();
+};
