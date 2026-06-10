@@ -1,5 +1,5 @@
 /* ============================================================
-   PARTY WORLD - Phần mềm kế toán
+   DALI - Phần mềm kế toán
    db.js — Lớp dữ liệu (lưu trong localStorage của trình duyệt)
    ============================================================ */
 
@@ -21,7 +21,7 @@ PW._normalize = function () {
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
     'payrolls'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
-  if (!PW.data.meta) PW.data.meta = { companyName: 'PARTY WORLD', counters: {} };
+  if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
 };
 
@@ -372,7 +372,7 @@ PW.seed = function () {
   const today = '2026-06-03';
   const d = ymd => ymd;
   return {
-    meta: { companyName: 'PARTY WORLD', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1 } },
+    meta: { companyName: 'DALI', counters: { PT: 2, PC: 2, HD: 4, PN: 3, BG: 1, DH: 1, TL: 0, GG: 0, DMH: 1, TLM: 0, GGM: 0, NV: 3, KHO: 1 } },
     cashAccounts: [
       { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 5000000 },
       { id: 'acc_bank', name: 'Tiền gửi ngân hàng (Vietcombank)', type: 'bank', opening: 30000000 },
@@ -462,7 +462,7 @@ PW.seed = function () {
       { id: 'u4', name: 'Cuộn' }, { id: 'u5', name: 'Hộp' }, { id: 'u6', name: 'Chiếc' },
     ],
     warehouses: [
-      { id: 'w1', code: 'KHO00001', name: 'Kho chính', address: 'Cửa hàng Party World' },
+      { id: 'w1', code: 'KHO00001', name: 'Kho chính', address: 'Cửa hàng DALI' },
     ],
     expenseItems: [
       { id: 'e1', name: 'Chi phí vận chuyển' }, { id: 'e2', name: 'Chi phí mặt bằng' },

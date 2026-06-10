@@ -231,7 +231,7 @@ M.payslip = function (p, ln) {
     th,td{border:1px solid #999;padding:6px 9px;font-size:13px} th{background:#eaf2fc}
     .sec{background:#f0f0f0;font-weight:700} .meta{margin-top:8px;font-size:14px;line-height:1.6}
     .big{text-align:right;margin-top:10px;font-size:16px;font-weight:700;color:#1a3a6b}</style></head><body>
-    <div class="company">PARTY WORLD — Thế giới đồ tiệc</div>
+    <div class="company">DALI — Tô điểm cuộc sống</div>
     <h2>PHIẾU LƯƠNG THÁNG ${p.month.slice(5)}/${p.month.slice(0, 4)}</h2>
     <div class="meta"><b>Họ và tên:</b> ${U.esc(e.name || '')} &nbsp;|&nbsp; <b>Mã NV:</b> ${U.esc(e.code || '')} &nbsp;|&nbsp; <b>Chức vụ:</b> ${U.esc(e.position || '')}</div>
     <table>

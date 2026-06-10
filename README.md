@@ -1,6 +1,6 @@
-# 🎉 Party World — Phần mềm kế toán
+# 🌿 DALI — Phần mềm kế toán
 
-Phần mềm kế toán **chạy hoàn toàn trong trình duyệt** dành riêng cho cửa hàng đồ tiệc / trang trí **Party World**. Không cần cài đặt, không cần internet, không cần server — chỉ cần mở `index.html`.
+Phần mềm kế toán cho **DALI — Tô điểm cuộc sống**. Chạy được cả 2 chế độ: mở trực tiếp `index.html` (offline) hoặc triển khai trên server (PHP + MySQL) để nhiều người dùng chung dữ liệu.
 
 ## ✨ Tính năng
 
@@ -30,7 +30,7 @@ Nhấp đúp **`index.html`** để mở bằng trình duyệt (Chrome / Edge / 
 ```
 index.html              Trang chính
 assets/
-  styles.css            Giao diện (theme thương hiệu Party World)
+  styles.css            Giao diện (theme thương hiệu DALI - xanh lá)
   utils.js              Tiện ích (định dạng, ngày, xuất Excel)
   db.js                 Lớp dữ liệu + hạch toán (localStorage)
   components.js         Modal, bảng, form, tab

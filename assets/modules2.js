@@ -322,7 +322,7 @@ M.printDoc = function (mode, doc) {
     th{background:#f0f0f0} .meta{margin-top:10px;font-size:14px;line-height:1.7}
     .tot{text-align:right;margin-top:12px;font-size:15px} .sign{display:flex;justify-content:space-around;margin-top:50px;text-align:center}
     </style></head><body>
-    <div class="company">PARTY WORLD — Thế giới đồ tiệc</div>
+    <div class="company">DALI — Tô điểm cuộc sống</div>
     <h2>${isSale ? 'HÓA ĐƠN BÁN HÀNG' : 'PHIẾU NHẬP MUA HÀNG'}</h2>
     <div style="text-align:center">Số: ${U.esc(doc.code)} &nbsp;|&nbsp; Ngày ${U.date(doc.date)}</div>
     <div class="meta">

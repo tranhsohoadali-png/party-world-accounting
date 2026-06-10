@@ -142,7 +142,7 @@ App.settings = function (root) {
     const blob = new Blob([PW.exportJSON()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'partyworld-backup-' + U.today() + '.json';
+    a.href = url; a.download = 'dali-backup-' + U.today() + '.json';
     a.click(); URL.revokeObjectURL(url);
     U.toast('Đã tải file sao lưu');
   }, 'primary');
@@ -172,7 +172,7 @@ App.settings = function (root) {
   const clearBtn = C.btn('🧹 Xóa trắng (bắt đầu sổ sách mới)', () => {
     if (U.confirm('Xóa toàn bộ dữ liệu để bắt đầu sổ sách trống? Danh mục và chứng từ sẽ bị xóa hết.')) {
       PW.data = {
-        meta: { companyName: 'PARTY WORLD', counters: {} },
+        meta: { companyName: 'DALI', counters: {} },
         cashAccounts: [
           { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 0 },
           { id: 'acc_bank', name: 'Tiền gửi ngân hàng', type: 'bank', opening: 0 },

@@ -1,24 +1,24 @@
 /* ============================================================
-   PARTY WORLD — styles.css
+   DALI — styles.css
    ============================================================ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  /* Bảng màu thương hiệu Party World: navy đậm + xanh da trời + ánh bạc */
-  --teal: #2f74c0;        /* xanh thương hiệu (nút chính, mục đang chọn) */
-  --teal-d: #1f5598;      /* xanh đậm hơn khi hover */
-  --navy: #1a3a6b;        /* navy logo */
-  --skyblue: #9cc6ec;     /* xanh da trời nhạt của chữ "Party" */
-  --orange: #f0b429;      /* nhấn phụ (vàng tiệc) */
-  --bg: #eef3f8;
+  /* Bảng màu thương hiệu DALI: xanh lá tươi + xanh lá đậm */
+  --teal: #7cb342;        /* xanh lá DALI (nút chính, mục đang chọn) */
+  --teal-d: #5a8e2e;      /* xanh lá đậm hơn khi hover */
+  --navy: #4a5d36;        /* xanh ô liu đậm (tiêu đề/logo) */
+  --skyblue: #c5e1a5;     /* xanh lá nhạt */
+  --orange: #f0b429;      /* nhấn phụ (vàng) */
+  --bg: #f1f5ec;
   --card: #ffffff;
-  --line: #e1e8f0;
-  --text: #243b53;
-  --muted: #7b8794;
+  --line: #e3ebdc;
+  --text: #33402a;
+  --muted: #7b8568;
   --green: #27ae60;
   --red: #e74c3c;
-  --blue: #2f74c0;
+  --blue: #3d9970;        /* dùng cho link & "text-blue" -> xanh lá */
   --sidebar: #ffffff;
-  --brand-tint: #e9f2fc;  /* nền nhạt cho mục đang chọn */
+  --brand-tint: #eef6e1;  /* nền nhạt cho mục đang chọn */
 }
 html, body {
   height: 100%;
@@ -41,7 +41,7 @@ a { color: var(--blue); text-decoration: none; }
 }
 .brand {
   padding: 16px 16px 14px; display: flex; align-items: center; justify-content: center;
-  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #f3f8fe, #ffffff);
+  border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #f3f9ea, #ffffff);
 }
 .brand-logo { width: 190px; max-width: 100%; height: auto; display: block; }
 .nav { flex: 1; overflow-y: auto; padding: 8px 0; }
@@ -265,7 +265,7 @@ input.inp:focus, select.inp:focus, textarea.inp:focus, input.search:focus { outl
 .userbar-role { color: var(--muted); }
 body.login-mode .app { filter: blur(2px); pointer-events: none; }
 .login-overlay { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #cfe3f7, #eaf4fd); padding: 20px; }
+  background: linear-gradient(135deg, #d8edbf, #eef7e0); padding: 20px; }
 .login-card { background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(26,58,107,.25);
   padding: 28px 30px; width: 100%; max-width: 380px; }
 .login-logo { width: 200px; max-width: 80%; display: block; margin: 0 auto 4px; }

@@ -1,28 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 300" font-family="'Arial Rounded MT Bold','Baloo 2','Trebuchet MS',Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 230" font-family="'Arial Rounded MT Bold','Baloo 2','Trebuchet MS',Arial,sans-serif">
   <defs>
-    <linearGradient id="pwSilver" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.45" stop-color="#f4f6f8"/>
-      <stop offset="0.55" stop-color="#d4dae0"/>
-      <stop offset="1" stop-color="#ffffff"/>
-    </linearGradient>
-    <linearGradient id="pwBlue" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#aed3f0"/>
-      <stop offset="1" stop-color="#7fb3e0"/>
+    <linearGradient id="daliG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9bce4a"/>
+      <stop offset="1" stop-color="#6fae33"/>
     </linearGradient>
   </defs>
 
-  <!-- "Party" — chữ bong bóng xanh, viền navy + highlight trắng -->
-  <g font-size="210" font-weight="900">
-    <text x="22" y="218" fill="none" stroke="#13315e" stroke-width="20" stroke-linejoin="round">Party</text>
-    <text x="22" y="218" fill="none" stroke="#ffffff" stroke-width="8" stroke-linejoin="round">Party</text>
-    <text x="22" y="218" fill="url(#pwBlue)">Party</text>
+  <!-- Chiếc lá (biểu tượng DALI) đặt phía trên chữ D -->
+  <g transform="translate(150,18)">
+    <path d="M2,66 C2,30 30,6 64,2 C60,40 34,66 2,66 Z" fill="url(#daliG)"/>
+    <path d="M10,60 C28,46 46,28 60,8" stroke="#ffffff" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.9"/>
   </g>
 
-  <!-- "World" trong viên thuốc bạc viền navy -->
-  <g>
-    <rect x="648" y="74" width="350" height="156" rx="78" fill="#1a3a6b"/>
-    <rect x="638" y="64" width="350" height="156" rx="78" fill="url(#pwSilver)" stroke="#13315e" stroke-width="11"/>
-    <text x="813" y="170" font-size="96" font-weight="800" fill="#13315e" text-anchor="middle">World</text>
-  </g>
+  <!-- Chữ "Dali" -->
+  <text x="240" y="170" text-anchor="middle" font-size="150" font-weight="800" fill="url(#daliG)" letter-spacing="2">Dali</text>
+
+  <!-- Slogan -->
+  <text x="240" y="212" text-anchor="middle" font-size="25" font-weight="600" fill="#7d8a64" letter-spacing="8">TÔ ĐIỂM CUỘC SỐNG</text>
 </svg>

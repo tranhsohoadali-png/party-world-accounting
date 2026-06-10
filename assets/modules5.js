@@ -366,7 +366,7 @@ M.printPurchaseDoc = function (kind, doc) {
     th,td{border:1px solid #999;padding:7px 9px;font-size:13px} th{background:#f0f0f0}
     .meta{margin-top:10px;font-size:14px;line-height:1.7} .tot{text-align:right;margin-top:10px;font-size:15px}
     .sign{display:flex;justify-content:space-around;margin-top:50px;text-align:center}</style></head><body>
-    <div class="company">PARTY WORLD — Thế giới đồ tiệc</div>
+    <div class="company">DALI — Tô điểm cuộc sống</div>
     <h2>${titles[kind]}</h2>
     <div style="text-align:center">Số: ${U.esc(doc.code)} &nbsp;|&nbsp; Ngày ${U.date(doc.date)}</div>
     <div class="meta"><div><b>Nhà cung cấp:</b> ${U.esc(sup ? sup.name : '')}</div>
@@ -377,7 +377,7 @@ M.printPurchaseDoc = function (kind, doc) {
     <div class="tot">Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
     ${disc ? `<div class="tot">Giảm giá: ${U.money(disc)} đ</div>` : ''}
     <div class="tot">TỔNG CỘNG: <b>${U.money(total)} đ</b></div>
-    <div class="sign"><div>Nhà cung cấp<br/><i>(Ký, ghi rõ họ tên)</i></div><div>PARTY WORLD<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
+    <div class="sign"><div>Nhà cung cấp<br/><i>(Ký, ghi rõ họ tên)</i></div><div>DALI<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
     <script>window.onload=function(){window.print();}</script></body></html>`;
   const w = window.open('', '_blank');
   if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');

@@ -21,7 +21,7 @@ M.dashboard = function (root) {
   const profit = rev - cogs - exp;
 
   // Banner thương hiệu
-  root.appendChild(U.el('img', { src: 'assets/banner.svg', alt: 'Party World', class: 'hero-banner' }));
+  root.appendChild(U.el('img', { src: 'assets/banner.svg', alt: 'DALI', class: 'hero-banner' }));
 
   // Thanh chọn kỳ xem
   const periodBar = U.el('div', { class: 'toolbar' });
@@ -691,7 +691,7 @@ M.printLedger = function (kind, id) {
     h2{text-align:center;margin:6px 0} table{width:100%;border-collapse:collapse;margin-top:14px}
     th,td{border:1px solid #999;padding:6px 9px;font-size:13px} th{background:#f0f0f0}
     .meta{margin-top:8px;font-size:14px;line-height:1.6} .tot{text-align:right;margin-top:12px;font-size:15px}</style></head><body>
-    <div class="company">PARTY WORLD — Thế giới đồ tiệc</div>
+    <div class="company">DALI — Tô điểm cuộc sống</div>
     <h2>SỔ CHI TIẾT CÔNG NỢ ${d.isCus ? 'PHẢI THU' : 'PHẢI TRẢ'}</h2>
     <div class="meta"><div><b>${d.isCus ? 'Khách hàng' : 'Nhà cung cấp'}:</b> ${U.esc(d.partner.name)} (${U.esc(d.partner.code)})</div>
       <div><b>Điện thoại:</b> ${U.esc(d.partner.phone || '')} &nbsp; <b>Địa chỉ:</b> ${U.esc(d.partner.address || '')}</div></div>
