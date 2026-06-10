@@ -13,7 +13,11 @@ return [
   'db_pass' => 'ĐỔI_MẬT_KHẨU',    // mật khẩu MySQL
   'db_charset' => 'utf8mb4',
 
-  // Kết nối nguồn chấm công (mau.tranhdali.vn)
+  // Kết nối nguồn chấm công (mau.tranhdali.vn -> lấy chấm công về)
   'timekeeping_url' => 'https://mau.tranhdali.vn/api/luong',
   'timekeeping_key' => 'DAN_KHOA_API_CHAM_CONG_VAO_DAY',
+
+  // Khoá để mau.tranhdali.vn GỌI NGƯỢC sang lấy lương (endpoint /api/luong-nhan-vien.php)
+  // Đặt cùng một chuỗi này ở cả 2 bên (mau + ketoan).
+  'salary_api_key' => 'dali-luong-2026',
 ];
