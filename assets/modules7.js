@@ -280,15 +280,25 @@ M.tkExtractList = function (raw) {
   return [];
 };
 
-// Chuẩn hóa 1 bản ghi chấm công -> {code, name, totalDays, allowDays, otHours, lateCount}
+// Chuẩn hóa 1 bản ghi chấm công -> {code, name, totalDays, allowDays, otHours, lateFine}
+// Hỗ trợ cả dạng lồng của mau.tranhdali.vn: { user, attendance:{work_days, ot_hours, late_fine}, piece:{...} }
 M.tkNormalize = function (r) {
+  r = r || {};
+  const att = (r.attendance && typeof r.attendance === 'object') ? r.attendance : {};
+  const pie = (r.piece && typeof r.piece === 'object') ? r.piece : {};
+  const flat = Object.assign({}, pie, att, r); // gộp field lồng lên mức phẳng
+  const code = _pick(flat, ['user', 'username', 'ma', 'maNV', 'ma_nv', 'maNhanVien', 'ma_nhan_vien', 'code', 'employeeCode', 'msnv', 'id', 'manv']);
+  const name = _pick(flat, ['user', 'username', 'ten', 'tenNV', 'ten_nv', 'tenNhanVien', 'hoTen', 'ho_ten', 'hoVaTen', 'name', 'fullname', 'full_name', 'tennhanvien']);
+  const wd = M._tkNum(_pick(flat, ['work_days', 'workDays', 'ngay_cong_thuc_te', 'di_lam', 'diLam', 'ngay_di_lam', 'days']));
+  let total = M._tkNum(_pick(flat, ['tong_ngay_cong', 'tongNgayCong', 'tong_ngay_cong_thuc_te', 'tongNgayCongThucTe', 'tong_cong', 'totalDays']));
+  let allow = M._tkNum(_pick(flat, ['ngay_cong_phu_cap', 'ngay_cong_co_phu_cap', 'ngayCongPhuCap', 'ngay_cong_thuc_te', 'allowDays', 'ngay_cong', 'ngayCong', 'cong']));
+  if (total == null) total = wd;
+  if (allow == null) allow = (wd != null ? wd : total);
   return {
-    code: _pick(r, ['ma', 'maNV', 'ma_nv', 'maNhanVien', 'ma_nhan_vien', 'code', 'employeeCode', 'msnv', 'id', 'manv']),
-    name: _pick(r, ['ten', 'tenNV', 'ten_nv', 'tenNhanVien', 'ten_nhan_vien', 'hoTen', 'ho_ten', 'hoVaTen', 'ho_va_ten', 'name', 'fullname', 'full_name', 'tennhanvien']),
-    totalDays: M._tkNum(_pick(r, ['tong_ngay_cong', 'tongNgayCong', 'tong_ngay_cong_thuc_te', 'tongNgayCongThucTe', 'tongcong', 'tong_cong', 'totalDays', 'tongNgayCongThanhToan'])),
-    allowDays: M._tkNum(_pick(r, ['ngay_cong_phu_cap', 'ngayCongPhuCap', 'ngay_cong_co_phu_cap', 'ngay_cong_thuc_te', 'ngayCongThucTe', 'di_lam', 'diLam', 'ngay_di_lam', 'ngaycong', 'ngay_cong', 'ngayCong', 'cong', 'allowDays'])),
-    otHours: M._tkNum(_pick(r, ['tang_ca', 'tangCa', 'tang_ca_gio', 'tangCaGio', 'gio_tang_ca', 'gioTangCa', 'otHours', 'overtime', 'overtime_hours', 'tangca'])),
-    lateCount: M._tkNum(_pick(r, ['di_muon', 'diMuon', 'so_lan_di_muon', 'soLanDiMuon', 'late', 'lateCount', 'dimuon'])),
+    code: code, name: name, totalDays: total, allowDays: allow,
+    otHours: M._tkNum(_pick(flat, ['ot_hours', 'otHours', 'tang_ca', 'tang_ca_gio', 'gio_tang_ca', 'gioTangCa', 'overtime', 'overtime_hours', 'tangCa', 'tangca'])),
+    lateFine: M._tkNum(_pick(flat, ['late_fine', 'lateFine', 'phat_di_muon', 'phatDiMuon', 'phat'])),
+    lateMinutes: M._tkNum(_pick(flat, ['late_minutes', 'lateMinutes', 'phut_di_muon'])),
   };
 };
 
@@ -313,6 +323,7 @@ M.tkApplyAndReport = function (p, rawList) {
       if (rec.totalDays != null) line.totalDays = rec.totalDays;
       line.allowDays = (rec.allowDays != null) ? rec.allowDays : (rec.totalDays != null ? rec.totalDays : line.allowDays);
       if (rec.otHours != null) line.otHours = rec.otHours;
+      if (rec.lateFine != null && rec.lateFine > 0) line.lateFine = rec.lateFine;
       matched++;
     } else {
       unmatched.push(rec.name || rec.code || '(không rõ)');
