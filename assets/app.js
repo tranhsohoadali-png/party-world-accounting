@@ -86,6 +86,8 @@ App.go = function (id) {
 };
 
 App.refresh = function () {
+  // Dừng tự động làm mới chấm công khi rời bảng lương
+  if (M._payrollTimer) { clearInterval(M._payrollTimer); M._payrollTimer = null; }
   const root = document.getElementById('content');
   root.innerHTML = '';
   // Chặn truy cập mục không đủ quyền (kể cả gõ thẳng #hash)

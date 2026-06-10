@@ -104,6 +104,8 @@ M.payrollDetail = function (id) {
   document.getElementById('page-title').textContent = 'Bảng lương';
   const p = PW.data.payrolls.find(x => x.id === id);
   if (!p) { App.go('payroll'); return; }
+  if (M._payrollTimer) { clearInterval(M._payrollTimer); M._payrollTimer = null; }
+  const canAuto = PW.mode === 'server' && p.month === U.today().slice(0, 7);
 
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
@@ -113,6 +115,11 @@ M.payrollDetail = function (id) {
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('📥 Lấy chấm công', () => M.payrollImportServer(p), 'sm'));
   toolbar.appendChild(C.btn('📋 Dán chấm công', () => M.payrollPasteTK(p), 'sm'));
+  if (canAuto) {
+    toolbar.appendChild(C.btn(App._payrollAuto ? '🔄 Tự động: BẬT' : '🔄 Tự động: TẮT',
+      () => { App._payrollAuto = !App._payrollAuto; U.toast(App._payrollAuto ? 'Đã bật tự động cập nhật chấm công (mỗi 3 phút)' : 'Đã tắt tự động'); M.payrollDetail(id); },
+      App._payrollAuto ? 'sm primary' : 'sm'));
+  }
   toolbar.appendChild(C.btn('📊 Xuất Excel', () => exportXls(), 'sm'));
   toolbar.appendChild(C.btn('💸 Ghi nhận chi lương', () => M.payrollPay(p), 'sm'));
   toolbar.appendChild(C.btn('💾 Lưu', () => { PW.save(); U.toast('Đã lưu bảng lương'); }, 'primary'));
@@ -183,6 +190,21 @@ M.payrollDetail = function (id) {
     recalc();
   }
   draw();
+
+  // Tự lấy chấm công khi mở (tháng hiện tại, chế độ server) + tự làm mới định kỳ nếu bật
+  if (canAuto) {
+    const nowMs = Date.now();
+    if (!M._lastAutoFetch || M._lastAutoFetch.id !== id || (nowMs - M._lastAutoFetch.time) > 60000) {
+      M._lastAutoFetch = { id: id, time: nowMs };
+      M.payrollImportServerSilent(p);
+    }
+    if (App._payrollAuto) {
+      M._payrollTimer = setInterval(() => {
+        M._lastAutoFetch = { id: id, time: Date.now() };
+        M.payrollImportServerSilent(p);
+      }, 180000); // 3 phút
+    }
+  }
 
   function exportXls() {
     const headers = ['Nhân viên', 'Lương CB', 'Tổng NC', 'NC có PC', 'Tăng ca (h)', 'Lương chính', 'Trách nhiệm', 'Phụ cấp', 'Làm thêm', 'Thưởng', 'Phạt', 'BHXH', 'Ứng', 'ĐT', 'Thực lĩnh'];
@@ -305,9 +327,10 @@ M.tkNormalize = function (r) {
 function _norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
 
 // Ghép dữ liệu chấm công vào các dòng lương + báo cáo
-M.tkApplyAndReport = function (p, rawList) {
+// silent=true: không hiện thông báo (dùng cho tự động làm mới)
+M.tkApplyAndReport = function (p, rawList, silent) {
   const recs = (rawList || []).map(M.tkNormalize);
-  if (!recs.length) { U.toast('Không đọc được dữ liệu nhân viên từ nguồn chấm công', 'error'); return; }
+  if (!recs.length) { if (!silent) U.toast('Không đọc được dữ liệu nhân viên từ nguồn chấm công', 'error'); return; }
   let matched = 0; const unmatched = [];
   recs.forEach(rec => {
     let line = null;
@@ -331,9 +354,18 @@ M.tkApplyAndReport = function (p, rawList) {
   });
   PW.save();
   M.payrollDetail(p.id); // dựng lại bảng để hiện số mới
+  if (silent) return;
   let msg = 'Đã cập nhật chấm công cho ' + matched + '/' + recs.length + ' nhân viên.';
   if (unmatched.length) msg += ' Chưa khớp (' + unmatched.length + '): ' + unmatched.slice(0, 6).join(', ') + (unmatched.length > 6 ? '...' : '') + '. Hãy điền "Mã chấm công" cho NV này trong Danh mục.';
   U.toast(msg, unmatched.length ? 'error' : 'success');
+};
+
+// Lấy chấm công im lặng (dùng cho tự động làm mới)
+M.payrollImportServerSilent = async function (p) {
+  if (PW.mode !== 'server') return;
+  const r = await PW.api('timekeeping.php?month=' + p.month);
+  if (r.status !== 200 || !r.data || !r.data.ok || r.data.raw != null) return;
+  M.tkApplyAndReport(p, M.tkExtractList(r.data.data), true);
 };
 
 // Lấy tự động từ server (proxy PHP)
