@@ -1,0 +1,18 @@
+# ============================================================
+# Bảo mật cơ bản cho app kế toán DALI (Apache / hosting thường)
+# (nginx sẽ bỏ qua file này — vô hại; với nginx dùng cấu hình riêng)
+# ============================================================
+
+# Tắt liệt kê thư mục
+Options -Indexes
+
+# Chặn truy cập trực tiếp các file nhạy cảm (mật khẩu DB, sao lưu, script dev...)
+<FilesMatch "(^config\.php$|^\.|\.(sql|json|bak|log|ps1|bat|sample\.php)$)">
+  Require all denied
+</FilesMatch>
+
+# Chặn vào thẳng các thư mục công cụ/dev nếu lỡ upload nhầm
+RedirectMatch 404 /(\.git|\.claude|mcp|scripts)(/|$)
+
+# UTF-8 cho tiếng Việt
+AddDefaultCharset utf-8

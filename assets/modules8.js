@@ -23,6 +23,7 @@ M.ledger = function (root) {
     return;
   }
 
+  let lastEntries = [];
   const period = U.period('month');
   const f = {
     type: C.select([{ value: '', label: 'Tất cả loại' }].concat(
@@ -46,6 +47,7 @@ M.ledger = function (root) {
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Đến ngày'), f.to]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0;flex:1' }, [U.el('label', null, 'Tìm'), f.q]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('Xem', load, 'primary')]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('📊 Xuất Excel', exportLedger, 'sm')]));
   card.appendChild(toolbar);
 
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
@@ -82,6 +84,7 @@ M.ledger = function (root) {
 
     // Bảng entries
     const rows = r.data.entries || [];
+    lastEntries = rows;
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: e => U.date(e.entry_date) },
@@ -89,7 +92,13 @@ M.ledger = function (root) {
           const t = M.LEDGER_TYPES[e.entry_type] || { label: e.entry_type, cls: 'gray' };
           return `<span class="tag ${t.cls}">${t.label}</span>`;
         } },
-      { label: 'Mô tả', render: e => U.esc(e.description || '') },
+      { label: 'Mô tả', render: e => {
+          let s = U.esc(e.description || '');
+          let d = e.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = null; } }
+          d = d || {};
+          const extra = [d.due_date ? 'Hạn TT: ' + U.date(d.due_date) : '', d.notes ? U.esc(d.notes) : ''].filter(Boolean).join(' · ');
+          return extra ? s + `<div class="text-muted" style="font-size:11px">${extra}</div>` : s;
+        } },
       { label: 'Danh mục', render: e => U.esc(e.category || '') },
       { label: 'Đối tác / Hàng', render: e => U.esc(e.counterparty_name || e.item_name || '') },
       { label: 'SL', num: true, render: e => e.quantity != null ? U.num(e.quantity) : '' },
@@ -104,6 +113,23 @@ M.ledger = function (root) {
         } },
     ], { empty: 'Chưa có giao dịch nào trong kỳ. Hãy gửi hóa đơn cho Claude để ghi.' }));
   }
+
+  function exportLedger() {
+    if (!lastEntries.length) return U.toast('Chưa có giao dịch để xuất', 'error');
+    const headers = ['Ngày', 'Loại', 'Mô tả', 'Danh mục', 'Đối tác / Hàng', 'SL', 'Số tiền', 'Ghi chú / Hạn TT', 'Nguồn'];
+    const rows = lastEntries.map(e => {
+      const t = M.LEDGER_TYPES[e.entry_type] || { label: e.entry_type };
+      let d = e.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (_) { d = null; } }
+      d = d || {};
+      const extra = [d.due_date ? 'Hạn TT: ' + U.date(d.due_date) : '', d.notes || ''].filter(Boolean).join(' · ');
+      const src = e.source === 'mcp' ? 'Claude' : (e.source || 'manual');
+      return [U.date(e.entry_date), t.label, e.description || '', e.category || '',
+        e.counterparty_name || e.item_name || '', e.quantity != null ? Number(e.quantity) : '',
+        Number(e.amount) || 0, extra, src];
+    });
+    U.exportExcel('SoGiaoDich', headers, rows, 'SỔ GIAO DỊCH (CLAUDE / MCP)');
+  }
+
   load();
 };
 
@@ -114,15 +140,28 @@ M.mcpInventory = function (root) {
       'Tồn kho sổ Claude lưu trên server — chỉ hiển thị tại https://ketoan.tranhdali.vn.')));
     return;
   }
+  let items = [];
+  function exportInv() {
+    if (!items.length) return U.toast('Chưa có dữ liệu tồn kho để xuất', 'error');
+    const headers = ['Mã', 'Tên', 'ĐVT', 'Nhóm', 'Tồn hiện tại', 'Giá vốn', 'Giá trị tồn'];
+    const rows = items.map(it => [it.code, it.name, it.unit || '', it.category || '',
+      Number(it.current_qty) || 0, it.cost_per_unit != null ? Number(it.cost_per_unit) : '',
+      Math.round(Number(it.current_qty || 0) * Number(it.cost_per_unit || 0))]);
+    U.exportExcel('TonKho_MCP', headers, rows, 'TỒN KHO (SỔ CLAUDE / MCP)');
+  }
   const card = U.el('div', { class: 'card' });
-  card.appendChild(U.el('div', { class: 'card-title' }, '🏬 Tồn kho (sổ Claude / MCP)'));
+  const toolbar = U.el('div', { class: 'toolbar' });
+  toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' }, '🏬 Tồn kho (sổ Claude / MCP)'));
+  toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('📊 Xuất Excel', exportInv, 'sm'));
+  card.appendChild(toolbar);
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
   card.appendChild(host); root.appendChild(card);
   (async function () {
     const r = await PW.api('ledger.php?action=inventory');
     if (r.status !== 200 || !r.data || !r.data.ok) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, 'Lỗi tải tồn kho')); return; }
     if (r.data.installed === false) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty' }, 'Chưa cài sổ tồn kho (inventory_items).')); return; }
-    const items = r.data.items || [];
+    items = r.data.items || [];
     const totVal = items.reduce((s, it) => s + Number(it.current_qty || 0) * Number(it.cost_per_unit || 0), 0);
     host.innerHTML = '';
     host.appendChild(C.table(items, [
@@ -144,16 +183,27 @@ M.mcpCounterparties = function (root) {
       'Danh sách đối tác sổ Claude lưu trên server — chỉ hiển thị tại https://ketoan.tranhdali.vn.')));
     return;
   }
+  let parties = [];
+  const TYPE = { supplier: 'Nhà cung cấp', customer: 'Khách hàng', both: 'KH & NCC' };
+  function exportCp() {
+    if (!parties.length) return U.toast('Chưa có dữ liệu đối tác để xuất', 'error');
+    const headers = ['Tên', 'Loại', 'MST', 'Điện thoại', 'Số dư công nợ'];
+    const rows = parties.map(p => [p.name, TYPE[p.type] || p.type, p.tax_code || '', p.phone || '', Number(p.current_balance) || 0]);
+    U.exportExcel('DoiTac_MCP', headers, rows, 'ĐỐI TÁC — NCC & KHÁCH HÀNG (SỔ CLAUDE)');
+  }
   const card = U.el('div', { class: 'card' });
-  card.appendChild(U.el('div', { class: 'card-title' }, '🤝 Đối tác — NCC & Khách hàng (sổ Claude)'));
+  const toolbar = U.el('div', { class: 'toolbar' });
+  toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' }, '🤝 Đối tác — NCC & Khách hàng (sổ Claude)'));
+  toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('📊 Xuất Excel', exportCp, 'sm'));
+  card.appendChild(toolbar);
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
   card.appendChild(host); root.appendChild(card);
-  const TYPE = { supplier: 'Nhà cung cấp', customer: 'Khách hàng', both: 'KH & NCC' };
   (async function () {
     const r = await PW.api('ledger.php?action=counterparties');
     if (r.status !== 200 || !r.data || !r.data.ok) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, 'Lỗi tải đối tác')); return; }
     if (r.data.installed === false) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty' }, 'Chưa cài sổ đối tác (counterparties).')); return; }
-    const parties = r.data.parties || [];
+    parties = r.data.parties || [];
     host.innerHTML = '';
     host.appendChild(C.table(parties, [
       { label: 'Tên', render: p => U.esc(p.name) },

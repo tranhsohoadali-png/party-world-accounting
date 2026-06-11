@@ -337,6 +337,8 @@ M.docForm = function (cfg) {
         paidAccountId: (Number(paidI.value) || 0) > 0 ? paidAccI.value : null,
         note: noteI.value,
       };
+      // Giữ lại trạng thái đối soát sàn (do M.reconcile ghi) khi sửa lại hóa đơn
+      ['reconciled', 'settledAmount', 'reconciledDate'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
       onSave(obj);
       PW.save(); C.closeModal(); App.refresh();
       U.toast(isSale ? 'Đã lưu hóa đơn bán' : 'Đã lưu phiếu nhập');

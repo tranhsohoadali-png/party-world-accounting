@@ -24,6 +24,9 @@ App.menu = [
     { id: 'reconcile', label: 'Đối soát sàn', icon: '💸', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
     { id: 'crm', label: 'CRM khách hàng', icon: '👑', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
+  { group: 'VẬN HÀNH KHO', items: [
+    { id: 'scan', label: 'Quét đơn (đóng gói / đổi trả)', icon: '📷', title: 'Trạm quét — Đóng gói & Đổi trả' },
+  ]},
   { group: 'MUA HÀNG', roles: ['admin', 'ketoan'], items: [
     { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
     { id: 'purchase-orders', label: 'Đơn mua hàng', icon: '📝', title: 'Đơn mua hàng', roles: ['admin', 'ketoan'] },
@@ -37,6 +40,7 @@ App.menu = [
   ]},
   { group: 'SẢN XUẤT', items: [
     { id: 'production', label: 'Lệnh sản xuất', icon: '🏭', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
+    { id: 'productivity', label: 'Năng suất', icon: '📈', title: 'Năng suất theo nhân viên' },
   ]},
   { group: 'NHÂN SỰ', items: [
     { id: 'payroll', label: 'Tính lương', icon: '💰', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
@@ -124,6 +128,8 @@ App.initUI = function () {
 App.refresh = function () {
   // Dừng tự động làm mới chấm công khi rời bảng lương
   if (M._payrollTimer) { clearInterval(M._payrollTimer); M._payrollTimer = null; }
+  // Tắt camera trạm quét khi rời trang (giải phóng webcam)
+  if (M._scanStop) { try { M._scanStop(); } catch (e) {} M._scanStop = null; }
   const root = document.getElementById('content');
   root.innerHTML = '';
   // Chặn truy cập mục không đủ quyền (kể cả gõ thẳng #hash)
@@ -147,6 +153,8 @@ App.refresh = function () {
     case 'charts': return M.charts(root);
     case 'analytics': return M.analytics(root);
     case 'crm': return M.crm(root);
+    case 'scan': return M.scanStation(root);
+    case 'productivity': return M.productivity(root);
     case 'stockcount': return M.stockCount(root);
     case 'ledger': return M.ledger(root);
     case 'mcp-inventory': return M.mcpInventory(root);

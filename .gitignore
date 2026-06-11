@@ -19,3 +19,7 @@ auto-push.ps1
 DAY LEN GITHUB.bat
 register-schedule.ps1
 CAI-LICH-MOI-GIO.bat
+
+# Tài liệu triển khai / bàn giao — KHÔNG đưa lên webroot công khai (chứa chi tiết API, khóa mẫu)
+deploy/
+HƯỚNG DẪN TRIỂN KHAI.txt

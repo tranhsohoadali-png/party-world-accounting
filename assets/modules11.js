@@ -49,22 +49,24 @@ M.stockCountForm = function (ad) {
   const inputs = {};
   const tbody = U.el('tbody');
   PW.data.products.forEach(p => {
-    const cur = PW.stockOf(p.id);
-    // nếu sửa phiếu cũ: thực tế = sổ + delta đã lưu của phiếu này (ước tính)
     const savedDelta = existing[p.id] ? Number(existing[p.id].delta) : 0;
-    const counted = C.input({ type: 'number', value: cur + savedDelta, style: 'width:110px;text-align:right' });
+    // Tồn sổ thực = tồn hiện tại TRỪ delta của chính phiếu đang sửa
+    // (vì PW.stockOf đã cộng cả delta phiếu này -> nếu không trừ ra sẽ tính trùng).
+    const book = PW.stockOf(p.id) - savedDelta;
+    // Số đã đếm trước đó = tồn sổ + delta đã lưu (phiếu mới: = tồn sổ).
+    const counted = C.input({ type: 'number', value: book + savedDelta, style: 'width:110px;text-align:right' });
     const deltaCell = U.el('span');
     function upd() {
-      const d = (Number(counted.value) || 0) - cur;
+      const d = (Number(counted.value) || 0) - book;
       deltaCell.textContent = (d > 0 ? '+' : '') + U.num(d);
       deltaCell.className = d === 0 ? 'text-muted' : (d > 0 ? 'text-green' : 'text-red');
     }
     counted.addEventListener('input', upd); upd();
-    inputs[p.id] = { counted, cur };
+    inputs[p.id] = { counted, book };
     tbody.appendChild(U.el('tr', null, [
       U.el('td', null, U.esc(p.code)),
       U.el('td', null, U.esc(p.name)),
-      U.el('td', { class: 'num' }, U.num(cur)),
+      U.el('td', { class: 'num' }, U.num(book)),
       U.el('td', { class: 'num' }, counted),
       U.el('td', { class: 'num' }, deltaCell),
     ]));
@@ -84,7 +86,7 @@ M.stockCountForm = function (ad) {
     footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu & điều chỉnh tồn', () => {
       const items = [];
       Object.keys(inputs).forEach(pid => {
-        const delta = (Number(inputs[pid].counted.value) || 0) - inputs[pid].cur;
+        const delta = (Number(inputs[pid].counted.value) || 0) - inputs[pid].book;
         if (delta !== 0) items.push({ productId: pid, delta });
       });
       const obj = { id: ad.id || PW.uid(), code: codeI.value, date: dateI.value, note: noteI.value, items };

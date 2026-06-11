@@ -45,16 +45,25 @@ $w = []; $p = [];
 if ($type !== '') { $w[] = 'e.entry_type = ?'; $p[] = $type; }
 if ($from) { $w[] = 'e.entry_date >= ?'; $p[] = $from; }
 if ($to)   { $w[] = 'e.entry_date <= ?'; $p[] = $to; }
-if ($q !== '') { $w[] = '(e.description LIKE ? OR e.category LIKE ?)'; $p[] = "%$q%"; $p[] = "%$q%"; }
+if ($q !== '') {
+  // Tìm trên mô tả, danh mục, tên đối tác, tên/mã mặt hàng
+  $w[] = '(e.description LIKE ? OR e.category LIKE ? OR c.name LIKE ? OR i.name LIKE ? OR i.code LIKE ?)';
+  $p[] = "%$q%"; $p[] = "%$q%"; $p[] = "%$q%"; $p[] = "%$q%"; $p[] = "%$q%";
+}
 $where = $w ? ('WHERE ' . implode(' AND ', $w)) : '';
 
-// Tổng hợp theo loại (trên toàn bộ kết quả lọc)
-$sumRows = $pdo->prepare("SELECT entry_type, SUM(amount) t, COUNT(*) c FROM accounting_entries e $where GROUP BY entry_type");
+// JOIN dùng chung cho cả truy vấn tổng hợp & danh sách (để bộ lọc $where tham chiếu c.name/i.name được)
+$joins = "LEFT JOIN counterparties c ON c.id = e.counterparty_id
+          LEFT JOIN inventory_items i ON i.id = e.inventory_item_id";
+
+// Tổng hợp theo loại (trên toàn bộ kết quả lọc). Đổi alias COUNT thành 'cnt' tránh đụng alias bảng 'c'.
+$sumRows = $pdo->prepare("SELECT e.entry_type, SUM(e.amount) t, COUNT(*) cnt
+                          FROM accounting_entries e $joins $where GROUP BY e.entry_type");
 $sumRows->execute($p);
 $summary = ['income' => 0, 'expense' => 0, 'receivable' => 0, 'payable' => 0, 'inventory_in' => 0, 'inventory_out' => 0, 'count' => 0];
 foreach ($sumRows->fetchAll() as $r) {
   $summary[$r['entry_type']] = (float)$r['t'];
-  $summary['count'] += (int)$r['c'];
+  $summary['count'] += (int)$r['cnt'];
 }
 $summary['profit'] = $summary['income'] - $summary['expense'];
 
@@ -65,14 +74,20 @@ if ($action === 'summary') {
 // Danh sách entry
 $limit = min(1000, max(1, (int)($_GET['limit'] ?? 300)));
 $sql = "SELECT e.id, e.entry_type, e.entry_date, e.description, e.amount, e.category,
-          e.quantity, e.source, e.created_by, e.created_at,
+          e.quantity, e.data, e.source, e.created_by, e.created_at,
           c.name AS counterparty_name, i.name AS item_name, i.code AS item_code
         FROM accounting_entries e
-        LEFT JOIN counterparties c ON c.id = e.counterparty_id
-        LEFT JOIN inventory_items i ON i.id = e.inventory_item_id
+        $joins
         $where
         ORDER BY e.entry_date DESC, e.id DESC
         LIMIT $limit";
 $st = $pdo->prepare($sql);
 $st->execute($p);
-json_out(['ok' => true, 'installed' => true, 'summary' => $summary, 'entries' => $st->fetchAll()]);
+$entries = $st->fetchAll();
+// Giải mã cột data (JSON) -> object để frontend đọc ghi chú / hạn thanh toán
+foreach ($entries as &$e) {
+  if (!empty($e['data'])) { $d = json_decode($e['data'], true); $e['data'] = is_array($d) ? $d : null; }
+  else { $e['data'] = null; }
+}
+unset($e);
+json_out(['ok' => true, 'installed' => true, 'summary' => $summary, 'entries' => $entries]);

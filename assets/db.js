@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders', 'channels', 'stockAdjustments'];
+    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -143,8 +143,9 @@ PW.stockOf = function (productId) {
   PW.data.salesInvoices.forEach(si => {
     si.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
   });
-  // Trả lại hàng bán -> hàng nhập lại kho
+  // Trả lại hàng bán -> hàng nhập lại kho (BỎ QUA phiếu "thất lạc" noRestock: hàng không về)
   PW.data.salesReturns.forEach(sr => {
+    if (sr.noRestock) return;
     sr.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
   });
   // Trả lại hàng mua -> xuất khỏi kho trả nhà cung cấp
@@ -423,7 +424,8 @@ PW.cogs = function (fromYmd, toYmd) {
       const p = PW.product(it.productId);
       total += Number(it.qty) * Number(p ? p.cost : 0);
     }));
-  total -= PW.data.salesReturns.filter(sr => inRange(sr.date))
+  // Phiếu "thất lạc" (noRestock): hàng không về kho -> KHÔNG hoàn giá vốn (giữ làm tổn thất)
+  total -= PW.data.salesReturns.filter(sr => inRange(sr.date) && !sr.noRestock)
     .reduce((s, sr) => s + PW.returnCost(sr), 0);
   return total;
 };
@@ -573,6 +575,12 @@ PW.seed = function () {
         laborCost: 750000, otherCost: 50000, note: 'Sản xuất tranh 40x50 đợt 1' },
     ],
     stockAdjustments: [],
+    productivityEntries: [
+      { id: 'ns1', date: d('2026-06-02'), employeeId: 'nv1', pha: 5, tranhRot: 40, mauRot: 520, sx: 0, note: '' },
+      { id: 'ns2', date: d('2026-06-02'), employeeId: 'nv2', pha: 0, tranhRot: 0, mauRot: 0, sx: 30, note: 'Sản xuất tranh' },
+      { id: 'ns3', date: d('2026-06-03'), employeeId: 'nv1', pha: 6, tranhRot: 35, mauRot: 480, sx: 0, note: '' },
+      { id: 'ns4', date: d('2026-06-03'), employeeId: 'nv3', pha: 0, tranhRot: 22, mauRot: 300, sx: 0, note: '' },
+    ],
     channels: [
       { id: 'ch_le', name: 'Bán lẻ', feePercent: 0, isPlatform: false },
       { id: 'ch_dl', name: 'Đại lý / Sỉ', feePercent: 0, isPlatform: false },
