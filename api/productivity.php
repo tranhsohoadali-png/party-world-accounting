@@ -90,20 +90,9 @@ if ($action === 'pull') {
   else { $d = (int)($_GET['days'] ?? 31); $qs['days'] = max(1, min(92, $d)); }
   $full = $url . (strpos($url, '?') !== false ? '&' : '?') . http_build_query($qs);
 
-  $raw = null; $http = 0;
-  if (function_exists('curl_init')) {
-    $ch = curl_init($full);
-    curl_setopt_array($ch, [
-      CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25,
-      CURLOPT_SSL_VERIFYPEER => true, CURLOPT_FOLLOWLOCATION => true,
-      CURLOPT_HTTPHEADER => ['Accept: application/json', 'X-API-Key: ' . $key],  // khoá qua HEADER (an toàn hơn ?key=)
-    ]);
-    $raw = curl_exec($ch); $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-  } else {
-    $ctx = stream_context_create(['http' => ['timeout' => 25, 'header' => "Accept: application/json\r\nX-API-Key: " . $key . "\r\n"]]);
-    $raw = @file_get_contents($full, false, $ctx);
-    $http = ($raw === false) ? 0 : 200;
-  }
+  // Gọi qua mau_http_get: khoá ở HEADER (an toàn hơn ?key=), tự retry đường
+  // loopback 127.0.0.1 nếu nginx bên mau chặn IP ngoài (403).
+  list($raw, $http) = mau_http_get($full, ['X-API-Key: ' . $key]);
   if ($raw === false || $raw === null) json_out(['error' => 'Không gọi được API năng suất bên mau'], 502);
   if ($http && ($http < 200 || $http >= 300)) json_out(['error' => 'API năng suất trả HTTP ' . $http, 'body' => mb_substr($raw, 0, 300)], 502);
   $data = json_decode($raw, true);

@@ -70,3 +70,49 @@ function require_role(array $roles): array {
   if (!in_array($u['role'], $roles, true)) json_out(['error' => 'Không đủ quyền'], 403);
   return $u;
 }
+
+/* ---------- Gọi API của mau.tranhdali.vn (chung server) ----------
+   nginx bên mau chặn các endpoint API-key theo IP (chỉ cho nội bộ).
+   Gọi qua domain công khai sẽ bị 403 -> tự thử lại bằng kết nối thẳng
+   127.0.0.1 nhưng GIỮ nguyên https + hostname (CURLOPT_RESOLVE) để
+   chứng chỉ SSL vẫn khớp và đi đúng server block của mau.
+   Trả về [raw_body, http_code]. */
+function mau_http_get(string $url, array $headers = []): array {
+  $headers[] = 'Accept: application/json';
+  $attempt = function (bool $loopback) use ($url, $headers) {
+    if (function_exists('curl_init')) {
+      $ch = curl_init($url);
+      $opts = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 25,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTPHEADER => $headers,
+      ];
+      if ($loopback) {
+        $host = parse_url($url, PHP_URL_HOST);
+        $port = (parse_url($url, PHP_URL_SCHEME) === 'http') ? 80 : 443;
+        $opts[CURLOPT_RESOLVE] = [$host . ':' . $port . ':127.0.0.1'];
+      }
+      curl_setopt_array($ch, $opts);
+      $raw = curl_exec($ch);
+      $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+      curl_close($ch);
+      return [$raw, $http];
+    }
+    if ($loopback) return [false, 0]; // file_get_contents không giả lập loopback được
+    $ctx = stream_context_create(['http' => ['timeout' => 25, 'header' => implode("\r\n", $headers) . "\r\n"]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    $http = 0;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $http = (int)$m[1];
+    elseif ($raw !== false) $http = 200;
+    return [$raw, $http];
+  };
+  list($raw, $http) = $attempt(false);
+  // Bị chặn IP (403) hoặc không nối được -> thử đường nội bộ loopback
+  if (($http === 403 || $http === 0 || $raw === false) && function_exists('curl_init')) {
+    list($raw2, $http2) = $attempt(true);
+    if ($http2 >= 200 && $http2 < 300) return [$raw2, $http2];
+  }
+  return [$raw, $http];
+}

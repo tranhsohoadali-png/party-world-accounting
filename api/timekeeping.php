@@ -19,26 +19,9 @@ if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_out(['error' => 'Tháng không 
 
 $url = $base . '?key=' . urlencode($key) . '&month=' . urlencode($month);
 
-// Gọi API: ưu tiên cURL, fallback file_get_contents
-$raw = null; $http = 0;
-if (function_exists('curl_init')) {
-  $ch = curl_init($url);
-  curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 20,
-    CURLOPT_SSL_VERIFYPEER => true,
-    CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_HTTPHEADER => ['Accept: application/json'],
-  ]);
-  $raw = curl_exec($ch);
-  $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-} else {
-  $ctx = stream_context_create(['http' => ['timeout' => 20, 'header' => "Accept: application/json\r\n"]]);
-  $raw = @file_get_contents($url, false, $ctx);
-  if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) $http = (int)$m[1];
-  else $http = $raw === false ? 0 : 200;
-}
+// Gọi qua mau_http_get (lib.php): tự retry đường loopback 127.0.0.1
+// nếu nginx bên mau chặn IP ngoài (403). Kèm khoá ở header cho chắc.
+list($raw, $http) = mau_http_get($url, ['X-API-Key: ' . $key]);
 
 if ($raw === false || $raw === null) json_out(['error' => 'Không gọi được API chấm công'], 502);
 if ($http && ($http < 200 || $http >= 300)) json_out(['error' => 'API chấm công trả lỗi HTTP ' . $http, 'body' => mb_substr($raw, 0, 500)], 502);
