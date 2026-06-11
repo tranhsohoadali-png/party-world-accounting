@@ -84,9 +84,17 @@ if ($action === 'pull') {
   if (!$url || !$key || $key === 'DAN_KHOA_API_CHAM_CONG_VAO_DAY') {
     json_out(['error' => 'Chưa cấu hình productivity_url / khoá API trong api/config.php'], 500);
   }
+  // Kẹp ngày ảo về ngày cuối tháng thật: app hay dùng '...-31' cho so sánh chuỗi,
+  // nhưng Django bên mau TỪ CHỐI ngày không tồn tại (vd 2026-06-31) -> 403.
+  $clampYmd = function ($ymd) {
+    list($y, $m, $d) = array_map('intval', explode('-', $ymd));
+    $last = (int)date('t', mktime(12, 0, 0, $m, 1, $y));
+    if ($d > $last) $d = $last;
+    return sprintf('%04d-%02d-%02d', $y, $m, $d);
+  };
   $qs = [];
-  if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['day'] ?? '')) $qs['day'] = $_GET['day'];
-  elseif (preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '')) { $qs['from'] = $_GET['from']; $qs['to'] = $_GET['to']; }
+  if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['day'] ?? '')) $qs['day'] = $clampYmd($_GET['day']);
+  elseif (preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '')) { $qs['from'] = $clampYmd($_GET['from']); $qs['to'] = $clampYmd($_GET['to']); }
   else { $d = (int)($_GET['days'] ?? 31); $qs['days'] = max(1, min(92, $d)); }
   $full = $url . (strpos($url, '?') !== false ? '&' : '?') . http_build_query($qs);
 

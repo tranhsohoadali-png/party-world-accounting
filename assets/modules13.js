@@ -156,7 +156,17 @@ M.productivity = function (root) {
     bodyBox.appendChild(U.el('div', { class: 'empty' }, 'Đang đồng bộ từ mau.tranhdali.vn...'));
     (async function () {
       // 1) KÉO mới từ mau (best-effort: lỗi vẫn hiển thị dữ liệu đã lưu)
-      const pullQs = (from && to !== '￿') ? ('from=' + from + '&to=' + to) : 'days=92';
+      // Kẹp 'to' về ngày hợp lệ: '2026-06-31' không tồn tại -> Django bên mau từ chối;
+      // và không hỏi ngày tương lai (lấy tới hôm nay là đủ).
+      const pullTo = (function (ymd) {
+        if (!ymd || ymd === '￿') return '';
+        const parts = ymd.split('-').map(Number);
+        const last = new Date(parts[0], parts[1], 0).getDate();
+        const dd = Math.min(parts[2], last);
+        const s = parts[0] + '-' + String(parts[1]).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+        return s > today ? today : s;
+      })(to);
+      const pullQs = (from && pullTo) ? ('from=' + from + '&to=' + pullTo) : 'days=92';
       let syncMsg = '';
       try {
         const pr = await PW.api('productivity.php?action=pull&' + pullQs);
