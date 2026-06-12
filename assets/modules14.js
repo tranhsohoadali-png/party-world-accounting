@@ -1,0 +1,399 @@
+/* ============================================================
+   modules14.js — Gom đơn ký gửi (tự khớp mã hàng từ nhiều nhà sách)
+   ------------------------------------------------------------
+   Bài toán: hàng ký gửi, mỗi nhà sách đặt tên một kiểu; chỉ mã hàng
+   (vd "K452 20x25" = mã tranh + kích thước) là chung. Màn này nhận
+   danh sách bán (dán văn bản / file CSV / ảnh chụp qua AI), tự nhận
+   diện mã + size + SL + giá, khớp về danh mục hàng hóa, học bí danh
+   theo từng nhà sách, rồi tạo Hóa đơn bán / Đơn đặt hàng một nút.
+   ============================================================ */
+
+/* ---------- Chuẩn hóa & nhận diện ---------- */
+
+// Bỏ dấu tiếng Việt, thường hóa, gọn khoảng trắng
+M._ciNorm = function (s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd')
+    .replace(/[×*]/g, 'x')
+    .replace(/[^a-z0-9x\s\-_.:|,]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+};
+
+// Kích thước "20x25" -> { token:'20x25', key:'20X25' } (key sắp xếp để 25x20 == 20x25)
+M._ciSize = function (normed) {
+  const m = normed.match(/(\d{2,3})\s*x\s*(\d{2,3})/);
+  if (!m) return null;
+  const a = Number(m[1]), b = Number(m[2]);
+  return { token: m[0], key: Math.min(a, b) + 'X' + Math.max(a, b) };
+};
+
+// Mã hàng "K452" / "k-452" / "TSH4050" (1-4 chữ cái + 1-5 số, ưu tiên viết liền)
+M._ciCode = function (normed) {
+  const re = /\b([a-z]{1,4})\s*[-_.]?\s*(\d{1,5})\b/g;
+  // Từ thường gặp đứng cạnh số nhưng KHÔNG phải mã hàng ("x3"=SL, "gói 100", "mục 2"...)
+  const SKIP = { x: 1, sl: 1, size: 1, gia: 1, goi: 1, cai: 1, bo: 1, set: 1, muc: 1,
+    so: 1, ngay: 1, hop: 1, tui: 1, lo: 1, tam: 1, to: 1, cuon: 1, thung: 1, trang: 1 };
+  let best = null, m;
+  while ((m = re.exec(normed)) !== null) {
+    if (SKIP[m[1]]) continue;
+    const joined = m[0].indexOf(' ') === -1;
+    if (!joined && m[2].length < 2) continue;   // mã cách quãng phải có >=2 chữ số ("k 452" ok, "mục 2" loại)
+    const cand = { key: (m[1] + m[2]).toUpperCase(), token: m[0], joined: joined };
+    if (!best || (cand.joined && !best.joined)) best = cand;
+    if (cand.joined) break; // mã viết liền đầu tiên là chắc nhất
+  }
+  return best;
+};
+
+// Tách 1 dòng đơn hàng -> { raw, name, codeKey, sizeKey, qty, price }
+M._ciParseLine = function (line) {
+  const raw = line.trim();
+  if (!raw) return null;
+  const cells = raw.indexOf('\t') >= 0 ? raw.split('\t')
+    : (raw.indexOf('|') >= 0 ? raw.split('|')
+    : (raw.split(';').length > 2 ? raw.split(';') : null));
+  let text = raw, qtyCell = null, priceCell = null;
+  if (cells) {
+    // Dòng Excel/CSV: ô chữ dài nhất = tên; ô số nguyên nhỏ = SL; ô số lớn = giá
+    let name = '';
+    cells.forEach(c => {
+      const t = c.trim();
+      if (!t) return;
+      const pure = t.replace(/[.,\s]/g, '');
+      if (/^\d+$/.test(pure)) {
+        const n = Number(pure);
+        if (n >= 1000) { if (priceCell == null) priceCell = n; }
+        else if (n >= 1 && n <= 9999) { if (qtyCell == null) qtyCell = n; }
+      } else if (t.length > name.length) name = t;
+    });
+    text = name || raw;
+  }
+  let normed = M._ciNorm(text);
+  if (!normed || !/\d|[a-z]{3,}/.test(normed)) return null;   // dòng không có nội dung hàng
+  const size = M._ciSize(normed);
+  if (size) normed = normed.replace(size.token, ' ');
+  const code = M._ciCode(normed);
+  let rest = code ? normed.replace(code.token, ' ') : normed;
+
+  // Bí danh = tên chuẩn hóa SAU KHI loại SL/giá (để lần sau SL khác vẫn khớp)
+  let aliasKey = M._ciNorm(text);
+  // Số lượng trong văn bản tự do
+  let qty = qtyCell;
+  if (qty == null) {
+    const qm = rest.match(/\bsl\s*[:=.]?\s*(\d{1,4})\b/) ||
+               rest.match(/\bso luong\s*[:=.]?\s*(\d{1,4})\b/) ||
+               rest.match(/(?:^|\s)x\s*(\d{1,4})\b/) ||
+               rest.match(/\b(\d{1,4})\s*x(?:\s|$)/) ||
+               rest.match(/\b(\d{1,4})\s*(?:cai|buc|chiec|bo|set|cuon|tam|to|tranh)\b/);
+    if (qm) { qty = Number(qm[1]); rest = rest.replace(qm[0], ' '); aliasKey = aliasKey.replace(qm[0], ' '); }
+  }
+  // Đơn giá trong văn bản tự do
+  let price = priceCell;
+  if (price == null) {
+    const pm = rest.match(/\b(\d{1,3}(?:[.,]\d{3})+)\b/) || rest.match(/\b(\d{4,9})\b/);
+    if (pm) { price = Number(pm[1].replace(/[.,]/g, '')); aliasKey = aliasKey.replace(pm[0], ' '); }
+    else {
+      const km = rest.match(/\b(\d{1,4})\s*k\b/);
+      if (km) { price = Number(km[1]) * 1000; aliasKey = aliasKey.replace(km[0], ' '); }
+    }
+  }
+  return {
+    raw: raw, name: text.trim(),
+    aliasKey: aliasKey.replace(/[\s\-_.:|,]+/g, ' ').trim(),
+    codeKey: code ? code.key : '', sizeKey: size ? size.key : '',
+    qty: qty || 1, price: price || 0,
+  };
+};
+
+/* ---------- Chỉ mục sản phẩm & khớp ---------- */
+
+M._ciProductIndex = function () {
+  const idx = { full: {}, code: {}, all: [] };
+  PW.data.products.forEach(p => {
+    const source = M._ciNorm((p.code || '') + ' ' + (p.name || ''));
+    const size = M._ciSize(source);
+    const code = M._ciCode(size ? source.replace(size.token, ' ') : source);
+    const ent = { p: p, codeKey: code ? code.key : '', sizeKey: size ? size.key : '',
+                  tokens: source.split(' ').filter(t => t.length > 1) };
+    idx.all.push(ent);
+    if (ent.codeKey) {
+      const fk = ent.codeKey + '|' + ent.sizeKey;
+      (idx.full[fk] = idx.full[fk] || []).push(ent);
+      (idx.code[ent.codeKey] = idx.code[ent.codeKey] || []).push(ent);
+    }
+  });
+  return idx;
+};
+
+// Khớp 1 dòng đã tách -> { productId, status: 'alias'|'code'|'fuzzy'|'none' }
+M._ciMatch = function (parsed, idx, customerId) {
+  const aliasKey = parsed.aliasKey || M._ciNorm(parsed.name);
+  // 1) Bí danh đã học (ưu tiên đúng nhà sách, rồi chung)
+  const aliases = PW.data.productAliases || [];
+  let al = aliases.find(a => a.customerId === customerId && a.alias === aliasKey) ||
+           aliases.find(a => a.alias === aliasKey);
+  if (al && PW.data.products.some(p => p.id === al.productId)) {
+    return { productId: al.productId, status: 'alias' };
+  }
+  // 2) Mã + kích thước
+  if (parsed.codeKey) {
+    const hit = idx.full[parsed.codeKey + '|' + parsed.sizeKey];
+    if (hit && hit.length) return { productId: hit[0].p.id, status: 'code' };
+    // 3) Chỉ mã (duy nhất)
+    const byCode = idx.code[parsed.codeKey];
+    if (byCode && byCode.length === 1) return { productId: byCode[0].p.id, status: 'code' };
+    if (byCode && byCode.length > 1) {
+      const bySize = byCode.filter(e => e.sizeKey === parsed.sizeKey);
+      if (bySize.length === 1) return { productId: bySize[0].p.id, status: 'code' };
+      return { productId: byCode[0].p.id, status: 'fuzzy' };
+    }
+  }
+  // 4) Khớp mờ theo từ + kích thước
+  const tokens = aliasKey.split(' ').filter(t => t.length > 1);
+  let best = null, bestScore = 0;
+  idx.all.forEach(e => {
+    if (parsed.sizeKey && e.sizeKey && e.sizeKey !== parsed.sizeKey) return;
+    let n = 0;
+    tokens.forEach(t => { if (e.tokens.indexOf(t) >= 0) n++; });
+    const score = tokens.length ? n / tokens.length : 0;
+    if (score > bestScore) { bestScore = score; best = e; }
+  });
+  if (best && bestScore >= 0.5) return { productId: best.p.id, status: 'fuzzy' };
+  return { productId: '', status: 'none' };
+};
+
+/* ---------- Màn hình Gom đơn ký gửi ---------- */
+
+M.consignImport = function (root) {
+  const state = { rows: [], idx: M._ciProductIndex() };
+
+  /* --- Thẻ 1: nguồn dữ liệu --- */
+  const srcCard = U.el('div', { class: 'card' });
+  srcCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Gom đơn ký gửi — dán / tải / chụp'));
+  srcCard.appendChild(U.el('p', { class: 'section-sub' },
+    'Dán danh sách bán từ nhà sách (copy từ Excel/Zalo đều được), hoặc tải file CSV, hoặc chụp ảnh bảng kê để AI đọc. ' +
+    'Hệ thống tự nhận diện mã hàng (vd K452 20x25), số lượng, đơn giá rồi khớp về danh mục. Bí danh đã xác nhận sẽ được nhớ cho lần sau.'));
+
+  const ta = U.el('textarea', { class: 'inp', rows: 6, style: 'width:100%;font-family:Consolas,monospace',
+    placeholder: 'Ví dụ:\nTranh cá chép hoa sen K452 20x25 - SL: 2 - 45.000\nk301 30x40 x3\nTranh tô màu công chúa (k512 20x20) 1 bức' });
+  srcCard.appendChild(ta);
+
+  const fileIn = U.el('input', { type: 'file', accept: '.csv,.txt,.tsv', style: 'display:none' });
+  fileIn.addEventListener('change', () => {
+    const f = fileIn.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { ta.value = (ta.value ? ta.value + '\n' : '') + rd.result; doParse(); };
+    rd.readAsText(f);
+    fileIn.value = '';
+  });
+
+  const photoIn = U.el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
+  photoIn.addEventListener('change', () => {
+    const f = photoIn.files[0]; if (!f) return;
+    M._ciOcr(f, lines => { ta.value = (ta.value ? ta.value + '\n' : '') + lines.join('\n'); doParse(); });
+    photoIn.value = '';
+  });
+
+  const parseBtn = C.btn('🧩 Nhận diện & khớp mã', () => doParse(), 'primary');
+  const fileBtn = C.btn('⬆ Tải file CSV/TXT', () => fileIn.click());
+  const photoBtn = C.btn('📷 Chụp ảnh — AI đọc', () => {
+    if (PW.mode !== 'server') { U.toast('AI đọc ảnh cần chạy trên máy chủ (ketoan.tranhdali.vn)', 'error'); return; }
+    photoIn.click();
+  });
+  srcCard.appendChild(U.el('div', { class: 'pill-row mt8' }, [parseBtn, fileBtn, photoBtn, fileIn, photoIn]));
+
+  /* --- Thẻ 2: thông tin chứng từ --- */
+  const docCard = U.el('div', { class: 'card' });
+  docCard.appendChild(U.el('div', { class: 'card-title' }, '🧾 Chứng từ sẽ tạo'));
+  const cusSel = C.select(
+    [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
+      .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name }))), '');
+  cusSel.addEventListener('change', () => { if (state.rows.length) rematch(); });
+  const typeSel = C.select([
+    { value: 'invoice', label: 'Hóa đơn bán (ghi doanh thu + trừ kho)' },
+    { value: 'order', label: 'Đơn đặt hàng (chưa ghi sổ)' },
+  ], 'invoice');
+  const dateI = C.input({ type: 'date', value: U.today() });
+  const chSel = C.select(
+    [{ value: '', label: '-- Kênh bán --' }]
+      .concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))),
+    (PW.data.channels.find(c => /ky gui|ki gui|nha sach/.test(M._ciNorm(c.name))) || { id: '' }).id);
+  const fg = U.el('div', { class: 'form-grid' });
+  fg.appendChild(C.field('Nhà sách (khách hàng)', cusSel, { required: true }));
+  fg.appendChild(C.field('Loại chứng từ', typeSel));
+  fg.appendChild(C.field('Ngày', dateI));
+  fg.appendChild(C.field('Kênh bán', chSel));
+  docCard.appendChild(fg);
+
+  /* --- Thẻ 3: bảng duyệt --- */
+  const revCard = U.el('div', { class: 'card' });
+  revCard.appendChild(U.el('div', { class: 'card-title' }, '📋 Duyệt dòng hàng đã khớp'));
+  const sumDiv = U.el('div', { class: 'section-sub' }, 'Chưa có dữ liệu — dán danh sách rồi bấm "Nhận diện & khớp mã".');
+  const host = U.el('div');
+  revCard.appendChild(sumDiv);
+  revCard.appendChild(host);
+  const createBtn = C.btn('✅ Tạo chứng từ & học bí danh', () => doCreate(), 'primary');
+  revCard.appendChild(U.el('div', { class: 'pill-row mt16' }, [createBtn]));
+
+  const STATUS_TAG = {
+    alias: '<span class="tag green">Bí danh ✓</span>',
+    code: '<span class="tag green">Mã hàng ✓</span>',
+    fuzzy: '<span class="tag orange">Cần xem lại</span>',
+    none: '<span class="tag red">Chưa khớp</span>',
+  };
+
+  function doParse() {
+    const lines = ta.value.split(/\r?\n/);
+    state.rows = [];
+    lines.forEach(l => {
+      const parsed = M._ciParseLine(l);
+      if (!parsed) return;
+      const m = M._ciMatch(parsed, state.idx, cusSel.value || null);
+      const row = Object.assign(parsed, m);
+      if (row.productId && !row.price) row.price = M._ciPrice(row.productId, chSel.value); // giá mặc định theo kênh
+      state.rows.push(row);
+    });
+    draw();
+  }
+
+  function rematch() {
+    state.rows.forEach(r => {
+      const m = M._ciMatch(r, state.idx, cusSel.value || null);
+      r.productId = m.productId; r.status = m.status;
+      if (r.productId && !r.price) r.price = M._ciPrice(r.productId, chSel.value);
+    });
+    draw();
+  }
+
+  function draw() {
+    host.innerHTML = '';
+    if (!state.rows.length) { sumDiv.textContent = 'Không nhận diện được dòng hàng nào.'; return; }
+    const ok = state.rows.filter(r => r.status === 'alias' || r.status === 'code').length;
+    const warn = state.rows.filter(r => r.status === 'fuzzy').length;
+    const bad = state.rows.filter(r => r.status === 'none').length;
+    sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — khớp chắc <b class="text-green">' + ok +
+      '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
+    const prodOpts = [{ value: '', label: '-- Chọn hàng --' }]
+      .concat(PW.data.products.map(p => ({ value: p.id, label: (p.code ? p.code + ' - ' : '') + p.name })));
+    host.appendChild(C.table(state.rows, [
+      { label: '#', width: '36px', render: r => String(state.rows.indexOf(r) + 1) },
+      { label: 'Dòng gốc', render: r => U.esc(r.raw) },
+      { label: 'Nhận diện', render: r =>
+          (r.codeKey ? '<b>' + U.esc(r.codeKey) + '</b>' : '<span class="text-muted">—</span>') +
+          (r.sizeKey ? ' · ' + U.esc(r.sizeKey.toLowerCase()) : '') },
+      { label: 'Hàng hóa khớp', render: r => {
+          const sel = C.select(prodOpts, r.productId);
+          sel.addEventListener('change', () => {
+            r.productId = sel.value; r.manual = true;
+            if (r.productId && !r.priceTouched) { r.price = M._ciPrice(r.productId, chSel.value); }
+            draw();
+          });
+          const wrap = U.el('div');
+          wrap.appendChild(sel);
+          if (r.productId) {
+            wrap.appendChild(U.el('div', { class: 'text-muted', style: 'font-size:11px;margin-top:2px' },
+              'Tồn kho: ' + U.num(PW.stockOf(r.productId))));
+          }
+          return wrap;
+        } },
+      { label: 'SL', num: true, width: '80px', render: r => {
+          const i = C.input({ type: 'number', value: r.qty, min: 1, style: 'width:70px;text-align:right' });
+          i.addEventListener('input', () => { r.qty = Number(i.value) || 1; });
+          return i;
+        } },
+      { label: 'Đơn giá', num: true, width: '120px', render: r => {
+          const i = C.input({ type: 'number', value: r.price, min: 0, style: 'width:110px;text-align:right' });
+          i.addEventListener('input', () => { r.price = Number(i.value) || 0; r.priceTouched = true; });
+          return i;
+        } },
+      { label: 'Trạng thái', center: true, render: r => STATUS_TAG[r.manual ? 'alias' : r.status] || '' },
+      { label: '', width: '40px', render: r => C.actions([{ label: '✕', title: 'Bỏ dòng', onClick: () => {
+          state.rows.splice(state.rows.indexOf(r), 1); draw();
+        } }]) },
+    ], { empty: 'Chưa có dòng nào' }));
+  }
+
+  function doCreate() {
+    if (!cusSel.value) { U.toast('Chọn nhà sách / khách hàng trước', 'error'); return; }
+    const valid = state.rows.filter(r => r.productId && r.qty > 0);
+    if (!valid.length) { U.toast('Chưa có dòng nào khớp hàng hóa', 'error'); return; }
+    const unmatched = state.rows.length - valid.length;
+    if (unmatched > 0 && !U.confirm(unmatched + ' dòng chưa khớp sẽ bị bỏ qua. Tiếp tục?')) return;
+
+    // Học bí danh theo nhà sách (dòng nào người dùng đã xác nhận / khớp chắc)
+    valid.forEach(r => {
+      const aliasKey = r.aliasKey || M._ciNorm(r.name);
+      if (!aliasKey || aliasKey.length < 3) return;
+      const exists = (PW.data.productAliases || []).find(a => a.customerId === cusSel.value && a.alias === aliasKey);
+      if (exists) { exists.productId = r.productId; return; }
+      PW.data.productAliases.push({ id: PW.uid(), customerId: cusSel.value, alias: aliasKey, productId: r.productId });
+    });
+
+    const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
+    let code;
+    if (typeSel.value === 'order') {
+      code = PW.nextCode('DH');
+      PW.data.salesOrders.push({
+        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.value,
+        items: items, discount: 0, status: 'open', note: 'Gom đơn ký gửi tự động',
+      });
+    } else {
+      code = PW.nextCode('HD');
+      PW.data.salesInvoices.push({
+        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.value,
+        channelId: chSel.value || null, vatRate: 0, items: items, discount: 0,
+        paid: 0, paidAccountId: null, note: 'Gom đơn ký gửi tự động',
+      });
+    }
+    PW.save();
+    U.toast('Đã tạo ' + code + ' (' + items.length + ' mặt hàng) + nhớ ' + valid.length + ' bí danh');
+    state.rows = [];
+    ta.value = '';
+    draw();
+    sumDiv.innerHTML = 'Đã tạo chứng từ <b>' + U.esc(code) + '</b>. Xem ở mục ' +
+      (typeSel.value === 'order' ? 'Đơn đặt hàng' : 'Hóa đơn bán') + '.';
+  }
+
+  root.appendChild(srcCard);
+  root.appendChild(docCard);
+  root.appendChild(revCard);
+};
+
+// Giá mặc định theo kênh
+M._ciPrice = function (productId, channelId) {
+  const p = PW.data.products.find(x => x.id === productId);
+  if (!p) return 0;
+  if (channelId && PW.channelPrice) return PW.channelPrice(p, channelId);
+  return Number(p.price) || 0;
+};
+
+/* ---------- AI đọc ảnh (Claude Vision qua api/ai-ocr.php) ---------- */
+M._ciOcr = function (file, onLines) {
+  U.toast('Đang nén ảnh & gửi AI đọc...');
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = async () => {
+    URL.revokeObjectURL(url);
+    // Thu nhỏ về tối đa 1600px để gửi nhanh, đủ nét để đọc chữ
+    const maxEdge = 1600;
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(img.width * scale);
+    cv.height = Math.round(img.height * scale);
+    cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+    const dataUrl = cv.toDataURL('image/jpeg', 0.85);
+    try {
+      const r = await PW.api('ai-ocr.php', { method: 'POST', body: JSON.stringify({ image: dataUrl }) });
+      if (r.status === 200 && r.data && r.data.ok) {
+        U.toast('AI đã đọc ' + r.data.lines.length + ' dòng');
+        onLines(r.data.lines);
+      } else {
+        U.toast((r.data && r.data.error) || 'AI đọc ảnh thất bại (HTTP ' + r.status + ')', 'error');
+      }
+    } catch (e) {
+      U.toast('Không gọi được AI: ' + e.message, 'error');
+    }
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); U.toast('Không đọc được file ảnh', 'error'); };
+  img.src = url;
+};

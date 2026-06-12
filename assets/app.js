@@ -23,6 +23,7 @@ App.menu = [
     { id: 'returns', label: 'Trả lại hàng bán', icon: 'rotate-left', title: 'Trả lại hàng bán' },
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: 'tag', title: 'Giảm giá hàng bán' },
     { id: 'reconcile', label: 'Đối soát sàn', icon: 'scale', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
+    { id: 'consign-import', label: 'Gom đơn ký gửi', icon: 'wand', title: 'Gom đơn ký gửi — Tự khớp mã hàng' },
     { id: 'crm', label: 'CRM khách hàng', icon: 'crown', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'VẬN HÀNH KHO', items: [
@@ -169,6 +170,7 @@ App.refresh = function () {
     case 'returns': return M.returns(root);
     case 'discounts': return M.discounts(root);
     case 'reconcile': return M.reconcile(root);
+    case 'consign-import': return M.consignImport(root);
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
     case 'purchases': return M.purchases(root);

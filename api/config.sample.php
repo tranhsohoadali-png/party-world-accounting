@@ -36,4 +36,10 @@ return [
   //    → đọc TRỰC TIẾP, tự động, không cần đẩy. View phải có đủ 9 cột:
   //    entry_date, employee_code, employee_name, pha, tranh_rot, mau_rot, sx, note, source.
   'productivity_source' => 'productivity_entries',
+
+  // AI đọc ảnh bảng kê (màn "Gom đơn ký gửi" -> api/ai-ocr.php).
+  // Lấy khóa tại https://console.anthropic.com -> API Keys. Không có khóa thì
+  // tính năng chụp ảnh báo lỗi nhẹ nhàng, các phần dán/CSV vẫn dùng bình thường.
+  'anthropic_api_key' => '',
+  'anthropic_model' => 'claude-haiku-4-5-20251001',
 ];
