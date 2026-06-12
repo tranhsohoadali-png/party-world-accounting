@@ -286,7 +286,7 @@ M.consignImport = function (root) {
 
   /* --- Thẻ 1: nguồn dữ liệu --- */
   const srcCard = U.el('div', { class: 'card' });
-  srcCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Gom đơn ký gửi — dán / tải / chụp'));
+  srcCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Làm việc với AI — dán / tải file / chụp ảnh'));
   srcCard.appendChild(U.el('p', { class: 'section-sub' },
     'Dán danh sách bán từ nhà sách (copy từ Excel/Zalo), tải file Excel (.xlsx) / CSV, hoặc gửi ảnh chụp / PDF bảng kê để AI đọc. ' +
     'Hệ thống tự nhận diện mã hàng (vd K452 20x25), số lượng, đơn giá rồi khớp về danh mục. Bí danh đã xác nhận sẽ được nhớ cho lần sau.'));
@@ -503,6 +503,11 @@ M._ciOcrSend = async function (dataUrl, onLines) {
 };
 
 M._ciOcr = function (file, onLines) {
+  // Ảnh HEIC/HEIF (iPhone) — trình duyệt lẫn AI đều không đọc được định dạng này
+  if (/\.hei[cf]$/i.test(file.name) || /heic|heif/i.test(file.type)) {
+    U.toast('Ảnh HEIC của iPhone chưa hỗ trợ — đổi Cài đặt > Camera > Định dạng sang "Tương thích nhất" (JPEG), hoặc gửi PDF', 'error');
+    return;
+  }
   // PDF: gửi nguyên văn (Claude đọc được cả PDF chữ lẫn PDF scan)
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
     if (file.size > 8 * 1024 * 1024) { U.toast('PDF quá lớn (tối đa 8MB) — tách nhỏ hoặc chụp ảnh từng trang', 'error'); return; }
@@ -527,6 +532,9 @@ M._ciOcr = function (file, onLines) {
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
     M._ciOcrSend(cv.toDataURL('image/jpeg', 0.85), onLines);
   };
-  img.onerror = () => { URL.revokeObjectURL(url); U.toast('Không đọc được file ảnh', 'error'); };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    U.toast('Không đọc được file "' + file.name + '" (' + (file.type || 'không rõ định dạng') + ') — dùng ảnh JPG/PNG hoặc PDF', 'error');
+  };
   img.src = url;
 };

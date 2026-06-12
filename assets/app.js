@@ -23,7 +23,7 @@ App.menu = [
     { id: 'returns', label: 'Trả lại hàng bán', icon: 'rotate-left', title: 'Trả lại hàng bán' },
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: 'tag', title: 'Giảm giá hàng bán' },
     { id: 'reconcile', label: 'Đối soát sàn', icon: 'scale', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
-    { id: 'consign-import', label: 'Gom đơn ký gửi', icon: 'wand', title: 'Gom đơn ký gửi — Tự khớp mã hàng' },
+    { id: 'consign-import', label: 'Làm việc với AI', icon: 'wand', title: 'Làm việc với AI — Gom đơn ký gửi, tự khớp mã hàng' },
     { id: 'crm', label: 'CRM khách hàng', icon: 'crown', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'VẬN HÀNH KHO', items: [
