@@ -62,6 +62,35 @@ a { color: var(--blue); text-decoration: none; transition: color var(--t-fast); 
 /* Focus rõ ràng cho điều hướng bàn phím */
 :focus-visible { outline: none; box-shadow: var(--ring); border-radius: 6px; }
 
+/* ---------- Hệ thống icon SVG ---------- */
+svg.icon { width: 1.18em; height: 1.18em; display: inline-block; vertical-align: -.22em; flex: 0 0 auto; }
+/* Icon trong menu trái */
+.nav a.item .ic { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; font-size: 0; }
+.nav a.item .ic svg.icon { width: 19px; height: 19px; vertical-align: 0; }
+/* Icon đứng đầu tiêu đề thẻ — tô màu thương hiệu để tạo điểm nhấn */
+.ic-inline { display: inline-flex; align-items: center; color: var(--teal-d); }
+.ic-inline svg.icon { width: 19px; height: 19px; vertical-align: 0; }
+body.dark .ic-inline { color: #a5d76e; }
+.card-title.has-ic, .btn.has-ic { display: inline-flex; align-items: center; gap: 8px; }
+.card-title.has-ic { display: flex; }
+/* Icon trong badge KPI (nền màu, icon trắng) */
+.ic-badge svg.icon { width: 20px; height: 20px; vertical-align: 0; }
+/* Icon trong cảnh báo */
+.alert-bar .a-ic { display: inline-flex; align-items: center; }
+.alert-bar .a-ic svg.icon { width: 20px; height: 20px; vertical-align: 0; }
+/* Icon thẻ KPI gradient (trang Phân tích) — trắng trên nền màu */
+.kpi-fancy .kf-ic svg.icon { width: 24px; height: 24px; vertical-align: 0; }
+/* Icon node sơ đồ quy trình — to & xanh thương hiệu */
+.flow-node .flow-ic { color: var(--teal-d); line-height: 0; }
+.flow-node.primary .flow-ic { color: var(--teal-d); }
+.flow-node .flow-ic svg.icon { width: 30px; height: 30px; vertical-align: 0; }
+body.dark .flow-node .flow-ic { color: #a5d76e; }
+/* Icon trong nút */
+.btn svg.icon { width: 16px; height: 16px; vertical-align: -.2em; }
+.btn.sm svg.icon { width: 15px; height: 15px; }
+#theme-toggle { display: inline-flex; align-items: center; justify-content: center; padding: 6px 8px; }
+#theme-toggle svg.icon { width: 17px; height: 17px; vertical-align: 0; }
+
 /* ---------- Layout ---------- */
 .app { display: flex; height: 100vh; overflow: hidden; }
 
@@ -186,7 +215,9 @@ input.search, input.inp, select.inp, textarea.inp {
   font-family: inherit; color: var(--text); background: #fff;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-input.search { min-width: 240px; }
+input.search { min-width: 240px; padding-left: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237b8568' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 10px center; background-size: 16px 16px; }
 input.inp:focus, select.inp:focus, textarea.inp:focus, input.search:focus { outline: none; border-color: var(--teal); box-shadow: var(--ring); }
 
 /* ---------- Modal ---------- */
@@ -380,7 +411,7 @@ body.dark input, body.dark select, body.dark textarea,
 body.dark .field input, body.dark .field select, body.dark .field textarea,
 body.dark input.inp, body.dark select.inp, body.dark textarea.inp, body.dark input.search,
 body.dark .items-tbl input, body.dark .items-tbl select {
-  background: #1b2214; color: var(--text); border-color: #3b452c;
+  background-color: #1b2214; color: var(--text); border-color: #3b452c;
 }
 body.dark .nav a.item { color: var(--text); }
 body.dark .nav a.item:hover { background: #29331f; }

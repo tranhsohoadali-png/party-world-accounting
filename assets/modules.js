@@ -291,7 +291,7 @@ M.dashboard = function (root) {
 M.products = function (root) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm theo tên / mã hàng...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã hàng...' });
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('+ Thêm hàng hóa', () => M.productForm(), 'primary'));
@@ -464,7 +464,7 @@ M.partners = function (root, kind) {
   const selected = new Set();
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm theo tên / mã / điện thoại...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã / điện thoại...' });
   const bulkBtn = C.btn('🗑 Xóa đã chọn', () => bulkDelete(), 'danger sm');
   bulkBtn.style.display = 'none';
   toolbar.appendChild(search);

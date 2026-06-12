@@ -39,7 +39,7 @@ M.ledger = function (root) {
       Object.keys(M.LEDGER_TYPES).map(k => ({ value: k, label: M.LEDGER_TYPES[k].label }))), ''),
     from: C.input({ type: 'date', value: period.from, style: 'width:150px' }),
     to: C.input({ type: 'date', value: U.today(), style: 'width:150px' }),
-    q: U.el('input', { class: 'search', placeholder: '🔍 Tìm mô tả / danh mục...' }),
+    q: U.el('input', { class: 'search', placeholder: 'Tìm mô tả / danh mục...' }),
   };
 
   const card = U.el('div', { class: 'card' });

@@ -3,61 +3,62 @@
    ============================================================ */
 const App = { current: 'dashboard' };
 
+// icon = tên icon SVG trong U.ICONS (xem assets/icons.js)
 App.menu = [
   { group: 'TỔNG QUAN', items: [
-    { id: 'dashboard', label: 'Tổng quan', icon: '🏠', title: 'Tổng quan' },
-    { id: 'analytics', label: 'Phân tích KD', icon: '📊', title: 'Phân tích kinh doanh', roles: ['admin', 'ketoan'] },
-    { id: 'charts', label: 'Biểu đồ', icon: '📈', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
+    { id: 'dashboard', label: 'Tổng quan', icon: 'home', title: 'Tổng quan' },
+    { id: 'analytics', label: 'Phân tích KD', icon: 'chart-pie', title: 'Phân tích kinh doanh', roles: ['admin', 'ketoan'] },
+    { id: 'charts', label: 'Biểu đồ', icon: 'bar-chart', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'SỔ CLAUDE (MCP)', items: [
-    { id: 'ledger', label: 'Sổ giao dịch', icon: '📒', title: 'Sổ giao dịch (Claude / hóa đơn)', roles: ['admin', 'ketoan'] },
-    { id: 'mcp-inventory', label: 'Tồn kho (MCP)', icon: '🏬', title: 'Tồn kho (sổ Claude)', roles: ['admin', 'ketoan'] },
-    { id: 'mcp-parties', label: 'Đối tác (MCP)', icon: '🤝', title: 'Đối tác (sổ Claude)', roles: ['admin', 'ketoan'] },
+    { id: 'ledger', label: 'Sổ giao dịch', icon: 'book', title: 'Sổ giao dịch (Claude / hóa đơn)', roles: ['admin', 'ketoan'] },
+    { id: 'mcp-inventory', label: 'Tồn kho (MCP)', icon: 'warehouse', title: 'Tồn kho (sổ Claude)', roles: ['admin', 'ketoan'] },
+    { id: 'mcp-parties', label: 'Đối tác (MCP)', icon: 'handshake', title: 'Đối tác (sổ Claude)', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁN HÀNG', items: [
-    { id: 'sales-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình bán hàng' },
-    { id: 'quotes', label: 'Báo giá', icon: '🧾', title: 'Báo giá' },
-    { id: 'orders', label: 'Đơn đặt hàng', icon: '📋', title: 'Đơn đặt hàng' },
-    { id: 'sales', label: 'Hóa đơn bán', icon: '🛒', title: 'Bán hàng & Công nợ phải thu' },
-    { id: 'returns', label: 'Trả lại hàng bán', icon: '↩️', title: 'Trả lại hàng bán' },
-    { id: 'discounts', label: 'Giảm giá hàng bán', icon: '🏷️', title: 'Giảm giá hàng bán' },
-    { id: 'reconcile', label: 'Đối soát sàn', icon: '💸', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
-    { id: 'crm', label: 'CRM khách hàng', icon: '👑', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
+    { id: 'sales-flow', label: 'Quy trình', icon: 'route', title: 'Quy trình bán hàng' },
+    { id: 'quotes', label: 'Báo giá', icon: 'file-quote', title: 'Báo giá' },
+    { id: 'orders', label: 'Đơn đặt hàng', icon: 'clipboard-list', title: 'Đơn đặt hàng' },
+    { id: 'sales', label: 'Hóa đơn bán', icon: 'receipt', title: 'Bán hàng & Công nợ phải thu' },
+    { id: 'returns', label: 'Trả lại hàng bán', icon: 'rotate-left', title: 'Trả lại hàng bán' },
+    { id: 'discounts', label: 'Giảm giá hàng bán', icon: 'tag', title: 'Giảm giá hàng bán' },
+    { id: 'reconcile', label: 'Đối soát sàn', icon: 'scale', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
+    { id: 'crm', label: 'CRM khách hàng', icon: 'crown', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'VẬN HÀNH KHO', items: [
-    { id: 'scan', label: 'Quét đơn (đóng gói / đổi trả)', icon: '📷', title: 'Trạm quét — Đóng gói & Đổi trả' },
+    { id: 'scan', label: 'Quét đơn (đóng gói / đổi trả)', icon: 'scan', title: 'Trạm quét — Đóng gói & Đổi trả' },
   ]},
   { group: 'MUA HÀNG', roles: ['admin', 'ketoan'], items: [
-    { id: 'purchase-flow', label: 'Quy trình', icon: '🧭', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
-    { id: 'purchase-orders', label: 'Đơn mua hàng', icon: '📝', title: 'Đơn mua hàng', roles: ['admin', 'ketoan'] },
-    { id: 'purchases', label: 'Phiếu nhập mua', icon: '📦', title: 'Mua hàng & Công nợ phải trả', roles: ['admin', 'ketoan'] },
-    { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: '↪️', title: 'Trả lại hàng mua', roles: ['admin', 'ketoan'] },
-    { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: '🏷️', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
-    { id: 'stockcount', label: 'Kiểm kê kho', icon: '📋', title: 'Kiểm kê kho', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-flow', label: 'Quy trình', icon: 'route', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-orders', label: 'Đơn mua hàng', icon: 'file-edit', title: 'Đơn mua hàng', roles: ['admin', 'ketoan'] },
+    { id: 'purchases', label: 'Phiếu nhập mua', icon: 'package', title: 'Mua hàng & Công nợ phải trả', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: 'rotate-right', title: 'Trả lại hàng mua', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: 'tag', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
+    { id: 'stockcount', label: 'Kiểm kê kho', icon: 'clipboard-check', title: 'Kiểm kê kho', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'TIỀN', items: [
-    { id: 'cash', label: 'Tiền (Thu / Chi)', icon: '💵', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
+    { id: 'cash', label: 'Tiền (Thu / Chi)', icon: 'wallet', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'SẢN XUẤT', items: [
-    { id: 'production', label: 'Lệnh sản xuất', icon: '🏭', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
-    { id: 'productivity', label: 'Năng suất', icon: '📈', title: 'Năng suất theo nhân viên' },
+    { id: 'production', label: 'Lệnh sản xuất', icon: 'factory', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
+    { id: 'productivity', label: 'Năng suất', icon: 'trending-up', title: 'Năng suất theo nhân viên' },
   ]},
   { group: 'NHÂN SỰ', items: [
-    { id: 'payroll', label: 'Tính lương', icon: '💰', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
+    { id: 'payroll', label: 'Tính lương', icon: 'coins', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'DANH MỤC', items: [
-    { id: 'catalog', label: 'Tất cả danh mục', icon: '📚', title: 'Danh mục', roles: ['admin', 'ketoan'] },
-    { id: 'products', label: 'Hàng hóa', icon: '📦', title: 'Danh mục hàng hóa' },
-    { id: 'customers', label: 'Khách hàng', icon: '👥', title: 'Danh mục khách hàng' },
-    { id: 'suppliers', label: 'Nhà cung cấp', icon: '🏭', title: 'Danh mục nhà cung cấp', roles: ['admin', 'ketoan'] },
-    { id: 'cat-employees', label: 'Nhân viên', icon: '🧑‍💼', title: 'Danh mục nhân viên', roles: ['admin', 'ketoan'] },
+    { id: 'catalog', label: 'Tất cả danh mục', icon: 'grid', title: 'Danh mục', roles: ['admin', 'ketoan'] },
+    { id: 'products', label: 'Hàng hóa', icon: 'box', title: 'Danh mục hàng hóa' },
+    { id: 'customers', label: 'Khách hàng', icon: 'users', title: 'Danh mục khách hàng' },
+    { id: 'suppliers', label: 'Nhà cung cấp', icon: 'truck', title: 'Danh mục nhà cung cấp', roles: ['admin', 'ketoan'] },
+    { id: 'cat-employees', label: 'Nhân viên', icon: 'id-card', title: 'Danh mục nhân viên', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁO CÁO', roles: ['admin', 'ketoan'], items: [
-    { id: 'reports', label: 'Báo cáo', icon: '📊', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
+    { id: 'reports', label: 'Báo cáo', icon: 'report', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'HỆ THỐNG', items: [
-    { id: 'settings', label: 'Dữ liệu & Sao lưu', icon: '⚙️', title: 'Cài đặt — Sao lưu dữ liệu', roles: ['admin', 'ketoan'] },
-    { id: 'users', label: 'Người dùng', icon: '👤', title: 'Quản lý người dùng', roles: ['admin'] },
+    { id: 'settings', label: 'Dữ liệu & Sao lưu', icon: 'settings', title: 'Cài đặt — Sao lưu dữ liệu', roles: ['admin', 'ketoan'] },
+    { id: 'users', label: 'Người dùng', icon: 'user', title: 'Quản lý người dùng', roles: ['admin'] },
   ]},
 ];
 
@@ -80,7 +81,7 @@ App.render = function () {
         class: 'item' + (App.current === it.id ? ' active' : ''),
         href: '#' + it.id,
         onclick: (e) => { e.preventDefault(); App.go(it.id); },
-      }, [U.el('span', { class: 'ic' }, it.icon), U.el('span', null, it.label)]);
+      }, [U.el('span', { class: 'ic', html: U.icon(it.icon) }), U.el('span', null, it.label)]);
       nav.appendChild(a);
     });
   });
@@ -109,7 +110,10 @@ App.initUI = function () {
   const themeBtn = document.getElementById('theme-toggle');
   const applyTheme = dark => {
     document.body.classList.toggle('dark', dark);
-    if (themeBtn) themeBtn.textContent = dark ? '☀️' : '🌙';
+    if (themeBtn) {
+      themeBtn.innerHTML = (U.icon ? U.icon(dark ? 'sun' : 'moon') : (dark ? '☀️' : '🌙'));
+      themeBtn.title = dark ? 'Chuyển nền sáng' : 'Chuyển nền tối';
+    }
   };
   applyTheme(localStorage.getItem('PW_THEME') === 'dark');
   if (themeBtn) themeBtn.onclick = () => {
@@ -307,6 +311,7 @@ App.logout = async function () {
 /* ---------- Khởi động ---------- */
 App.boot = async function () {
   App.initUI();                                 // sáng/tối + menu điện thoại
+  if (U.autoIconify) U.autoIconify();           // tự thay emoji -> icon SVG ở tiêu đề/nút/KPI
   const ses = await PW.detectSession();        // xác định offline hay server
   if (ses.server && !ses.user) { M.loginScreen(); return; } // server nhưng chưa đăng nhập
   await PW.load();

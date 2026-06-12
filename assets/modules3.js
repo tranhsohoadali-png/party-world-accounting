@@ -165,7 +165,7 @@ M.docListSimple = function (root, kind) {
   const list = isQuote ? PW.data.quotations : PW.data.salesOrders;
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm...' });
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn(isQuote ? '+ Lập báo giá' : '+ Lập đơn đặt hàng',

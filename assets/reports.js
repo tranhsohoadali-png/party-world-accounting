@@ -388,7 +388,7 @@ M.reportLowStock = function (host) {
     { label: 'Tồn hiện tại', num: true, render: r => `<b class="text-red">${U.num(r.stock)}</b>` },
     { label: 'Tồn tối thiểu', num: true, render: r => U.num(r.min) },
     { label: 'Cần nhập thêm', num: true, render: r => `<b>${U.num(Math.max(0, r.min - r.stock))}</b>` },
-  ], { empty: 'Tất cả hàng hóa đều trên mức tồn tối thiểu 👍' }));
+  ], { empty: 'Tất cả hàng hóa đều trên mức tồn tối thiểu' }));
 };
 
 M.reportVAT = function (host, from, to) {

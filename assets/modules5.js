@@ -85,7 +85,7 @@ M.purchaseWorkflow = function (root) {
 M.purchaseOrders = function (root) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm số đơn / NCC...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm số đơn / NCC...' });
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('+ Lập đơn mua hàng', () => M.purchaseOrderForm(), 'primary'));

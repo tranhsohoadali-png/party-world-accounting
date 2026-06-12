@@ -1,39 +1,74 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 280" font-family="'Arial Rounded MT Bold','Trebuchet MS',Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" font-family="'Arial Rounded MT Bold','Baloo 2','Trebuchet MS',Arial,sans-serif">
   <defs>
     <linearGradient id="bbg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#eef7e0"/>
-      <stop offset="1" stop-color="#d8edbf"/>
+      <stop offset="0" stop-color="#f1f9e6"/>
+      <stop offset="0.55" stop-color="#e2f1ca"/>
+      <stop offset="1" stop-color="#cfe7ad"/>
     </linearGradient>
     <linearGradient id="bdali" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#9bce4a"/><stop offset="1" stop-color="#6fae33"/>
     </linearGradient>
-    <linearGradient id="leaf2" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="leafg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#a9d65c"/><stop offset="1" stop-color="#5a9a2a"/>
     </linearGradient>
+    <linearGradient id="leafg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bfe07f"/><stop offset="1" stop-color="#7bbb3a"/>
+    </linearGradient>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="2" fill="#6fae33" opacity="0.12"/>
+    </pattern>
+    <clipPath id="round"><rect x="0" y="0" width="1200" height="300" rx="20"/></clipPath>
   </defs>
 
-  <rect x="0" y="0" width="1200" height="280" rx="18" fill="url(#bbg)"/>
+  <g clip-path="url(#round)">
+    <!-- Nền -->
+    <rect x="0" y="0" width="1200" height="300" fill="url(#bbg)"/>
+    <rect x="0" y="0" width="1200" height="300" fill="url(#dots)"/>
 
-  <!-- Lá trang trí -->
-  <g opacity="0.9">
-    <path d="M70,210 C70,150 120,110 200,104 C193,170 140,210 70,210 Z" fill="url(#leaf2)" opacity="0.55"/>
-    <path d="M1130,70 C1130,130 1080,170 1000,176 C1007,110 1060,70 1130,70 Z" fill="url(#leaf2)" opacity="0.55"/>
-    <circle cx="250" cy="60" r="7" fill="#8cc63f"/>
-    <circle cx="980" cy="220" r="7" fill="#8cc63f"/>
-    <circle cx="150" cy="70" r="5" fill="#b6da7c"/>
-    <circle cx="1070" cy="210" r="5" fill="#b6da7c"/>
-  </g>
+    <!-- Lá watermark lớn, rất nhạt -->
+    <path d="M1080,300 C940,300 840,200 840,60 C1000,60 1140,170 1140,300 Z" fill="#7bbb3a" opacity="0.10"/>
 
-  <!-- Logo "Dali" + lá -->
-  <g transform="translate(440,55)">
-    <g transform="translate(150,-2)">
-      <path d="M2,52 C2,24 24,5 50,2 C47,32 27,52 2,52 Z" fill="url(#bdali)"/>
-      <path d="M8,47 C22,36 36,22 47,6" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.9"/>
+    <!-- Vệt sáng chéo -->
+    <path d="M-100,0 L300,0 L120,300 L-100,300 Z" fill="#ffffff" opacity="0.18"/>
+
+    <!-- Motif tăng trưởng (cột + đường xu hướng) — gợi ý phần mềm kế toán, đáy phải -->
+    <g opacity="0.85">
+      <rect x="930"  y="232" width="20" height="38" rx="4" fill="#8ec63f" opacity="0.75"/>
+      <rect x="966"  y="214" width="20" height="56" rx="4" fill="#8ec63f" opacity="0.8"/>
+      <rect x="1002" y="226" width="20" height="44" rx="4" fill="#8ec63f" opacity="0.75"/>
+      <rect x="1038" y="196" width="20" height="74" rx="4" fill="#7bbb3a" opacity="0.85"/>
+      <rect x="1074" y="176" width="20" height="94" rx="4" fill="#6fae33" opacity="0.9"/>
+      <polyline points="940,238 976,220 1012,232 1048,202 1084,182 1118,168" fill="none"
+        stroke="#4a7a22" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="1118" cy="168" r="5.5" fill="#4a7a22"/>
     </g>
-    <text x="160" y="135" text-anchor="middle" font-size="120" font-weight="800" fill="url(#bdali)" letter-spacing="2">Dali</text>
-    <text x="160" y="170" text-anchor="middle" font-size="20" font-weight="600" fill="#7d8a64" letter-spacing="6">TÔ ĐIỂM CUỘC SỐNG</text>
-  </g>
 
-  <!-- Dòng phụ -->
-  <text x="600" y="250" text-anchor="middle" font-size="24" font-weight="700" fill="#5a8e2e" letter-spacing="2">PHẦN MỀM KẾ TOÁN</text>
+    <!-- Lá trang trí -->
+    <g>
+      <path d="M70,250 C70,175 130,128 224,120 C216,200 152,250 70,250 Z" fill="url(#leafg)" opacity="0.5"/>
+      <path d="M88,236 C128,202 168,168 206,132" stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.55"/>
+      <path d="M150,70 C150,40 178,18 214,16 C210,52 184,70 150,70 Z" fill="url(#leafg2)" opacity="0.45"/>
+      <circle cx="262" cy="58" r="7" fill="#8cc63f" opacity="0.7"/>
+      <circle cx="312" cy="92" r="5" fill="#b6da7c" opacity="0.8"/>
+      <circle cx="120" cy="120" r="5" fill="#8cc63f" opacity="0.6"/>
+    </g>
+
+    <!-- Khối thương hiệu (giữa) -->
+    <g transform="translate(600,0)">
+      <!-- Lá mark phía trên chữ D -->
+      <g transform="translate(-58,52) scale(0.92)">
+        <path d="M2,66 C2,30 30,6 64,2 C60,40 34,66 2,66 Z" fill="url(#bdali)"/>
+        <path d="M10,60 C28,46 46,28 60,8" stroke="#ffffff" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.9"/>
+      </g>
+      <!-- Chữ Dali -->
+      <text x="0" y="170" text-anchor="middle" font-size="118" font-weight="800" fill="url(#bdali)" letter-spacing="2">Dali</text>
+      <!-- Tagline -->
+      <text x="0" y="206" text-anchor="middle" font-size="19" font-weight="600" fill="#7d8a64" letter-spacing="7">TÔ ĐIỂM CUỘC SỐNG</text>
+      <!-- Pill phụ đề -->
+      <g transform="translate(0,236)">
+        <rect x="-124" y="0" width="248" height="36" rx="18" fill="#4a7a22"/>
+        <text x="0" y="24" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff" letter-spacing="3">PHẦN MỀM KẾ TOÁN</text>
+      </g>
+    </g>
+  </g>
 </svg>

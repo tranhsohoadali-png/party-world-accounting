@@ -174,7 +174,7 @@ M.reconcile = function (root) {
     });
     if (!rows.length) {
       tb.appendChild(U.el('tr', null, U.el('td', { colspan: 10 },
-        U.el('div', { class: 'empty' }, todoChk.checked ? 'Không còn đơn nào cần xử lý 🎉' : 'Không có đơn nào trên kênh này trong kỳ'))));
+        U.el('div', { class: 'empty' }, todoChk.checked ? 'Không còn đơn nào cần xử lý' : 'Không có đơn nào trên kênh này trong kỳ'))));
     }
     tbl.appendChild(tb);
     host.appendChild(tbl);

@@ -8,7 +8,7 @@
 M.sales = function (root) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm số HĐ / khách hàng...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm số HĐ / khách hàng...' });
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary'));
@@ -78,7 +78,7 @@ M.salesForm = function (si, presetCustomerId) {
 M.purchases = function (root) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: '🔍 Tìm số phiếu / NCC...' });
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm số phiếu / NCC...' });
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('+ Lập phiếu nhập mua', () => M.purchaseForm(), 'primary'));

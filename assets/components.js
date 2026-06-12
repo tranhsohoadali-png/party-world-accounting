@@ -24,6 +24,7 @@ C.modal = function ({ title, body, footer, wide }) {
   }
   back.appendChild(modal);
   document.body.appendChild(back);
+  if (U.iconifyTitles) U.iconifyTitles(modal);   // thay emoji -> icon trong modal
   return { back, modal, body: bodyEl };
 };
 C.closeModal = function () {
