@@ -412,6 +412,9 @@ PW.revenue = function (fromYmd, toYmd) {
     .reduce((s, sr) => s + PW.returnTotal(sr), 0);
   rev -= PW.data.salesDiscounts.filter(g => inRange(g.date))
     .reduce((s, g) => s + Number(g.amount), 0);
+  // Thu nhập từ sổ Claude (phiếu thu có cờ isRevenue) -> tính là doanh thu
+  rev += PW.data.receipts.filter(r => r.isRevenue && inRange(r.date))
+    .reduce((s, r) => s + Number(r.amount), 0);
   return rev;
 };
 

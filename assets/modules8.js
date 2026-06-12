@@ -57,6 +57,10 @@ M.ledger = function (root) {
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0;flex:1' }, [U.el('label', null, 'Tìm'), f.q]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('Xem', load, 'primary')]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('📊 Xuất Excel', exportLedger, 'sm')]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('⇊ Đưa hết vào sổ', bulkConvert, 'sm')]));
+  const onlyUnconv = U.el('input', { type: 'checkbox' });
+  onlyUnconv.addEventListener('change', () => load());
+  toolbar.appendChild(U.el('label', { class: 'radio', style: 'margin:0;white-space:nowrap;align-self:center' }, [onlyUnconv, ' Chỉ khoản chưa vào sổ']));
   card.appendChild(toolbar);
 
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
@@ -94,8 +98,9 @@ M.ledger = function (root) {
     // Bảng entries
     const rows = r.data.entries || [];
     lastEntries = rows;
+    const shown = onlyUnconv.checked ? rows.filter(e => !convertedOf(e.id)) : rows;
     host.innerHTML = '';
-    host.appendChild(C.table(rows, [
+    host.appendChild(C.table(shown, [
       { label: 'Ngày', render: e => U.date(e.entry_date) },
       { label: 'Loại', center: true, render: e => {
           const t = M.LEDGER_TYPES[e.entry_type] || { label: e.entry_type, cls: 'gray' };
@@ -151,6 +156,12 @@ M.ledger = function (root) {
     U.exportExcel('SoGiaoDich', headers, rows, 'SỔ GIAO DỊCH (CLAUDE / MCP)');
   }
 
+  function bulkConvert() {
+    const todo = lastEntries.filter(e => (e.entry_type === 'expense' || e.entry_type === 'income') && !convertedOf(e.id));
+    if (!todo.length) return U.toast('Không có khoản chi/thu nào CHƯA vào sổ trong danh sách.', 'error');
+    M.ledgerBulkToVoucher(todo, load);
+  }
+
   load();
 };
 
@@ -168,6 +179,7 @@ M.ledgerToVoucher = function (entry, kind, after) {
   const isChi = kind === 'chi';
   const amount = Number(entry.amount) || 0;
   const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+  const catI = isChi ? C.input({ value: entry.category || '', list: 'dl-conv-expitems', placeholder: 'vd Phần mềm AI, NVL, Lương...' }) : null;
 
   const body = U.el('div', null, [
     U.el('div', { class: 'section-sub' },
@@ -176,7 +188,11 @@ M.ledgerToVoucher = function (entry, kind, after) {
       U.el('div', null, [U.el('b', null, U.date(entry.entry_date)), '  ·  ', U.el('b', { class: isChi ? 'text-red' : 'text-green' }, U.money(amount) + ' đ')]),
       U.el('div', { class: 'text-muted', style: 'margin-top:2px' }, U.esc(entry.description || '') + (entry.category ? ' · ' + U.esc(entry.category) : '')),
     ]),
-    U.el('div', { class: 'form-grid' }, [C.field(isChi ? 'Chi từ tài khoản' : 'Vào tài khoản', accSel, { full: true })]),
+    U.el('div', { class: 'form-grid' }, [
+      isChi ? C.field('Khoản mục chi phí (để nhóm báo cáo)', catI) : null,
+      C.field(isChi ? 'Chi từ tài khoản' : 'Vào tài khoản', accSel, { full: !isChi }),
+    ]),
+    isChi ? M.datalist('dl-conv-expitems', (PW.data.expenseItems || []).map(x => x.name)) : null,
   ]);
 
   C.modal({
@@ -189,10 +205,50 @@ M.ledgerToVoucher = function (entry, kind, after) {
         reason: entry.description || (isChi ? 'Chi phí (Claude)' : 'Thu nhập (Claude)'),
         note: note, fromLedgerId: String(entry.id),
       };
-      if (isChi) { obj.supplierId = null; PW.data.payments.push(obj); }   // supplierId null = chi phí hoạt động -> vào P&L
-      else { obj.customerId = null; PW.data.receipts.push(obj); }
+      if (isChi) { obj.supplierId = null; obj.category = (catI.value || entry.category || '').trim(); PW.data.payments.push(obj); }  // supplierId null = chi phí hoạt động -> P&L
+      else { obj.customerId = null; obj.isRevenue = true; PW.data.receipts.push(obj); }   // isRevenue -> tính vào doanh thu
       PW.save(); C.closeModal();
       U.toast('Đã tạo ' + (isChi ? 'phiếu chi ' : 'phiếu thu ') + obj.code + ' trong sổ chính');
+      if (after) after();
+    }, 'primary')],
+  });
+};
+
+/* ---------- Chuyển HÀNG LOẠT giao dịch Claude -> phiếu chi/thu ---------- */
+M.ledgerBulkToVoucher = function (entries, after) {
+  if (!PW.data.cashAccounts || !PW.data.cashAccounts.length) {
+    return U.toast('Chưa có tài khoản tiền. Vào Danh mục để thêm.', 'error');
+  }
+  const chi = entries.filter(e => e.entry_type === 'expense');
+  const thu = entries.filter(e => e.entry_type === 'income');
+  const sumChi = chi.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const sumThu = thu.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' }, 'Đưa HÀNG LOẠT các khoản chưa vào sổ thành phiếu chi/thu trong sổ chính. Danh mục lấy theo từng giao dịch (sửa từng phiếu sau ở mục Tiền nếu cần).'),
+    U.el('div', { style: 'margin:10px 0;padding:10px;border:1px solid var(--line,#eee);border-radius:8px' }, [
+      U.el('div', null, [U.el('b', null, chi.length + ' phiếu chi'), ' · tổng ', U.el('b', { class: 'text-red' }, U.money(sumChi) + ' đ')]),
+      U.el('div', { style: 'margin-top:2px' }, [U.el('b', null, thu.length + ' phiếu thu'), ' · tổng ', U.el('b', { class: 'text-green' }, U.money(sumThu) + ' đ')]),
+    ]),
+    U.el('div', { class: 'form-grid' }, [C.field('Tài khoản tiền (áp dụng cho tất cả)', accSel, { full: true })]),
+  ]);
+
+  C.modal({
+    title: '⇊ Đưa hàng loạt vào sổ chính', body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo ' + entries.length + ' phiếu', () => {
+      const existing = new Set((PW.data.payments || []).concat(PW.data.receipts || []).map(x => String(x.fromLedgerId)));
+      let nc = 0, nt = 0;
+      entries.forEach(e => {
+        if (existing.has(String(e.id))) return;   // bỏ qua nếu đã có phiếu
+        if (e.entry_type === 'expense') {
+          PW.data.payments.push({ id: PW.uid(), code: PW.nextCode('PC'), date: e.entry_date, accountId: accSel.value, supplierId: null, amount: Number(e.amount) || 0, reason: e.description || 'Chi phí (Claude)', category: (e.category || '').trim(), note: 'Từ sổ Claude', fromLedgerId: String(e.id) }); nc++;
+        } else if (e.entry_type === 'income') {
+          PW.data.receipts.push({ id: PW.uid(), code: PW.nextCode('PT'), date: e.entry_date, accountId: accSel.value, customerId: null, amount: Number(e.amount) || 0, reason: e.description || 'Thu nhập (Claude)', note: 'Từ sổ Claude', isRevenue: true, fromLedgerId: String(e.id) }); nt++;
+        }
+      });
+      PW.save(); C.closeModal();
+      U.toast('Đã tạo ' + nc + ' phiếu chi + ' + nt + ' phiếu thu trong sổ chính');
       if (after) after();
     }, 'primary')],
   });
