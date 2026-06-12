@@ -9,8 +9,14 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/mcp-ketoan-dali
 Environment="PW_API_BASE=https://ketoan.tranhdali.vn/api/v1"
-# QUAN TRỌNG: thay TOKEN_HERE bằng token thật do install.sh sinh ra
+# PW_API_TOKEN: token MCP->PHP /api/v1 (lấy từ bảng api_tokens, is_active=1)
 Environment="PW_API_TOKEN=TOKEN_HERE"
+# MCP_AUTH_TOKEN: token RIÊNG mà claude.ai connector phải gửi vào /mcp.
+# Sinh bằng: python3 -c "import secrets; print(secrets.token_hex(32))"
+Environment="MCP_AUTH_TOKEN=MCP_TOKEN_HERE"
+# HOME/XDG_CACHE_HOME: ProtectSystem=strict khiến $HOME read-only -> trỏ về nơi ghi được
+Environment="HOME=/opt/mcp-ketoan-dali"
+Environment="XDG_CACHE_HOME=/tmp"
 ExecStart=/opt/mcp-ketoan-dali/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8765
 Restart=on-failure
 RestartSec=5s

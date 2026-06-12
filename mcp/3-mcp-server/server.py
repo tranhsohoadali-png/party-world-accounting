@@ -394,7 +394,37 @@ def _format_result(result: dict, what: str) -> str:
 
 # ============ EXPOSE ASGI APP ============
 # FastMCP có sẵn ASGI app cho HTTP transport
-app = mcp.streamable_http_app()
+import hmac
+
+# Token RIÊNG cho lớp /mcp (claude.ai connector phải gửi Bearer này).
+# Tách khỏi PW_API_TOKEN (token MCP->PHP) để lộ lớp này không lộ lớp kia.
+MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN") or PARTY_WORLD_TOKEN
+
+
+class BearerAuthASGI:
+    """ASGI middleware thuần: chặn request /mcp thiếu/sai Bearer token.
+    Dùng ASGI cấp thấp (không phải BaseHTTPMiddleware) để KHÔNG đệm/đứt
+    luồng streaming (SSE) của MCP. Chỉ chặn ở scope http; lifespan đi qua."""
+
+    def __init__(self, app, token: str):
+        self.app = app
+        self.token = token or ""
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            headers = dict(scope.get("headers") or [])
+            auth = headers.get(b"authorization", b"").decode("latin-1")
+            tok = auth[7:] if auth.startswith("Bearer ") else ""
+            if not (self.token and tok and hmac.compare_digest(tok, self.token)):
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"application/json")]})
+                await send({"type": "http.response.body",
+                            "body": b'{"error":"unauthorized"}'})
+                return
+        await self.app(scope, receive, send)
+
+
+app = BearerAuthASGI(mcp.streamable_http_app(), MCP_AUTH_TOKEN)
 
 
 if __name__ == "__main__":

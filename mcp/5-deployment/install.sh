@@ -6,6 +6,14 @@
 # ============================================================
 set -euo pipefail
 
+# ⚠️ CẢNH BÁO: KHÔNG chạy mù trên server ĐÃ cài /api/v1.
+#   - Lệnh UPDATE api_tokens (mục 1) sẽ ĐỔI token đang dùng -> hỏng connector.
+#   - Guard nginx chỉ kiểm '/api/v1' nên nếu route api đã có sẽ BỎ QUA luôn /mcp
+#     (đây chính là nguyên nhân /mcp trả 421). Hãy cài THỦ CÔNG theo
+#     deploy/BAN-GIAO... / runbook: chỉ phần [4] (Python service) + chèn riêng location /mcp.
+#   Bỏ comment dòng dưới nếu thực sự muốn chạy full installer (lần đầu, server trắng):
+echo "⛔ Đọc cảnh báo ở đầu install.sh trước khi chạy. Thoát an toàn."; exit 2
+
 echo "🚀 Party World Accounting - MCP Integration Installer"
 echo "====================================================="
 echo ""
