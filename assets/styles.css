@@ -386,6 +386,59 @@ body.login-mode .app { filter: blur(2px); pointer-events: none; }
   .card { border: none; box-shadow: none; }
 }
 
+/* ====================== TRỢ LÝ AI (chat nổi) ====================== */
+#ai-fab {
+  position: fixed; right: 22px; bottom: 22px; z-index: 90;
+  width: 54px; height: 54px; border-radius: 50%; border: none;
+  background: var(--teal-grad); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 20px rgba(90,142,46,.4); transition: transform var(--t), box-shadow var(--t);
+}
+#ai-fab svg.icon { width: 26px; height: 26px; }
+#ai-fab:hover { transform: translateY(-2px) scale(1.05); box-shadow: 0 10px 26px rgba(90,142,46,.5); }
+#ai-panel {
+  position: fixed; right: 22px; bottom: 86px; z-index: 95;
+  width: 400px; max-width: calc(100vw - 32px); height: min(640px, calc(100vh - 120px));
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden;
+  animation: pop .18s cubic-bezier(.16,1,.3,1);
+}
+.ai-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px;
+  border-bottom: 1px solid var(--line); background: var(--brand-tint); }
+.ai-head-ic { display: inline-flex; color: var(--teal-d); }
+.ai-head-ic svg.icon { width: 20px; height: 20px; }
+.ai-head-sub { font-size: 12px; color: var(--muted); }
+.ai-hbtn { border: none; background: none; color: var(--muted); padding: 4px 6px;
+  border-radius: 6px; display: inline-flex; }
+.ai-hbtn:hover { background: rgba(0,0,0,.06); color: var(--text); }
+.ai-hbtn svg.icon { width: 16px; height: 16px; }
+.ai-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ai-msg { max-width: 86%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; line-height: 1.5;
+  word-break: break-word; }
+.ai-msg.me { align-self: flex-end; background: var(--teal); color: #fff; border-bottom-right-radius: 4px; }
+.ai-msg.bot { align-self: flex-start; background: #f1f5ea; color: var(--text); border-bottom-left-radius: 4px; }
+.ai-msg code { background: rgba(0,0,0,.08); border-radius: 4px; padding: 0 4px; font-size: 12.5px; }
+.ai-msg .ai-li { display: block; padding-left: 6px; }
+.ai-thinking { color: var(--muted); font-style: italic; animation: aiPulse 1.2s ease infinite; }
+@keyframes aiPulse { 50% { opacity: .45; } }
+.ai-tool-note { align-self: flex-start; font-size: 11.5px; color: var(--muted); padding: 0 6px; }
+.ai-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.ai-chip { border: 1px solid var(--line); background: #fff; color: var(--teal-d);
+  border-radius: 16px; padding: 6px 12px; font-size: 12.5px; transition: background var(--t-fast); }
+.ai-chip:hover { background: var(--brand-tint); }
+.ai-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); align-items: flex-end; }
+#ai-input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+  font-size: 13.5px; font-family: inherit; resize: none; max-height: 90px; }
+#ai-input:focus { outline: none; border-color: var(--teal); box-shadow: var(--ring); }
+.ai-send { width: 38px; height: 38px; border-radius: 10px; border: none; background: var(--teal-grad);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ai-send svg.icon { width: 17px; height: 17px; }
+.ai-send:hover { filter: brightness(1.05); }
+@media (max-width: 600px) {
+  #ai-panel { right: 8px; left: 8px; width: auto; bottom: 80px; height: calc(100vh - 100px); }
+}
+@media print { #ai-fab, #ai-panel { display: none !important; } }
+
 /* ====================== CHẾ ĐỘ TỐI ====================== */
 body.dark {
   --bg: #161b11; --card: #212a1a; --line: #333d27; --text: #e4e9d8;
@@ -422,6 +475,12 @@ body.dark .rank-track, body.dark .aging-bar { background: #313b26; }
 body.dark .col-chart .col-bar { opacity: .92; }
 body.dark .login-overlay { background: linear-gradient(135deg, #1d2614, #11160d); }
 body.dark table.tbl th { text-transform: uppercase; }
+body.dark .ai-head { background: #2a3320; }
+body.dark .ai-msg.bot { background: #2a3320; }
+body.dark .ai-chip { background: #1b2214; }
+body.dark .ai-chip:hover { background: #2e3b22; }
+body.dark #ai-input { background: #1b2214; color: var(--text); border-color: #3b452c; }
+body.dark .ai-hbtn:hover { background: rgba(255,255,255,.08); }
 
 /* ====================== RESPONSIVE ĐIỆN THOẠI ====================== */
 .menu-toggle { display: none; background: none; border: none; font-size: 22px; color: var(--text); padding: 4px 8px; margin-right: 4px; }

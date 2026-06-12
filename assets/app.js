@@ -324,6 +324,7 @@ App.boot = async function () {
   else App.current = 'dashboard';
   App.render();
   App.refresh();
+  if (typeof AIC !== 'undefined') AIC.init();   // trợ lý AI nổi ở mọi màn hình
 };
 
 window.addEventListener('DOMContentLoaded', () => { App.boot(); });

@@ -37,9 +37,12 @@ return [
   //    entry_date, employee_code, employee_name, pha, tranh_rot, mau_rot, sx, note, source.
   'productivity_source' => 'productivity_entries',
 
-  // AI đọc ảnh bảng kê (màn "Gom đơn ký gửi" -> api/ai-ocr.php).
-  // Lấy khóa tại https://console.anthropic.com -> API Keys. Không có khóa thì
-  // tính năng chụp ảnh báo lỗi nhẹ nhàng, các phần dán/CSV vẫn dùng bình thường.
+  // AI: đọc ảnh/PDF bảng kê (api/ai-ocr.php) + Trợ lý AI chat (api/ai-chat.php)
+  // — DÙNG CHUNG 1 khóa. Lấy tại https://console.anthropic.com -> API Keys.
+  // Không có khóa thì các nút AI báo lỗi nhẹ nhàng, phần còn lại chạy bình thường.
   'anthropic_api_key' => '',
-  'anthropic_model' => 'claude-haiku-4-5-20251001',
+  'anthropic_model' => 'claude-haiku-4-5-20251001',      // model đọc ảnh/PDF
+  // Model cho Trợ lý AI chat. Mặc định Haiku (rẻ, nhanh).
+  // Muốn trả lời thông minh hơn: 'claude-sonnet-4-6'.
+  'anthropic_chat_model' => 'claude-haiku-4-5-20251001',
 ];
