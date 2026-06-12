@@ -1,7 +1,7 @@
 <?php
 // ============================================================
-// ai-ocr.php — AI đọc ảnh bảng kê/đơn hàng (Claude Vision)
-// POST JSON: { image: "data:image/jpeg;base64,..." }
+// ai-ocr.php — AI đọc ảnh / PDF bảng kê, đơn hàng (Claude)
+// POST JSON: { image: "data:image/jpeg;base64,..." }  (ảnh hoặc PDF data URI)
 // Trả về:    { ok: true, lines: ["Tên hàng | SL | đơn giá", ...] }
 // Cần khóa 'anthropic_api_key' trong api/config.php.
 // ============================================================
@@ -18,8 +18,8 @@ if ($apiKey === '') {
 
 $b = body();
 $image = (string)($b['image'] ?? '');
-if ($image === '') json_out(['error' => 'Thiếu ảnh'], 400);
-if (strlen($image) > 8 * 1024 * 1024) json_out(['error' => 'Ảnh quá lớn (tối đa ~6MB)'], 400);
+if ($image === '') json_out(['error' => 'Thiếu ảnh/PDF'], 400);
+if (strlen($image) > 12 * 1024 * 1024) json_out(['error' => 'File quá lớn (tối đa ~8MB)'], 400);
 
 // Tách data URI -> media type + base64
 $mediaType = 'image/jpeg';
@@ -33,19 +33,25 @@ if (strpos($image, 'data:') === 0) {
 }
 if (base64_decode($base64, true) === false) json_out(['error' => 'Ảnh không phải base64 hợp lệ'], 400);
 
-$prompt = 'Ảnh này là đơn hàng / bảng kê bán hàng (tranh số hóa) từ nhà sách ký gửi, có thể viết tay hoặc in. '
-  . 'Hãy trích xuất TẤT CẢ các dòng mặt hàng. Trả về MỖI MẶT HÀNG MỘT DÒNG, định dạng đúng: '
+$prompt = 'Đây là đơn hàng / bảng kê bán hàng (tranh số hóa) từ nhà sách ký gửi, có thể viết tay hoặc in. '
+  . 'Hãy trích xuất TẤT CẢ các dòng mặt hàng (mọi trang nếu nhiều trang). Trả về MỖI MẶT HÀNG MỘT DÒNG, định dạng đúng: '
   . 'TÊN HÀNG NGUYÊN VĂN | SỐ LƯỢNG | ĐƠN GIÁ (để trống nếu không có). '
   . 'Giữ nguyên mã hàng và kích thước nếu thấy (vd K452 20x25). '
   . 'KHÔNG thêm lời giải thích, KHÔNG markdown, KHÔNG đánh số dòng.';
 
+// PDF -> khối "document"; ảnh -> khối "image" (Claude đọc được cả PDF scan)
+$srcBlock = [
+  'type' => ($mediaType === 'application/pdf') ? 'document' : 'image',
+  'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $base64],
+];
+
 $payload = json_encode([
   'model' => $model,
-  'max_tokens' => 3000,
+  'max_tokens' => 4000,
   'messages' => [[
     'role' => 'user',
     'content' => [
-      ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $base64]],
+      $srcBlock,
       ['type' => 'text', 'text' => $prompt],
     ],
   ]],

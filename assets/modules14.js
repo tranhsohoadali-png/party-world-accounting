@@ -105,6 +105,123 @@ M._ciParseLine = function (line) {
   };
 };
 
+/* ---------- Đọc file Excel (.xlsx) ngay trong trình duyệt ---------- */
+// Đọc cấu trúc ZIP tối thiểu (đủ cho .xlsx): EOCD -> central directory -> entry.
+// Giải nén deflate bằng DecompressionStream có sẵn của trình duyệt (không cần thư viện).
+M._ciZipRead = async function (buf) {
+  const dv = new DataView(buf);
+  const u8 = new Uint8Array(buf);
+  let eocd = -1;
+  const stop = Math.max(0, buf.byteLength - 65557);
+  for (let i = buf.byteLength - 22; i >= stop; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('File không phải Excel (.xlsx) hợp lệ');
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const entries = {};
+  for (let n = 0; n < count; n++) {
+    if (dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const csize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const cmtLen = dv.getUint16(off + 32, true);
+    const lho = dv.getUint32(off + 42, true);
+    const name = new TextDecoder().decode(u8.subarray(off + 46, off + 46 + nameLen));
+    entries[name] = { method: method, csize: csize, lho: lho };
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+  return {
+    names: Object.keys(entries),
+    read: async function (name) {
+      const e = entries[name]; if (!e) return null;
+      const lnl = dv.getUint16(e.lho + 26, true), lel = dv.getUint16(e.lho + 28, true);
+      const start = e.lho + 30 + lnl + lel;
+      const slice = u8.subarray(start, start + e.csize);
+      if (e.method === 0) return new TextDecoder().decode(slice);
+      if (e.method === 8) {
+        const ds = new DecompressionStream('deflate-raw');
+        return await new Response(new Blob([slice]).stream().pipeThrough(ds)).text();
+      }
+      throw new Error('File ZIP dùng kiểu nén chưa hỗ trợ');
+    },
+  };
+};
+
+// .xlsx -> mảng dòng "ô1<TAB>ô2..." (sheet đầu tiên, giữ đúng vị trí cột)
+M._ciXlsxToLines = async function (file) {
+  const zip = await M._ciZipRead(await file.arrayBuffer());
+  const shared = [];
+  const ssXml = await zip.read('xl/sharedStrings.xml');
+  if (ssXml) {
+    const sis = new DOMParser().parseFromString(ssXml, 'application/xml').getElementsByTagNameNS('*', 'si');
+    for (let i = 0; i < sis.length; i++) {
+      const ts = sis[i].getElementsByTagNameNS('*', 't');
+      let s = ''; for (let j = 0; j < ts.length; j++) s += ts[j].textContent;
+      shared.push(s);
+    }
+  }
+  const sheetName = zip.names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
+    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))[0];
+  if (!sheetName) throw new Error('Không tìm thấy worksheet trong file Excel');
+  const doc = new DOMParser().parseFromString(await zip.read(sheetName), 'application/xml');
+  const rows = doc.getElementsByTagNameNS('*', 'row');
+  const lines = [];
+  for (let i = 0; i < rows.length; i++) {
+    const cells = rows[i].getElementsByTagNameNS('*', 'c');
+    const vals = [];
+    for (let j = 0; j < cells.length; j++) {
+      const c = cells[j];
+      const t = c.getAttribute('t') || '';
+      let v = '';
+      if (t === 'inlineStr') {
+        const ts = c.getElementsByTagNameNS('*', 't');
+        for (let k = 0; k < ts.length; k++) v += ts[k].textContent;
+      } else {
+        const vEl = c.getElementsByTagNameNS('*', 'v')[0];
+        v = vEl ? vEl.textContent : '';
+        if (t === 's') v = shared[Number(v)] != null ? shared[Number(v)] : '';
+      }
+      // Đặt theo chữ cột (r="B3") để giữ ô trống giữa các cột
+      const colLetters = (c.getAttribute('r') || '').replace(/\d+/g, '');
+      let col = 0;
+      for (let k = 0; k < colLetters.length; k++) col = col * 26 + (colLetters.charCodeAt(k) - 64);
+      if (col > 0) vals[col - 1] = v; else vals.push(v);
+    }
+    const line = Array.from(vals, x => x == null ? '' : x).join('\t').replace(/\t+$/, '').trim();
+    if (line) lines.push(line);
+  }
+  return lines;
+};
+
+// Bảng HTML đội lốt .xls (chính dạng U.exportExcel xuất + nhiều phần mềm VN) -> dòng TSV
+M._ciHtmlTableToLines = function (text) {
+  const doc = new DOMParser().parseFromString(text, 'text/html');
+  const lines = [];
+  doc.querySelectorAll('tr').forEach(tr => {
+    const cells = Array.prototype.map.call(tr.querySelectorAll('th,td'), td => td.textContent.trim());
+    const line = cells.join('\t').trim();
+    if (line) lines.push(line);
+  });
+  if (!lines.length) throw new Error('Không tìm thấy bảng dữ liệu trong file');
+  return lines;
+};
+
+// Mọi loại file văn bản/bảng -> mảng dòng (tự nhận dạng theo nội dung)
+M._ciFileToLines = async function (file) {
+  const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  // ZIP "PK.." -> .xlsx
+  if (head[0] === 0x50 && head[1] === 0x4b) return M._ciXlsxToLines(file);
+  // OLE ".xls đời cũ" (D0 CF 11 E0) -> không đọc được thuần JS
+  if (head[0] === 0xd0 && head[1] === 0xcf) {
+    throw new Error('File .xls đời cũ — mở bằng Excel rồi Lưu thành .xlsx, hoặc copy-paste dữ liệu vào ô dán');
+  }
+  const text = await file.text();
+  if (/<table/i.test(text)) return M._ciHtmlTableToLines(text);   // .xls dạng HTML
+  return text.split(/\r?\n/).filter(l => l.trim());
+};
+
 /* ---------- Chỉ mục sản phẩm & khớp ---------- */
 
 M._ciProductIndex = function () {
@@ -171,23 +288,26 @@ M.consignImport = function (root) {
   const srcCard = U.el('div', { class: 'card' });
   srcCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Gom đơn ký gửi — dán / tải / chụp'));
   srcCard.appendChild(U.el('p', { class: 'section-sub' },
-    'Dán danh sách bán từ nhà sách (copy từ Excel/Zalo đều được), hoặc tải file CSV, hoặc chụp ảnh bảng kê để AI đọc. ' +
+    'Dán danh sách bán từ nhà sách (copy từ Excel/Zalo), tải file Excel (.xlsx) / CSV, hoặc gửi ảnh chụp / PDF bảng kê để AI đọc. ' +
     'Hệ thống tự nhận diện mã hàng (vd K452 20x25), số lượng, đơn giá rồi khớp về danh mục. Bí danh đã xác nhận sẽ được nhớ cho lần sau.'));
 
   const ta = U.el('textarea', { class: 'inp', rows: 6, style: 'width:100%;font-family:Consolas,monospace',
     placeholder: 'Ví dụ:\nTranh cá chép hoa sen K452 20x25 - SL: 2 - 45.000\nk301 30x40 x3\nTranh tô màu công chúa (k512 20x20) 1 bức' });
   srcCard.appendChild(ta);
 
-  const fileIn = U.el('input', { type: 'file', accept: '.csv,.txt,.tsv', style: 'display:none' });
-  fileIn.addEventListener('change', () => {
+  const fileIn = U.el('input', { type: 'file', accept: '.csv,.txt,.tsv,.xlsx,.xls', style: 'display:none' });
+  fileIn.addEventListener('change', async () => {
     const f = fileIn.files[0]; if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => { ta.value = (ta.value ? ta.value + '\n' : '') + rd.result; doParse(); };
-    rd.readAsText(f);
     fileIn.value = '';
+    try {
+      const lines = await M._ciFileToLines(f);
+      ta.value = (ta.value ? ta.value + '\n' : '') + lines.join('\n');
+      doParse();
+      U.toast('Đã đọc ' + lines.length + ' dòng từ ' + f.name);
+    } catch (e) { U.toast(e.message, 'error'); }
   });
 
-  const photoIn = U.el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
+  const photoIn = U.el('input', { type: 'file', accept: 'image/*,.pdf', capture: 'environment', style: 'display:none' });
   photoIn.addEventListener('change', () => {
     const f = photoIn.files[0]; if (!f) return;
     M._ciOcr(f, lines => { ta.value = (ta.value ? ta.value + '\n' : '') + lines.join('\n'); doParse(); });
@@ -195,9 +315,9 @@ M.consignImport = function (root) {
   });
 
   const parseBtn = C.btn('🧩 Nhận diện & khớp mã', () => doParse(), 'primary');
-  const fileBtn = C.btn('⬆ Tải file CSV/TXT', () => fileIn.click());
-  const photoBtn = C.btn('📷 Chụp ảnh — AI đọc', () => {
-    if (PW.mode !== 'server') { U.toast('AI đọc ảnh cần chạy trên máy chủ (ketoan.tranhdali.vn)', 'error'); return; }
+  const fileBtn = C.btn('⬆ Tải file Excel/CSV', () => fileIn.click());
+  const photoBtn = C.btn('📷 Ảnh / PDF — AI đọc', () => {
+    if (PW.mode !== 'server') { U.toast('AI đọc ảnh/PDF cần chạy trên máy chủ (ketoan.tranhdali.vn)', 'error'); return; }
     photoIn.click();
   });
   srcCard.appendChild(U.el('div', { class: 'pill-row mt8' }, [parseBtn, fileBtn, photoBtn, fileIn, photoIn]));
@@ -367,32 +487,45 @@ M._ciPrice = function (productId, channelId) {
   return Number(p.price) || 0;
 };
 
-/* ---------- AI đọc ảnh (Claude Vision qua api/ai-ocr.php) ---------- */
+/* ---------- AI đọc ảnh / PDF (Claude qua api/ai-ocr.php) ---------- */
+M._ciOcrSend = async function (dataUrl, onLines) {
+  try {
+    const r = await PW.api('ai-ocr.php', { method: 'POST', body: JSON.stringify({ image: dataUrl }) });
+    if (r.status === 200 && r.data && r.data.ok) {
+      U.toast('AI đã đọc ' + r.data.lines.length + ' dòng');
+      onLines(r.data.lines);
+    } else {
+      U.toast((r.data && r.data.error) || 'AI đọc thất bại (HTTP ' + r.status + ')', 'error');
+    }
+  } catch (e) {
+    U.toast('Không gọi được AI: ' + e.message, 'error');
+  }
+};
+
 M._ciOcr = function (file, onLines) {
+  // PDF: gửi nguyên văn (Claude đọc được cả PDF chữ lẫn PDF scan)
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    if (file.size > 8 * 1024 * 1024) { U.toast('PDF quá lớn (tối đa 8MB) — tách nhỏ hoặc chụp ảnh từng trang', 'error'); return; }
+    U.toast('Đang gửi PDF cho AI đọc...');
+    const rd = new FileReader();
+    rd.onload = () => M._ciOcrSend(rd.result, onLines);
+    rd.onerror = () => U.toast('Không đọc được file PDF', 'error');
+    rd.readAsDataURL(file);
+    return;
+  }
+  // Ảnh: thu nhỏ về tối đa 1600px để gửi nhanh, đủ nét để đọc chữ
   U.toast('Đang nén ảnh & gửi AI đọc...');
   const img = new Image();
   const url = URL.createObjectURL(file);
-  img.onload = async () => {
+  img.onload = () => {
     URL.revokeObjectURL(url);
-    // Thu nhỏ về tối đa 1600px để gửi nhanh, đủ nét để đọc chữ
     const maxEdge = 1600;
     const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
     const cv = document.createElement('canvas');
     cv.width = Math.round(img.width * scale);
     cv.height = Math.round(img.height * scale);
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    const dataUrl = cv.toDataURL('image/jpeg', 0.85);
-    try {
-      const r = await PW.api('ai-ocr.php', { method: 'POST', body: JSON.stringify({ image: dataUrl }) });
-      if (r.status === 200 && r.data && r.data.ok) {
-        U.toast('AI đã đọc ' + r.data.lines.length + ' dòng');
-        onLines(r.data.lines);
-      } else {
-        U.toast((r.data && r.data.error) || 'AI đọc ảnh thất bại (HTTP ' + r.status + ')', 'error');
-      }
-    } catch (e) {
-      U.toast('Không gọi được AI: ' + e.message, 'error');
-    }
+    M._ciOcrSend(cv.toDataURL('image/jpeg', 0.85), onLines);
   };
   img.onerror = () => { URL.revokeObjectURL(url); U.toast('Không đọc được file ảnh', 'error'); };
   img.src = url;
