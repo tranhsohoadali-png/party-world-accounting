@@ -410,9 +410,11 @@ def _format_result(result: dict, what: str) -> str:
 # FastMCP có sẵn ASGI app cho HTTP transport
 import hmac
 
-# Token RIÊNG cho lớp /mcp (claude.ai connector phải gửi Bearer này).
-# Tách khỏi PW_API_TOKEN (token MCP->PHP) để lộ lớp này không lộ lớp kia.
+# Bảo vệ /mcp: MẶC ĐỊNH dựa vào nginx allowlist IP outbound của Anthropic
+# (160.79.104.0/21). claude.ai connector dùng OAuth — KHÔNG gửi được Bearer tĩnh,
+# nên nếu bật lớp Bearer sẽ chặn luôn claude.ai. Chỉ bật khi đặt MCP_REQUIRE_BEARER=1.
 MCP_AUTH_TOKEN = os.getenv("MCP_AUTH_TOKEN") or PARTY_WORLD_TOKEN
+MCP_REQUIRE_BEARER = (os.getenv("MCP_REQUIRE_BEARER") or "").strip().lower() in ("1", "true", "yes")
 
 
 class BearerAuthASGI:
@@ -438,7 +440,9 @@ class BearerAuthASGI:
         await self.app(scope, receive, send)
 
 
-app = BearerAuthASGI(mcp.streamable_http_app(), MCP_AUTH_TOKEN)
+app = mcp.streamable_http_app()
+if MCP_REQUIRE_BEARER:
+    app = BearerAuthASGI(app, MCP_AUTH_TOKEN)
 
 
 if __name__ == "__main__":
