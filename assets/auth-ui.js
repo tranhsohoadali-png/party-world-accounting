@@ -31,7 +31,7 @@ M.loginScreen = function () {
   }
   [user, pass].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
 
-  card.appendChild(U.el('img', { src: 'assets/logo.svg', class: 'login-logo' }));
+  card.appendChild(U.el('img', { src: 'assets/logo-dali.png', class: 'login-logo' }));
   card.appendChild(U.el('div', { class: 'login-sub' }, 'Phần mềm kế toán'));
   card.appendChild(C.field('Tên đăng nhập', user));
   card.appendChild(C.field('Mật khẩu', pass));
