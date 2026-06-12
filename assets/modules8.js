@@ -24,6 +24,15 @@ M.ledger = function (root) {
   }
 
   let lastEntries = [];
+  // Đã được chuyển sang sổ chính chưa? (tìm phiếu chi/thu có fromLedgerId trỏ về entry này)
+  function convertedOf(id) {
+    const sid = String(id);
+    const p = (PW.data.payments || []).find(x => String(x.fromLedgerId) === sid);
+    if (p) return p.code;
+    const r = (PW.data.receipts || []).find(x => String(x.fromLedgerId) === sid);
+    if (r) return r.code;
+    return null;
+  }
   const period = U.period('month');
   const f = {
     type: C.select([{ value: '', label: 'Tất cả loại' }].concat(
@@ -36,7 +45,7 @@ M.ledger = function (root) {
   const card = U.el('div', { class: 'card' });
   card.appendChild(U.el('div', { class: 'card-title' }, '📒 Sổ giao dịch — ghi từ Claude / hóa đơn'));
   card.appendChild(U.el('div', { class: 'section-sub' },
-    'Mọi khoản chi/thu/công nợ/tồn kho do bạn gửi hóa đơn cho Claude ghi nhận sẽ hiện ở đây (cập nhật trực tiếp từ server).'));
+    'Mọi khoản chi/thu Claude ghi hiện ở đây. Bấm "→ Phiếu chi / → Phiếu thu" để đưa khoản vào SỔ CHÍNH — khi đó nó mới tính vào Báo cáo lãi/lỗ, Phân tích KD và Sổ quỹ.'));
 
   const sumRow = U.el('div', { class: 'grid c4' });
   card.appendChild(sumRow);
@@ -111,7 +120,19 @@ M.ledger = function (root) {
           const src = e.source === 'mcp' ? '🤖 Claude' : (e.source === 'import' ? '📥 Nhập' : (e.source || 'manual'));
           return `<span class="text-muted" style="font-size:12px">${U.esc(src)}</span>`;
         } },
+      { label: 'Vào sổ chính', center: true, render: e => {
+          const code = convertedOf(e.id);
+          if (code) return `<span class="tag green" title="Đã đưa vào sổ chính">✓ ${U.esc(code)}</span>`;
+          if (e.entry_type === 'expense') return `<button class="btn sm primary" data-conv="${e.id}" data-kind="chi">→ Phiếu chi</button>`;
+          if (e.entry_type === 'income') return `<button class="btn sm primary" data-conv="${e.id}" data-kind="thu">→ Phiếu thu</button>`;
+          return '<span class="text-muted" title="Phải thu/trả/tồn kho — đưa vào sổ qua hóa đơn/phiếu nhập">—</span>';
+        } },
     ], { empty: 'Chưa có giao dịch nào trong kỳ. Hãy gửi hóa đơn cho Claude để ghi.' }));
+    // Gắn handler cho các nút "→ Phiếu chi/thu" (C.table render bằng HTML string nên dùng delegation)
+    host.querySelectorAll('[data-conv]').forEach(btn => btn.addEventListener('click', () => {
+      const entry = lastEntries.find(e => String(e.id) === btn.getAttribute('data-conv'));
+      if (entry) M.ledgerToVoucher(entry, btn.getAttribute('data-kind'), load);
+    }));
   }
 
   function exportLedger() {
@@ -131,6 +152,50 @@ M.ledger = function (root) {
   }
 
   load();
+};
+
+/* ---------- Chuyển 1 giao dịch Claude -> Phiếu chi/thu trong SỔ CHÍNH ----------
+   Tạo bút toán thật trong PW.data (payments/receipts) để tính vào báo cáo.
+   Gắn fromLedgerId để nhận biết "đã chuyển" + tránh tạo trùng. ---------- */
+M.ledgerToVoucher = function (entry, kind, after) {
+  if (!PW.data.cashAccounts || !PW.data.cashAccounts.length) {
+    return U.toast('Chưa có tài khoản tiền. Vào Danh mục → tài khoản tiền để thêm.', 'error');
+  }
+  // Chống tạo trùng nếu lỡ bấm 2 lần
+  const dup = (PW.data.payments || []).concat(PW.data.receipts || []).find(x => String(x.fromLedgerId) === String(entry.id));
+  if (dup) return U.toast('Giao dịch này đã được tạo phiếu (' + dup.code + ') rồi.', 'error');
+
+  const isChi = kind === 'chi';
+  const amount = Number(entry.amount) || 0;
+  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' },
+      (isChi ? 'Tạo PHIẾU CHI' : 'Tạo PHIẾU THU') + ' trong sổ chính từ giao dịch Claude — sẽ tính vào Báo cáo lãi/lỗ + Sổ quỹ.'),
+    U.el('div', { style: 'margin:10px 0;padding:10px;border:1px solid var(--line,#eee);border-radius:8px' }, [
+      U.el('div', null, [U.el('b', null, U.date(entry.entry_date)), '  ·  ', U.el('b', { class: isChi ? 'text-red' : 'text-green' }, U.money(amount) + ' đ')]),
+      U.el('div', { class: 'text-muted', style: 'margin-top:2px' }, U.esc(entry.description || '') + (entry.category ? ' · ' + U.esc(entry.category) : '')),
+    ]),
+    U.el('div', { class: 'form-grid' }, [C.field(isChi ? 'Chi từ tài khoản' : 'Vào tài khoản', accSel, { full: true })]),
+  ]);
+
+  C.modal({
+    title: isChi ? '→ Tạo phiếu chi' : '→ Tạo phiếu thu', body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo phiếu', () => {
+      const note = 'Từ sổ Claude' + (entry.category ? ' · ' + entry.category : '');
+      const obj = {
+        id: PW.uid(), code: PW.nextCode(isChi ? 'PC' : 'PT'),
+        date: entry.entry_date, accountId: accSel.value, amount: amount,
+        reason: entry.description || (isChi ? 'Chi phí (Claude)' : 'Thu nhập (Claude)'),
+        note: note, fromLedgerId: String(entry.id),
+      };
+      if (isChi) { obj.supplierId = null; PW.data.payments.push(obj); }   // supplierId null = chi phí hoạt động -> vào P&L
+      else { obj.customerId = null; PW.data.receipts.push(obj); }
+      PW.save(); C.closeModal();
+      U.toast('Đã tạo ' + (isChi ? 'phiếu chi ' : 'phiếu thu ') + obj.code + ' trong sổ chính');
+      if (after) after();
+    }, 'primary')],
+  });
 };
 
 /* ---------- Tồn kho (từ sổ MCP) ---------- */
