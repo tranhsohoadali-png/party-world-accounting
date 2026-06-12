@@ -8,12 +8,13 @@
 require __DIR__ . '/lib.php';
 
 require_login();
+ai_rate_limit('ocr', 10, 60);   // tối đa 10 ảnh/PDF mỗi phút/phiên
 
-$cfg = require __DIR__ . '/config.php';
+$cfg = ai_cfg();
 $apiKey = $cfg['anthropic_api_key'] ?? '';
 $model  = $cfg['anthropic_model'] ?? 'claude-haiku-4-5-20251001';
 if ($apiKey === '') {
-  json_out(['error' => 'Chưa cấu hình anthropic_api_key trong api/config.php'], 500);
+  json_out(['error' => 'Chưa có khóa AI — admin vào Dữ liệu & Sao lưu → Cấu hình AI (Claude) để dán khóa'], 500);
 }
 
 $b = body();
@@ -75,7 +76,10 @@ $err  = curl_error($ch);
 $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
-if ($resp === false) json_out(['error' => 'Không gọi được API Anthropic: ' . $err], 502);
+if ($resp === false) {
+  error_log('ai-ocr curl: ' . $err);
+  json_out(['error' => 'Không nối được tới Anthropic — thử lại sau'], 502);
+}
 $j = json_decode($resp, true);
 if ($http !== 200) {
   $msg = $j['error']['message'] ?? ('HTTP ' . $http);

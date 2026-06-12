@@ -265,6 +265,62 @@ App.settings = function (root) {
   ]));
 
   root.appendChild(card);
+
+  // ----- Cấu hình AI (Claude) — chỉ admin, chế độ server -----
+  if (PW.mode === 'server' && PW.user && PW.user.role === 'admin') {
+    const ai = U.el('div', { class: 'card' });
+    ai.appendChild(U.el('div', { class: 'card-title' }, '🤖 Cấu hình AI (Claude)'));
+    ai.appendChild(U.el('p', { class: 'section-sub' },
+      'Một khóa dùng chung cho Trợ lý AI chat + đọc ảnh/PDF. Lấy khóa tại console.anthropic.com → API Keys ' +
+      '(tài khoản API riêng, KHÔNG phải tài khoản claude.ai — cần nạp credit, tối thiểu 5$). Khóa lưu trên máy chủ, không hiện lại đầy đủ.'));
+    const statusLine = U.el('div', { class: 'section-sub', html: 'Đang kiểm tra trạng thái...' });
+    ai.appendChild(statusLine);
+    const keyI = C.input({ type: 'password', placeholder: 'Dán khóa sk-ant-... vào đây', style: 'min-width:320px' });
+    const chatSel = C.select([
+      { value: 'claude-haiku-4-5-20251001', label: 'Chat: Haiku 4.5 (rẻ, nhanh)' },
+      { value: 'claude-sonnet-4-6', label: 'Chat: Sonnet 4.6 (thông minh hơn)' },
+    ], 'claude-haiku-4-5-20251001');
+    const ocrSel = C.select([
+      { value: 'claude-haiku-4-5-20251001', label: 'Đọc ảnh/PDF: Haiku 4.5 (rẻ)' },
+      { value: 'claude-sonnet-4-6', label: 'Đọc ảnh/PDF: Sonnet 4.6 (chuẩn hơn)' },
+    ], 'claude-haiku-4-5-20251001');
+    const resultLine = U.el('div', { class: 'section-sub', style: 'min-height:18px' });
+    async function loadStatus() {
+      const r = await PW.api('ai-config.php?action=status');
+      if (r.status === 200 && r.data && r.data.ok) {
+        statusLine.innerHTML = r.data.configured
+          ? 'Trạng thái: <b class="text-green">Đã có khóa</b> (' + U.esc(r.data.masked) + ' · nguồn: ' + U.esc(r.data.source) + ')'
+          : 'Trạng thái: <b class="text-red">Chưa có khóa</b> — dán khóa rồi bấm Lưu.';
+        chatSel.value = r.data.chat_model;
+        ocrSel.value = r.data.ocr_model;
+      } else statusLine.textContent = 'Không đọc được trạng thái (' + ((r.data && r.data.error) || r.status) + ')';
+    }
+    const saveBtn = C.btn('Lưu cấu hình', async () => {
+      const bodyObj = { chat_model: chatSel.value, ocr_model: ocrSel.value };
+      if (keyI.value.trim()) bodyObj.key = keyI.value.trim();
+      const r = await PW.api('ai-config.php?action=save', { method: 'POST', body: JSON.stringify(bodyObj) });
+      if (r.status === 200 && r.data && r.data.ok) { U.toast('Đã lưu cấu hình AI'); keyI.value = ''; loadStatus(); }
+      else U.toast((r.data && r.data.error) || 'Lưu thất bại', 'error');
+    }, 'primary');
+    const testBtn = C.btn('Kiểm tra kết nối', async () => {
+      resultLine.textContent = 'Đang gọi thử Anthropic...';
+      const r = await PW.api('ai-config.php?action=test', { method: 'POST', body: '{}' });
+      if (r.status === 200 && r.data && r.data.ok) {
+        resultLine.innerHTML = '<b class="text-green">✓ Hoạt động!</b> Model ' + U.esc(r.data.model) + ' trả lời: “' + U.esc(r.data.reply) + '”';
+      } else resultLine.innerHTML = '<b class="text-red">✗ Lỗi:</b> ' + U.esc((r.data && r.data.error) || ('HTTP ' + r.status));
+    });
+    ai.appendChild(U.el('div', { class: 'pill-row mt8' }, [keyI, chatSel, ocrSel]));
+    ai.appendChild(U.el('div', { class: 'pill-row mt8' }, [saveBtn, testBtn]));
+    ai.appendChild(resultLine);
+    root.appendChild(ai);
+    loadStatus();
+  } else if (PW.mode !== 'server') {
+    const ai = U.el('div', { class: 'card' });
+    ai.appendChild(U.el('div', { class: 'card-title' }, '🤖 Cấu hình AI (Claude)'));
+    ai.appendChild(U.el('p', { class: 'section-sub' }, 'Chỉ cấu hình được trên bản máy chủ (ketoan.tranhdali.vn), đăng nhập bằng tài khoản admin.'));
+    root.appendChild(ai);
+  }
+
   root.appendChild(stat);
 
   // Quản lý tài khoản tiền

@@ -6,6 +6,7 @@
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, private');   // API JSON không bao giờ được cache
 
 // Phiên đăng nhập
 if (session_status() === PHP_SESSION_NONE) {
@@ -69,6 +70,42 @@ function require_role(array $roles): array {
   $u = require_login();
   if (!in_array($u['role'], $roles, true)) json_out(['error' => 'Không đủ quyền'], 403);
   return $u;
+}
+
+/* ---------- Cấu hình AI hợp nhất ----------
+   Khóa Anthropic có thể nằm ở config.php (sửa tay) HOẶC api/ai-key.local.php
+   (do màn hình "Cấu hình AI" trong phần mềm ghi ra — không cần SSH).
+   File ai-key.local.php được ưu tiên (giá trị rỗng thì bỏ qua). */
+function ai_cfg(): array {
+  $cfg = [];
+  if (file_exists(__DIR__ . '/config.php')) {
+    $c = require __DIR__ . '/config.php';
+    if (is_array($c)) $cfg = $c;
+  }
+  $f = __DIR__ . '/ai-key.local.php';
+  if (file_exists($f)) {
+    $o = require $f;
+    if (is_array($o)) {
+      foreach ($o as $k => $v) {
+        if ($v !== '' && $v !== null) $cfg[$k] = $v;
+      }
+    }
+  }
+  return $cfg;
+}
+
+/* Giới hạn tần suất theo phiên đăng nhập (chống bấm dồn dập làm tốn phí AI).
+   $bucket: tên nhóm, $max: số lần tối đa trong $windowSec giây. */
+function ai_rate_limit(string $bucket, int $max, int $windowSec = 60): void {
+  $k = 'rl_' . $bucket;
+  $now = time();
+  $arr = $_SESSION[$k] ?? [];
+  $arr = array_values(array_filter($arr, function ($t) use ($now, $windowSec) { return $t > $now - $windowSec; }));
+  if (count($arr) >= $max) {
+    json_out(['error' => 'Gọi AI quá nhanh — đợi khoảng 1 phút rồi thử lại'], 429);
+  }
+  $arr[] = $now;
+  $_SESSION[$k] = $arr;
 }
 
 /* ---------- Gọi API của mau.tranhdali.vn (chung server) ----------

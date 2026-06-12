@@ -7,7 +7,7 @@
 Options -Indexes
 
 # Chặn truy cập trực tiếp các file nhạy cảm (mật khẩu DB, sao lưu, script dev...)
-<FilesMatch "(^config\.php$|^\.|\.(sql|json|bak|log|ps1|bat|sample\.php)$)">
+<FilesMatch "(^config\.php$|^ai-key\.|^\.|\.(sql|json|bak|log|ps1|bat|tmp|sample\.php)$)">
   Require all denied
 </FilesMatch>
 

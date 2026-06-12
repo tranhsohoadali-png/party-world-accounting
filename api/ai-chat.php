@@ -9,13 +9,14 @@
 require __DIR__ . '/lib.php';
 
 require_login();
+ai_rate_limit('chat', 30, 60);   // tối đa 30 lượt gọi/phút/phiên (1 câu hỏi = tối đa ~6 lượt do tool)
 
-$cfg = require __DIR__ . '/config.php';
+$cfg = ai_cfg();
 $apiKey = $cfg['anthropic_api_key'] ?? '';
 // Model chat riêng (mặc định Haiku cho rẻ; đổi 'claude-sonnet-4-6' nếu muốn thông minh hơn)
 $model = $cfg['anthropic_chat_model'] ?? ($cfg['anthropic_model'] ?? 'claude-haiku-4-5-20251001');
 if ($apiKey === '') {
-  json_out(['error' => 'Chưa cấu hình anthropic_api_key trong api/config.php'], 500);
+  json_out(['error' => 'Chưa có khóa AI — admin vào Dữ liệu & Sao lưu → Cấu hình AI (Claude) để dán khóa'], 500);
 }
 
 $raw = file_get_contents('php://input');
@@ -53,7 +54,10 @@ $err  = curl_error($ch);
 $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
-if ($resp === false) json_out(['error' => 'Không gọi được API Anthropic: ' . $err], 502);
+if ($resp === false) {
+  error_log('ai-chat curl: ' . $err);
+  json_out(['error' => 'Không nối được tới Anthropic — thử lại sau'], 502);
+}
 $j = json_decode($resp, true);
 if ($http !== 200) {
   $msg = $j['error']['message'] ?? ('HTTP ' . $http);
