@@ -19,6 +19,7 @@ from typing import Any, Optional
 import httpx
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 
 # ============ CONFIG ============
@@ -39,6 +40,19 @@ mcp = FastMCP(
         "Dùng để ghi nhận chi phí, doanh thu, công nợ, và biến động tồn kho từ ảnh "
         "hóa đơn / sao kê ngân hàng / đơn hàng Shopee. "
         "Tất cả số tiền mặc định bằng VND. Ngày dùng định dạng YYYY-MM-DD."
+    ),
+    # Chống DNS-rebinding của MCP SDK chỉ cho localhost mặc định -> phải khai báo
+    # host công khai, nếu không sẽ trả "421 Invalid Host header" qua reverse proxy.
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "ketoan.tranhdali.vn", "ketoan.tranhdali.vn:*",
+            "127.0.0.1:*", "localhost:*",
+        ],
+        allowed_origins=[
+            "https://ketoan.tranhdali.vn", "https://ketoan.tranhdali.vn:*",
+            "https://claude.ai", "https://claude.com",
+        ],
     ),
 )
 
