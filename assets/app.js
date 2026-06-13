@@ -54,6 +54,9 @@ App.menu = [
     { id: 'suppliers', label: 'Nhà cung cấp', icon: 'truck', title: 'Danh mục nhà cung cấp', roles: ['admin', 'ketoan'] },
     { id: 'cat-employees', label: 'Nhân viên', icon: 'id-card', title: 'Danh mục nhân viên', roles: ['admin', 'ketoan'] },
   ]},
+  { group: 'THUẾ', roles: ['admin', 'ketoan'], items: [
+    { id: 'tax-sync', label: 'Hóa đơn thuế (cổng)', icon: 'doc', title: 'Đồng bộ hóa đơn từ cổng thuế', roles: ['admin', 'ketoan'] },
+  ]},
   { group: 'BÁO CÁO', roles: ['admin', 'ketoan'], items: [
     { id: 'reports', label: 'Báo cáo', icon: 'report', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
   ]},
@@ -171,6 +174,7 @@ App.refresh = function () {
     case 'discounts': return M.discounts(root);
     case 'reconcile': return M.reconcile(root);
     case 'consign-import': return M.consignImport(root);
+    case 'tax-sync': return M.taxSync(root);
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
     case 'purchases': return M.purchases(root);

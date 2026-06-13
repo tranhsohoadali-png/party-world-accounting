@@ -45,4 +45,8 @@ return [
   // Model cho Trợ lý AI chat. Mặc định Haiku (rẻ, nhanh).
   // Muốn trả lời thông minh hơn: 'claude-sonnet-4-6'.
   'anthropic_chat_model' => 'claude-haiku-4-5-20251001',
+
+  // Đồng bộ hóa đơn từ Cổng HĐĐT Tổng cục Thuế (màn "Hóa đơn thuế (cổng)").
+  // Chỉ đổi nếu cổng dùng host/cổng khác (vd 'https://hoadondientu.gdt.gov.vn:30000').
+  'tax_api_base' => 'https://hoadondientu.gdt.gov.vn',
 ];
