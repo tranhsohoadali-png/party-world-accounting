@@ -222,6 +222,47 @@ M._ciFileToLines = async function (file) {
   return text.split(/\r?\n/).filter(l => l.trim());
 };
 
+/* ---------- Nhận diện thông tin chứng từ từ văn bản dán vào ----------
+   Tự tìm: nhà sách (tên KH xuất hiện trong văn bản), ngày, kênh bán, % thuế. */
+M._ciDetectMeta = function (text) {
+  const normed = M._ciNorm(text);
+  const out = {};
+  // Ngày: yyyy-mm-dd | dd/mm/yyyy | dd-mm-yyyy | "ngày 5 tháng 6 năm 2026"
+  let m = text.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if (m) out.date = m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+  if (!out.date) {
+    m = text.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})\b/);
+    if (m) out.date = m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+  }
+  if (!out.date) {
+    m = normed.match(/ngay\s+(\d{1,2})\s+thang\s+(\d{1,2})\s+nam\s+(\d{4})/);
+    if (m) out.date = m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+  }
+  if (out.date) {
+    const y = +out.date.slice(0, 4), mo = +out.date.slice(5, 7), d = +out.date.slice(8, 10);
+    if (y < 2020 || y > 2035 || mo < 1 || mo > 12 || d < 1 || d > 31) delete out.date;
+  }
+  // Nhà sách / khách hàng: tên KH (đã chuẩn hóa) xuất hiện trong văn bản — lấy tên dài nhất khớp
+  let bestC = null;
+  PW.data.customers.forEach(c => {
+    const n = M._ciNorm(c.name);
+    if (n.length >= 4 && normed.indexOf(n) >= 0 && (!bestC || n.length > bestC.n.length)) bestC = { id: c.id, n: n, name: c.name };
+  });
+  if (bestC) { out.customerId = bestC.id; out.customerName = bestC.name; }
+  // Kênh bán: tên kênh xuất hiện trong văn bản
+  let bestCh = null;
+  (PW.data.channels || []).forEach(ch => {
+    const n = M._ciNorm(ch.name);
+    if (n.length >= 3 && normed.indexOf(n) >= 0 && (!bestCh || n.length > bestCh.n.length)) bestCh = { id: ch.id, n: n, name: ch.name };
+  });
+  if (bestCh) { out.channelId = bestCh.id; out.channelName = bestCh.name; }
+  // % thuế: "VAT 8%", "thuế 8%", "GTGT 8%", "8% VAT" — dò trên văn bản gốc (norm đã xóa dấu %)
+  const lower = text.toLowerCase();
+  m = lower.match(/(?:vat|thuế|thue|gtgt)\s*[:=]?\s*(\d{1,2})\s*%/) || lower.match(/(\d{1,2})\s*%\s*(?:vat|thuế|thue|gtgt)/);
+  if (m && [0, 5, 8, 10].indexOf(+m[1]) >= 0) out.vatRate = +m[1];
+  return out;
+};
+
 /* ---------- Chỉ mục sản phẩm & khớp ---------- */
 
 M._ciProductIndex = function () {
@@ -328,7 +369,46 @@ M.consignImport = function (root) {
   const cusSel = C.select(
     [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
       .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name }))), '');
+  cusSel.style.flex = '1';
   cusSel.addEventListener('change', () => { if (state.rows.length) rematch(); });
+  function rebuildCus(selectId) {
+    cusSel.innerHTML = '';
+    [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
+      .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name })))
+      .forEach(o => {
+        const opt = U.el('option', { value: o.value }, o.label);
+        if (String(o.value) === String(selectId || '')) opt.selected = true;
+        cusSel.appendChild(opt);
+      });
+  }
+  // Nút + : thêm nhanh nhà sách/khách hàng mới ngay tại chỗ (không rời màn hình)
+  const addCusBtn = C.btn('+', () => {
+    const nameI = C.input({ placeholder: 'Tên nhà sách / khách hàng *', style: 'width:100%' });
+    const phoneI = C.input({ placeholder: 'Số điện thoại', style: 'width:100%' });
+    const addrI = C.input({ placeholder: 'Địa chỉ', style: 'width:100%' });
+    const wrap = U.el('div', { class: 'form-grid' }, [
+      U.el('div', { class: 'full' }, nameI), U.el('div', null, phoneI), U.el('div', null, addrI),
+    ]);
+    C.modal({
+      title: 'Thêm nhà sách / khách hàng mới',
+      body: wrap,
+      footer: [C.btn('Lưu & chọn', () => {
+        const nm = nameI.value.trim();
+        if (!nm) { U.toast('Nhập tên trước', 'error'); return; }
+        const obj = { id: PW.uid(), code: PW.nextCode('KH'), name: nm, type: 'org',
+          phone: phoneI.value.trim(), address: addrI.value.trim(), openingDebt: 0 };
+        PW.data.customers.push(obj);
+        PW.save();
+        rebuildCus(obj.id);
+        if (state.rows.length) rematch();
+        C.closeModal();
+        U.toast('Đã thêm "' + nm + '" và chọn làm nhà sách của đơn này');
+      }, 'primary')],
+    });
+    nameI.focus();
+  }, 'sm');
+  addCusBtn.title = 'Thêm nhà sách / khách hàng mới';
+  const cusRow = U.el('div', { style: 'display:flex;gap:6px;align-items:stretch' }, [cusSel, addCusBtn]);
   const typeSel = C.select([
     { value: 'invoice', label: 'Hóa đơn bán (ghi doanh thu + trừ kho)' },
     { value: 'order', label: 'Đơn đặt hàng (chưa ghi sổ)' },
@@ -338,12 +418,32 @@ M.consignImport = function (root) {
     [{ value: '', label: '-- Kênh bán --' }]
       .concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))),
     (PW.data.channels.find(c => /ky gui|ki gui|nha sach/.test(M._ciNorm(c.name))) || { id: '' }).id);
+  const vatSel = C.select([
+    { value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' },
+  ], 0);
+  const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
-  fg.appendChild(C.field('Nhà sách (khách hàng)', cusSel, { required: true }));
+  fg.appendChild(C.field('Nhà sách (khách hàng)', cusRow, { required: true }));
   fg.appendChild(C.field('Loại chứng từ', typeSel));
   fg.appendChild(C.field('Ngày', dateI));
   fg.appendChild(C.field('Kênh bán', chSel));
+  fg.appendChild(C.field('Thuế GTGT (%)', vatSel));
   docCard.appendChild(fg);
+  docCard.appendChild(detectLine);
+
+  // Áp kết quả nhận diện từ văn bản (chỉ điền, không xóa lựa chọn sẵn có khi không tìm thấy)
+  function applyDetect(text) {
+    const det = M._ciDetectMeta(text);
+    const got = [];
+    if (det.customerId) { cusSel.value = det.customerId; got.push('nhà sách: ' + det.customerName); }
+    if (det.date) { dateI.value = det.date; got.push('ngày: ' + U.date(det.date)); }
+    if (det.channelId) { chSel.value = det.channelId; got.push('kênh: ' + det.channelName); }
+    if (det.vatRate != null) { vatSel.value = det.vatRate; got.push('VAT: ' + det.vatRate + '%'); }
+    detectLine.innerHTML = got.length
+      ? '✨ Tự nhận diện: <b>' + U.esc(got.join(' · ')) + '</b> — sai thì sửa lại ở trên.'
+      : '';
+    return det;
+  }
 
   /* --- Thẻ 3: bảng duyệt --- */
   const revCard = U.el('div', { class: 'card' });
@@ -363,6 +463,7 @@ M.consignImport = function (root) {
   };
 
   function doParse() {
+    applyDetect(ta.value);   // nhận diện nhà sách/ngày/kênh/VAT TRƯỚC (bí danh khớp theo nhà sách)
     const lines = ta.value.split(/\r?\n/);
     state.rows = [];
     lines.forEach(l => {
@@ -461,7 +562,7 @@ M.consignImport = function (root) {
       code = PW.nextCode('HD');
       PW.data.salesInvoices.push({
         id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.value,
-        channelId: chSel.value || null, vatRate: 0, items: items, discount: 0,
+        channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0, items: items, discount: 0,
         paid: 0, paidAccountId: null, note: 'Gom đơn ký gửi tự động',
       });
     }

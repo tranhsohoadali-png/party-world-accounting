@@ -71,18 +71,28 @@ M.reports = function (root) {
     return s;
   }
   function exportReport() {
-    const t = host.querySelector('table');
-    if (!t) return U.toast('Chưa có dữ liệu để xuất', 'error');
-    let headers = [].map.call(t.querySelectorAll('thead th'), th => th.textContent.trim());
+    // Xuất TẤT CẢ các bảng trong báo cáo (báo cáo thuế có 3 bảng) — bảng sau
+    // ngăn cách bằng dòng trống + dòng tiêu đề cột riêng của nó.
+    const tables = host.querySelectorAll('table');
+    if (!tables.length) return U.toast('Chưa có dữ liệu để xuất', 'error');
+    let headers = [];
     const rows = [];
-    t.querySelectorAll('tr').forEach(tr => {
-      if (tr.closest('thead') || tr.closest('tfoot')) return; // bỏ dòng tiêu đề & tổng cộng
-      const tds = tr.querySelectorAll('td');
-      if (!tds.length) return;
-      rows.push([].map.call(tds, td => exCell(td.textContent.trim())));
+    tables.forEach((t, ti) => {
+      const ths = [].map.call(t.querySelectorAll('thead th'), th => th.textContent.trim());
+      if (ti === 0) headers = ths;
+      else {
+        rows.push([]);                       // dòng trống ngăn cách
+        if (ths.length) rows.push(ths);      // tiêu đề cột của bảng tiếp theo
+      }
+      t.querySelectorAll('tr').forEach(tr => {
+        if (tr.closest('thead')) return;
+        const tds = tr.querySelectorAll('td');
+        if (!tds.length) return;
+        rows.push([].map.call(tds, td => exCell(td.textContent.trim())));
+      });
     });
     if (!rows.length) return U.toast('Báo cáo trống', 'error');
-    if (!headers.length) headers = rows[0].map((_, i) => (rows[0].length === 2 ? ['Nội dung', 'Số tiền'][i] : 'Cột ' + (i + 1)));
+    if (!headers.length) headers = (rows[0] || []).map((_, i) => (rows[0].length === 2 ? ['Nội dung', 'Số tiền'][i] : 'Cột ' + (i + 1)));
     const label = typeSel.options[typeSel.selectedIndex].text;
     U.exportExcel('BaoCao_' + typeSel.value, headers, rows, label + ' (' + U.date(fromI.value) + ' - ' + U.date(toI.value) + ')');
   }
@@ -393,6 +403,7 @@ M.reportLowStock = function (host) {
 
 M.reportVAT = function (host, from, to) {
   const out = PW.vatOutput(from, to), inp = PW.vatInput(from, to), pay = out - inp;
+  // ----- Tổng hợp -----
   const t = U.el('table', { class: 'tbl' });
   [['Thuế GTGT đầu ra (bán hàng)', out, 'text-green'],
    ['Thuế GTGT đầu vào (mua hàng)', -inp, 'text-red'],
@@ -402,6 +413,64 @@ M.reportVAT = function (host, from, to) {
       U.el('td', { class: 'num ' + r[2], style: i === 2 ? 'font-weight:700' : '' }, U.money(r[1])),
     ])));
   host.appendChild(U.el('div', { class: 'table-wrap' }, t));
+
+  // ----- Bảng kê hóa đơn BÁN RA có thuế -----
+  const sales = PW.data.salesInvoices
+    .filter(si => si.date >= from && si.date <= to && Number(si.vatRate || 0) > 0)
+    .sort((a, b) => a.date < b.date ? -1 : 1);
+  const cusName = id => { const c = PW.data.customers.find(x => x.id === id); return c ? c.name : ''; };
+  host.appendChild(U.el('div', { class: 'card-title', style: 'margin-top:20px' }, '📤 Bảng kê hóa đơn bán ra có thuế'));
+  let sHang = 0, sThue = 0;
+  const sRows = sales.map(si => {
+    const hang = PW.invoiceTotal(si);
+    const thue = Math.round(hang * Number(si.vatRate) / 100);
+    sHang += hang; sThue += thue;
+    return { si, hang, thue };
+  });
+  host.appendChild(C.table(sRows, [
+    { label: 'Số HĐ', render: r => U.esc(r.si.code) },
+    { label: 'Ngày', render: r => U.date(r.si.date) },
+    { label: 'Khách hàng', render: r => U.esc(cusName(r.si.customerId)) },
+    { label: 'Tiền hàng', num: true, render: r => U.money(r.hang) },
+    { label: 'Thuế suất', center: true, render: r => r.si.vatRate + '%' },
+    { label: 'Tiền thuế', num: true, render: r => U.money(r.thue) },
+    { label: 'Tổng thanh toán', num: true, render: r => `<b>${U.money(r.hang + r.thue)}</b>` },
+  ], {
+    empty: 'Không có hóa đơn bán ra nào có thuế trong kỳ',
+    footer: [{ html: 'TỔNG', colspan: 3 }, { html: U.money(sHang), num: true }, { html: '' },
+      { html: U.money(sThue), num: true }, { html: U.money(sHang + sThue), num: true }],
+  }));
+
+  // ----- Bảng kê hóa đơn MUA VÀO có thuế -----
+  const purch = PW.data.purchases
+    .filter(pu => pu.date >= from && pu.date <= to && Number(pu.vatRate || 0) > 0)
+    .sort((a, b) => a.date < b.date ? -1 : 1);
+  const supName = id => { const s = PW.data.suppliers.find(x => x.id === id); return s ? s.name : ''; };
+  host.appendChild(U.el('div', { class: 'card-title', style: 'margin-top:20px' }, '📥 Bảng kê hóa đơn mua vào có thuế (được khấu trừ)'));
+  let pHang = 0, pThue = 0;
+  const pRows = purch.map(pu => {
+    const hang = PW.purchaseTotal(pu);
+    const thue = Math.round(hang * Number(pu.vatRate) / 100);
+    pHang += hang; pThue += thue;
+    return { pu, hang, thue };
+  });
+  host.appendChild(C.table(pRows, [
+    { label: 'Số phiếu', render: r => U.esc(r.pu.code) },
+    { label: 'Ngày', render: r => U.date(r.pu.date) },
+    { label: 'Nhà cung cấp', render: r => U.esc(supName(r.pu.supplierId)) },
+    { label: 'Tiền hàng', num: true, render: r => U.money(r.hang) },
+    { label: 'Thuế suất', center: true, render: r => r.pu.vatRate + '%' },
+    { label: 'Tiền thuế', num: true, render: r => U.money(r.thue) },
+    { label: 'Tổng thanh toán', num: true, render: r => `<b>${U.money(r.hang + r.thue)}</b>` },
+  ], {
+    empty: 'Không có phiếu nhập mua nào có thuế trong kỳ',
+    footer: [{ html: 'TỔNG', colspan: 3 }, { html: U.money(pHang), num: true }, { html: '' },
+      { html: U.money(pThue), num: true }, { html: U.money(pHang + pThue), num: true }],
+  }));
+
+  host.appendChild(U.el('p', { class: 'section-sub', style: 'margin-top:10px' },
+    'Lưu ý: chỉ liệt kê chứng từ có thuế suất > 0%. Tiền thuế = tiền hàng × thuế suất. ' +
+    'Hóa đơn nhập từ màn "Làm việc với AI" có thể chọn % thuế ngay khi tạo.'));
 };
 
 M.reportCommission = function (host, from, to) {
