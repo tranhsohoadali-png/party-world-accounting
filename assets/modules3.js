@@ -343,6 +343,7 @@ M.returns = function (root) {
       { label: 'Ngày', render: r => U.date(r.date) },
       { label: 'Số phiếu', render: r => U.esc(r.code) },
       { label: 'Khách hàng', render: r => { const c = PW.customer(r.customerId); return c ? U.esc(c.name) : ''; } },
+      { label: 'HĐ gốc', center: true, render: r => { const si = r.invoiceId && PW.data.salesInvoices.find(x => x.id === r.invoiceId); return si ? '<span class="tag gray">' + U.esc(si.code) + '</span>' : ''; } },
       { label: 'Số mặt hàng', center: true, render: r => r.items.length },
       { label: 'Giá trị trả lại', num: true, render: r => `<span class="text-red">${U.money(PW.returnTotal(r))}</span>` },
       { label: 'Lý do', render: r => U.esc(r.note || '') },
@@ -371,6 +372,11 @@ M.returnForm = function (sr) {
   const codeI = C.input({ value: sr.code });
   const dateI = C.input({ type: 'date', value: sr.date });
   const custI = C.select(PW.data.customers.map(c => ({ value: c.id, label: c.name })), sr.customerId);
+  const invOpts = cid => [{ value: '', label: '-- Không gắn hóa đơn --' }].concat(
+    PW.data.salesInvoices.filter(si => si.customerId === cid).sort((a, b) => a.date < b.date ? 1 : -1)
+      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceTotal(si)) + 'đ' })));
+  const invSel = C.select(invOpts(custI.value), sr.invoiceId || '');
+  custI.addEventListener('change', () => M.rebuildSelect(invSel, invOpts(custI.value), ''));
   const noteI = C.input({ value: sr.note || '' });
   const grand = U.el('span', { style: 'font-weight:700' });
   const editor = M.itemsEditor(sr.items.map(it => Object.assign({}, it)), {
@@ -383,7 +389,8 @@ M.returnForm = function (sr) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số phiếu', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Khách hàng trả lại', custI, { required: true, full: true }),
+      C.field('Khách hàng trả lại', custI, { required: true }),
+      C.field('Từ hóa đơn gốc (để đối chiếu)', invSel),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Hàng hóa khách trả lại'),
     editor.wrap,
@@ -399,7 +406,8 @@ M.returnForm = function (sr) {
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng', 'error');
       if (!custI.value) return U.toast('Chọn khách hàng', 'error');
       const obj = { id: sr.id || PW.uid(), code: codeI.value, date: dateI.value,
-        customerId: custI.value, items: valid, note: noteI.value };
+        customerId: custI.value, invoiceId: invSel.value || null, items: valid, note: noteI.value };
+      if (sr.noRestock !== undefined) obj.noRestock = sr.noRestock;   // giữ cờ thất lạc (do đối soát ghi)
       if (isNew) PW.data.salesReturns.push(obj);
       else { const i = PW.data.salesReturns.findIndex(x => x.id === obj.id); PW.data.salesReturns[i] = obj; }
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu trả lại');
@@ -428,6 +436,7 @@ M.discounts = function (root) {
       { label: 'Ngày', render: r => U.date(r.date) },
       { label: 'Số phiếu', render: r => U.esc(r.code) },
       { label: 'Khách hàng', render: r => { const c = PW.customer(r.customerId); return c ? U.esc(c.name) : ''; } },
+      { label: 'HĐ gốc', center: true, render: r => { const si = r.invoiceId && PW.data.salesInvoices.find(x => x.id === r.invoiceId); return si ? '<span class="tag gray">' + U.esc(si.code) + '</span>' : ''; } },
       { label: 'Số tiền giảm', num: true, render: r => `<span class="text-red">${U.money(r.amount)}</span>` },
       { label: 'Lý do', render: r => U.esc(r.reason || '') },
       { label: '', render: r => C.actions([
@@ -455,10 +464,16 @@ M.discountForm = function (g) {
     amount: C.input({ type: 'number', value: g.amount, min: 0 }),
     reason: C.input({ value: g.reason || '' }),
   };
+  const invOpts = cid => [{ value: '', label: '-- Không gắn hóa đơn --' }].concat(
+    PW.data.salesInvoices.filter(si => si.customerId === cid).sort((a, b) => a.date < b.date ? 1 : -1)
+      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceTotal(si)) + 'đ' })));
+  f.inv = C.select(invOpts(g.customerId), g.invoiceId || '');
+  f.cust.addEventListener('change', () => M.rebuildSelect(f.inv, invOpts(f.cust.value), ''));
   const body = U.el('div', { class: 'form-grid' }, [
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
-    C.field('Khách hàng', f.cust, { required: true, full: true }),
+    C.field('Khách hàng', f.cust, { required: true }),
+    C.field('Từ hóa đơn gốc (để đối chiếu)', f.inv),
     C.field('Số tiền giảm (đ)', f.amount, { required: true }),
     C.field('Lý do giảm giá', f.reason, { full: true }),
   ]);
@@ -468,7 +483,7 @@ M.discountForm = function (g) {
       const amt = Number(f.amount.value) || 0;
       if (amt <= 0) return U.toast('Nhập số tiền giảm', 'error');
       const obj = { id: g.id || PW.uid(), code: f.code.value, date: f.date.value,
-        customerId: f.cust.value, amount: amt, reason: f.reason.value };
+        customerId: f.cust.value, invoiceId: f.inv.value || null, amount: amt, reason: f.reason.value };
       if (isNew) PW.data.salesDiscounts.push(obj);
       else Object.assign(g, obj);
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu giảm giá');

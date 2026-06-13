@@ -17,6 +17,7 @@ M.reports = function (root) {
     { value: 'productCost', label: 'Giá thành sản phẩm (sản xuất)' },
     { value: 'inout', label: 'Nhập - Xuất - Tồn kho' },
     { value: 'receivable', label: 'Công nợ phải thu' },
+    { value: 'agingReceivable', label: 'Tuổi nợ phải thu (0-30/30-60/60-90/>90)' },
     { value: 'payable', label: 'Công nợ phải trả' },
     { value: 'cashbook', label: 'Sổ quỹ tiền (thu/chi)' },
     { value: 'lowstock', label: 'Cảnh báo tồn tối thiểu' },
@@ -56,6 +57,7 @@ M.reports = function (root) {
     if (type === 'productCost') return M.reportProductCost(host, from, to);
     if (type === 'inout') return M.reportInOut(host, from, to);
     if (type === 'receivable') return M.reportReceivable(host);
+    if (type === 'agingReceivable') return M.reportAgingDetail(host);
     if (type === 'payable') return M.reportPayable(host);
     if (type === 'cashbook') return M.reportCashbook(host, from, to);
     if (type === 'lowstock') return M.reportLowStock(host);
@@ -399,6 +401,44 @@ M.reportLowStock = function (host) {
     { label: 'Tồn tối thiểu', num: true, render: r => U.num(r.min) },
     { label: 'Cần nhập thêm', num: true, render: r => `<b>${U.num(Math.max(0, r.min - r.stock))}</b>` },
   ], { empty: 'Tất cả hàng hóa đều trên mức tồn tối thiểu' }));
+};
+
+M.reportAgingDetail = function (host) {
+  const today = U.today();
+  const diff = (a, b) => Math.round((new Date(b) - new Date(a)) / 86400000);
+  const tot = { cur: 0, b1: 0, b2: 0, b3: 0, b4: 0, sum: 0 };
+  const rows = [];
+  PW.data.customers.forEach(c => {
+    const b = { cur: 0, b1: 0, b2: 0, b3: 0, b4: 0 };
+    PW.data.salesInvoices.filter(si => si.customerId === c.id).forEach(si => {
+      const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+      if (rem <= 0) return;
+      const od = diff(si.dueDate || si.date, today);   // số ngày quá hạn (âm = chưa đến hạn)
+      if (od <= 0) b.cur += rem; else if (od <= 30) b.b1 += rem; else if (od <= 60) b.b2 += rem;
+      else if (od <= 90) b.b3 += rem; else b.b4 += rem;
+    });
+    const s = b.cur + b.b1 + b.b2 + b.b3 + b.b4;
+    if (s > 0) {
+      rows.push({ c: c, cur: b.cur, b1: b.b1, b2: b.b2, b3: b.b3, b4: b.b4, sum: s });
+      tot.cur += b.cur; tot.b1 += b.b1; tot.b2 += b.b2; tot.b3 += b.b3; tot.b4 += b.b4; tot.sum += s;
+    }
+  });
+  rows.sort((a, b) => (b.b4 + b.b3) - (a.b4 + a.b3) || b.sum - a.sum);   // nợ xấu nhiều lên trước
+  host.appendChild(C.table(rows, [
+    { label: 'Khách hàng', render: r => U.esc(r.c.name) },
+    { label: 'Chưa đến hạn', num: true, render: r => U.money(r.cur) },
+    { label: '1–30 ngày', num: true, render: r => U.money(r.b1) },
+    { label: '31–60 ngày', num: true, render: r => U.money(r.b2) },
+    { label: '61–90 ngày', num: true, render: r => `<span class="text-red">${U.money(r.b3)}</span>` },
+    { label: '> 90 ngày', num: true, render: r => `<b class="text-red">${U.money(r.b4)}</b>` },
+    { label: 'Tổng nợ', num: true, render: r => `<b>${U.money(r.sum)}</b>` },
+  ], {
+    empty: 'Không có công nợ phải thu',
+    footer: [{ html: 'TỔNG' }, { html: U.money(tot.cur), num: true }, { html: U.money(tot.b1), num: true },
+      { html: U.money(tot.b2), num: true }, { html: U.money(tot.b3), num: true }, { html: U.money(tot.b4), num: true }, { html: U.money(tot.sum), num: true }],
+  }));
+  host.appendChild(U.el('p', { class: 'section-sub', style: 'margin-top:8px' },
+    'Tuổi nợ tính theo từng hóa đơn chưa thu đủ; mốc = hạn thanh toán (trống thì lấy ngày hóa đơn). Nợ trên 60 ngày tô đỏ — cần đòi gấp.'));
 };
 
 M.reportVAT = function (host, from, to) {

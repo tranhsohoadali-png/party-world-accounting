@@ -175,8 +175,14 @@ M.quickAddPartner = function (isSale, onAdded) {
     footer: [C.btn('Lưu & chọn', () => {
       const nm = nameI.value.trim();
       if (!nm) return U.toast('Nhập tên', 'error');
+      // Cảnh báo trùng (theo SĐT hoặc tên đã chuẩn hóa) để tránh tách công nợ
+      const list = isSale ? PW.data.customers : PW.data.suppliers;
+      const ph = phoneI.value.trim();
+      const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const dup = list.find(c => (ph && c.phone && c.phone === ph) || norm(c.name) === norm(nm));
+      if (dup && !U.confirm('Đã có "' + dup.name + '"' + (dup.phone ? ' · ' + dup.phone : '') + ' tương tự.\nVẫn tạo MỚI? (nên dùng lại để không tách công nợ)')) return;
       const obj = { id: PW.uid(), code: PW.nextCode(isSale ? 'KH' : 'NCC'), name: nm, type: 'org',
-        phone: phoneI.value.trim(), taxCode: taxI.value.trim(), address: addrI.value.trim(), openingDebt: 0 };
+        phone: ph, taxCode: taxI.value.trim(), address: addrI.value.trim(), openingDebt: 0 };
       (isSale ? PW.data.customers : PW.data.suppliers).push(obj);
       PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm "' + nm + '"');
     }, 'primary')],
@@ -447,6 +453,18 @@ M.docForm = function (cfg) {
       const valid = items.filter(it => it.productId && Number(it.qty) > 0);
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng hợp lệ', 'error');
       if (!partnerI.value) return U.toast('Chọn ' + partnerLabel.toLowerCase(), 'error');
+      // Cảnh báo bán vượt tồn (chỉ hóa đơn bán)
+      if (isSale) {
+        const need = {};
+        valid.forEach(it => { need[it.productId] = (need[it.productId] || 0) + Number(it.qty); });
+        const over = [];
+        Object.keys(need).forEach(pid => {
+          let avail = PW.stockOf(pid);
+          if (!isNew && doc.items) doc.items.forEach(oi => { if (oi.productId === pid) avail += Number(oi.qty); }); // hoàn lại phần của chính HĐ đang sửa
+          if (need[pid] > avail) { const p = PW.product(pid); over.push('• ' + (p ? p.name : pid) + ': cần ' + U.num(need[pid]) + ', tồn ' + U.num(avail)); }
+        });
+        if (over.length && !U.confirm('Tồn kho KHÔNG đủ:\n' + over.join('\n') + '\n\nVẫn lưu hóa đơn (tồn kho sẽ âm)?')) return;
+      }
       const obj = {
         id: doc.id || PW.uid(),
         code: codeI.value, date: dateI.value, dueDate: dueI.value || null,

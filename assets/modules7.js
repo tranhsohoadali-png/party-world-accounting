@@ -406,6 +406,9 @@ M.payrollPasteTK = function (p) {
 
 /* ---------- Ghi nhận chi lương (tạo phiếu chi) ---------- */
 M.payrollPay = function (p) {
+  if (p.paidDate) {
+    if (!U.confirm('Bảng lương tháng ' + p.month + ' ĐÃ ghi chi lương ngày ' + U.date(p.paidDate) + '.\nTạo THÊM phiếu chi nữa? (dễ bị trùng)')) return;
+  }
   const total = M.payrollNetTotal(p);
   const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
   const body = U.el('div', { class: 'form-grid' }, [
@@ -416,12 +419,14 @@ M.payrollPay = function (p) {
   C.modal({
     title: 'Ghi nhận chi lương', body,
     footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo phiếu chi', () => {
-      PW.data.payments.push({
+      const pay = {
         id: PW.uid(), code: PW.nextCode('PC'), date: p.month + '-28',
         accountId: accSel.value, supplierId: null, amount: total,
         reason: 'Lương nhân viên tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4), note: '',
-      });
-      PW.save(); C.closeModal(); U.toast('Đã tạo phiếu chi lương ' + U.money(total) + ' đ');
+      };
+      PW.data.payments.push(pay);
+      p.paidDate = pay.date; p.paymentId = pay.id;   // đánh dấu đã chi -> chống tạo trùng
+      PW.save(); C.closeModal(); App.refresh(); U.toast('Đã tạo phiếu chi lương ' + U.money(total) + ' đ');
     }, 'primary')],
   });
 };

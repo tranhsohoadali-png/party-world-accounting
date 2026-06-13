@@ -933,6 +933,12 @@ M.paymentForm = function (p, presetSupplierId) {
     footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu', () => {
       const amt = Number(f.amount.value) || 0;
       if (amt <= 0) return U.toast('Nhập số tiền', 'error');
+      // Cảnh báo chi vượt số dư quỹ (chỉ khi lập mới)
+      if (isNew) {
+        const bal = PW.accountBalance(f.account.value);
+        const acc = PW.account(f.account.value);
+        if (amt > bal && !U.confirm('Số dư "' + (acc ? acc.name : '') + '" chỉ còn ' + U.vnd(bal) + '.\nChi ' + U.vnd(amt) + ' sẽ làm quỹ ÂM ' + U.vnd(amt - bal) + '.\n\nVẫn lưu phiếu chi?')) return;
+      }
       const obj = { id: p.id || PW.uid(), code: f.code.value, date: f.date.value,
         accountId: f.account.value, supplierId: f.supplier.value || null,
         amount: amt, reason: f.reason.value, note: '' };
