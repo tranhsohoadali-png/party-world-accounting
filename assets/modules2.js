@@ -145,6 +145,98 @@ M.purchaseForm = function (pu, presetSupplierId) {
 /* =====================================================================
    FORM CHỨNG TỪ NHIỀU DÒNG (dùng chung cho Bán & Mua)
    ===================================================================== */
+/* ---------- Thêm nhanh ngay trong form (khỏi ra trang danh mục) ---------- */
+M.rebuildSelect = function (sel, options, value) {
+  sel.innerHTML = '';
+  options.forEach(o => {
+    const op = U.el('option', { value: o.value }, o.label);
+    if (String(o.value) === String(value)) op.selected = true;
+    sel.appendChild(op);
+  });
+};
+// Bọc 1 <select> + nút "+" bên cạnh
+M.withAdd = function (inputEl, title, onClick) {
+  inputEl.style.flex = '1';
+  const b = C.btn('+', onClick, 'sm primary'); b.title = title; b.style.flexShrink = '0';
+  return U.el('div', { style: 'display:flex;gap:6px;align-items:stretch' }, [inputEl, b]);
+};
+M.quickAddPartner = function (isSale, onAdded) {
+  const nameI = C.input({ style: 'width:100%' });
+  const phoneI = C.input({ style: 'width:100%' });
+  const taxI = C.input({ style: 'width:100%' });
+  const addrI = C.input({ style: 'width:100%' });
+  C.miniModal({
+    title: 'Thêm nhanh ' + (isSale ? 'khách hàng' : 'nhà cung cấp'),
+    body: U.el('div', { class: 'form-grid' }, [
+      C.field('Tên *', nameI, { full: true }),
+      C.field('Điện thoại', phoneI), C.field('Mã số thuế', taxI),
+      C.field('Địa chỉ', addrI, { full: true }),
+    ]),
+    footer: [C.btn('Lưu & chọn', () => {
+      const nm = nameI.value.trim();
+      if (!nm) return U.toast('Nhập tên', 'error');
+      const obj = { id: PW.uid(), code: PW.nextCode(isSale ? 'KH' : 'NCC'), name: nm, type: 'org',
+        phone: phoneI.value.trim(), taxCode: taxI.value.trim(), address: addrI.value.trim(), openingDebt: 0 };
+      (isSale ? PW.data.customers : PW.data.suppliers).push(obj);
+      PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm "' + nm + '"');
+    }, 'primary')],
+  });
+  setTimeout(() => nameI.focus(), 50);
+};
+M.quickAddEmployee = function (onAdded) {
+  const nameI = C.input({ style: 'width:100%' });
+  const phoneI = C.input({ style: 'width:100%' });
+  C.miniModal({
+    title: 'Thêm nhanh nhân viên',
+    body: U.el('div', { class: 'form-grid' }, [C.field('Họ tên *', nameI, { full: true }), C.field('Điện thoại', phoneI)]),
+    footer: [C.btn('Lưu & chọn', () => {
+      const nm = nameI.value.trim();
+      if (!nm) return U.toast('Nhập tên', 'error');
+      const obj = { id: PW.uid(), code: PW.nextCode('NV'), name: nm, phone: phoneI.value.trim() };
+      PW.data.employees.push(obj); PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm nhân viên');
+    }, 'primary')],
+  });
+  setTimeout(() => nameI.focus(), 50);
+};
+M.quickAddProduct = function (isSale, onAdded) {
+  const codeP = C.input({ value: PW.nextCode('HH'), style: 'width:100%' });
+  const nameI = C.input({ style: 'width:100%' });
+  const unitI = C.input({ value: 'Cái', style: 'width:100%' });
+  const priceI = C.input({ type: 'number', value: 0, style: 'width:100%' });
+  const costI = C.input({ type: 'number', value: 0, style: 'width:100%' });
+  C.miniModal({
+    title: 'Thêm nhanh hàng hóa',
+    body: U.el('div', { class: 'form-grid' }, [
+      C.field('Mã hàng', codeP), C.field('Đơn vị tính', unitI),
+      C.field('Tên hàng *', nameI, { full: true }),
+      C.field('Giá bán', priceI), C.field('Giá vốn', costI),
+    ]),
+    footer: [C.btn('Lưu & chọn', () => {
+      const nm = nameI.value.trim();
+      if (!nm) return U.toast('Nhập tên hàng', 'error');
+      const obj = { id: PW.uid(), code: codeP.value.trim() || PW.nextCode('HH'), name: nm, unit: unitI.value.trim() || 'Cái',
+        price: Number(priceI.value) || 0, cost: Number(costI.value) || 0, openingStock: 0 };
+      PW.data.products.push(obj); PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm hàng hóa');
+    }, 'primary')],
+  });
+  setTimeout(() => nameI.focus(), 50);
+};
+M.quickAddTerm = function (onAdded) {
+  const nameI = C.input({ style: 'width:100%', placeholder: 'VD: Thanh toán sau 30 ngày' });
+  const daysI = C.input({ type: 'number', value: 30, style: 'width:100%' });
+  C.miniModal({
+    title: 'Thêm nhanh điều khoản thanh toán',
+    body: U.el('div', { class: 'form-grid' }, [C.field('Tên *', nameI, { full: true }), C.field('Số ngày được nợ', daysI)]),
+    footer: [C.btn('Lưu & chọn', () => {
+      const nm = nameI.value.trim();
+      if (!nm) return U.toast('Nhập tên', 'error');
+      const obj = { id: PW.uid(), name: nm, days: Number(daysI.value) || 0 };
+      PW.data.paymentTerms.push(obj); PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm điều khoản');
+    }, 'primary')],
+  });
+  setTimeout(() => nameI.focus(), 50);
+};
+
 M.docForm = function (cfg) {
   const { mode, doc, isNew, title, partnerLabel, partners, partnerKey, priceKey, onSave } = cfg;
   const isSale = mode === 'sale';
@@ -250,9 +342,15 @@ M.docForm = function (cfg) {
       const p = PW.product(it.productId);
       const stockInfo = isSale && p ? U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' }, 'Tồn: ' + U.num(PW.stockOf(p.id))) : null;
 
+      const prodCell = M.withAdd(prodSel, 'Thêm nhanh hàng hóa', () =>
+        M.quickAddProduct(isSale, np => {
+          it.productId = np.id;
+          it[unitField] = isSale ? PW.channelPrice(np, curChannel()) : (np[priceKey] || 0);
+          drawItems(); calc();
+        }));
       const tr = U.el('tr', null, [
         U.el('td', { class: 'center' }, String(idx + 1)),
-        U.el('td', null, [prodSel, stockInfo].filter(Boolean)),
+        U.el('td', null, [prodCell, stockInfo].filter(Boolean)),
         U.el('td', { style: 'width:90px' }, qtyI),
         U.el('td', { style: 'width:130px' }, priceI),
         U.el('td', { class: 'num', style: 'width:130px' }, lineTotal),
@@ -281,16 +379,42 @@ M.docForm = function (cfg) {
 
   const addBtn = C.btn('+ Thêm dòng', () => { items.push({ productId: '', qty: 1, [unitField]: 0 }); drawItems(); calc(); }, 'sm');
 
+  const partnerField = M.withAdd(partnerI, 'Thêm nhanh ' + partnerLabel, () =>
+    M.quickAddPartner(isSale, np => {
+      // np đã được quickAddPartner push vào PW.data.customers/suppliers (= partners) rồi
+      M.rebuildSelect(partnerI, partners.map(p => ({ value: p.id, label: p.name })), np.id);
+      applyPartnerTerm();
+    }));
+  const termField = M.withAdd(termSel, 'Thêm nhanh điều khoản thanh toán', () =>
+    M.quickAddTerm(t => {
+      M.rebuildSelect(termSel, [{ value: '', label: '-- Chọn điều khoản --' }]
+        .concat(PW.data.paymentTerms.map(x => ({ value: x.days, label: x.name }))), t.days);
+      dueI.value = U.addDays(dateI.value, t.days);
+    }));
+  const empField = empSel ? M.withAdd(empSel, 'Thêm nhanh nhân viên', () =>
+    M.quickAddEmployee(ne => {
+      M.rebuildSelect(empSel, [{ value: '', label: '-- Chọn nhân viên --' }]
+        .concat(PW.data.employees.map(e => ({ value: e.id, label: e.name }))), ne.id);
+    })) : null;
+
   const header = U.el('div', { class: 'form-grid' }, [
     C.field('Số chứng từ', codeI),
     C.field('Ngày', dateI, { required: true }),
-    C.field('Điều khoản thanh toán', termSel),
+    C.field('Điều khoản thanh toán', termField),
     C.field('Hạn thanh toán (để trống = không hạn)', dueI),
-    C.field(partnerLabel, partnerI, { required: true, full: true }),
+    C.field(partnerLabel, partnerField, { required: true, full: true }),
     C.field('Thuế GTGT (%)', vatRateI),
     isSale ? C.field('Kênh bán', channelSel) : null,
-    isSale ? C.field('Nhân viên bán', empSel) : null,
+    isSale ? C.field('Nhân viên bán', empField) : null,
   ]);
+
+  // Tham chiếu luồng chứng từ (hóa đơn tạo từ báo giá / đơn hàng)
+  const refBar = doc.sourceCode ? U.el('div', { class: 'alert-bar', style: 'background:#eef6e1;border-color:#cfe3a8;color:#3d5a1e' }, [
+    U.el('span', { class: 'a-ic', html: U.icon('route') }),
+    U.el('span', null, 'Tham chiếu: tạo từ ' + (doc.sourceType === 'quote' ? 'báo giá ' : 'đơn đặt hàng ')),
+    U.el('b', null, doc.sourceCode),
+    U.el('a', { href: '#', onclick: (e) => { e.preventDefault(); C.closeModal(); App.go(doc.sourceType === 'quote' ? 'quotes' : 'orders'); } }, 'Mở chứng từ gốc →'),
+  ]) : null;
 
   const summary = U.el('div', { style: 'margin-top:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-end' }, [
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Tổng tiền hàng: '), totalCell, ' đ']),
@@ -306,6 +430,7 @@ M.docForm = function (cfg) {
   ]);
 
   const body = U.el('div', null, [
+    refBar,
     header,
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa'),
     U.el('div', { class: 'table-wrap' }, itemsTable),
@@ -337,8 +462,9 @@ M.docForm = function (cfg) {
         paidAccountId: (Number(paidI.value) || 0) > 0 ? paidAccI.value : null,
         note: noteI.value,
       };
-      // Giữ lại trạng thái đối soát sàn (do M.reconcile ghi) khi sửa lại hóa đơn
-      ['reconciled', 'settledAmount', 'reconciledDate'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
+      // Giữ lại trạng thái đối soát sàn + tham chiếu nguồn khi sửa lại hóa đơn
+      ['reconciled', 'settledAmount', 'reconciledDate', 'sourceType', 'sourceId', 'sourceCode',
+       'packed', 'packedAt', 'orderStatus', 'trackingCode'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
       onSave(obj);
       PW.save(); C.closeModal(); App.refresh();
       U.toast(isSale ? 'Đã lưu hóa đơn bán' : 'Đã lưu phiếu nhập');

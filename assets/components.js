@@ -32,6 +32,30 @@ C.closeModal = function () {
   if (m) m.remove();
 };
 
+/* Modal LỚP 2 — đè lên modal đang mở (để "thêm nhanh" trong form mà không đóng form) */
+C.miniModal = function ({ title, body, footer }) {
+  C.closeMini();
+  const back = U.el('div', { class: 'modal-back', id: 'pw-modal2', style: 'z-index:140' });
+  back.addEventListener('mousedown', e => { if (e.target === back) C.closeMini(); });
+  const modal = U.el('div', { class: 'modal' });
+  const head = U.el('div', { class: 'm-head' }, [
+    U.el('h3', null, title),
+    U.el('button', { class: 'x', onclick: C.closeMini }, '×'),
+  ]);
+  const bodyEl = U.el('div', { class: 'm-body' });
+  if (typeof body === 'string') bodyEl.innerHTML = body; else bodyEl.appendChild(body);
+  modal.appendChild(head); modal.appendChild(bodyEl);
+  if (footer) {
+    const f = U.el('div', { class: 'm-foot' });
+    (Array.isArray(footer) ? footer : [footer]).forEach(x => f.appendChild(x));
+    modal.appendChild(f);
+  }
+  back.appendChild(modal); document.body.appendChild(back);
+  if (U.iconifyTitles) U.iconifyTitles(modal);
+  return { back, modal, body: bodyEl };
+};
+C.closeMini = function () { const m = document.getElementById('pw-modal2'); if (m) m.remove(); };
+
 /* ---------- Field helpers ---------- */
 C.field = function (label, inputEl, opts) {
   opts = opts || {};

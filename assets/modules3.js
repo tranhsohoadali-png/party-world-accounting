@@ -190,7 +190,8 @@ M.docListSimple = function (root, kind) {
       { label: 'Số mặt hàng', center: true, render: x => x.items.length },
       { label: 'Tổng tiền', num: true, render: x => U.money(total(x)) },
       { label: 'Trạng thái', center: true, render: x => x.status === 'converted'
-          ? '<span class="tag green">Đã lập HĐ</span>' : '<span class="tag orange">Chưa lập HĐ</span>' },
+          ? '<span class="tag green">Đã lập HĐ</span>' + (x.convertedToCode ? '<div class="text-muted" style="font-size:11px">→ ' + U.esc(x.convertedToCode) + '</div>' : '')
+          : '<span class="tag orange">Chưa lập HĐ</span>' },
       { label: '', render: x => C.actions([
           x.status !== 'converted' ? { label: '➜ Lập hóa đơn', cls: 'primary', onClick: () => M.convertToInvoice(x, kind) } : null,
           { label: 'In', onClick: () => M.printSalesDoc(kind, x) },
@@ -272,9 +273,11 @@ M.convertToInvoice = function (src, kind) {
     items: src.items.map(it => ({ productId: it.productId, qty: Number(it.qty), price: Number(it.price) })),
     discount: Number(src.discount || 0), paid: 0, paidAccountId: null,
     note: (kind === 'quote' ? 'Từ báo giá ' : 'Từ đơn đặt hàng ') + src.code,
+    sourceType: kind, sourceId: src.id, sourceCode: src.code,   // tham chiếu nguồn
   };
   PW.data.salesInvoices.push(inv);
   src.status = 'converted';
+  src.convertedToId = inv.id; src.convertedToCode = inv.code;   // liên kết ngược
   PW.save(); App.refresh(); U.toast('Đã tạo hóa đơn ' + inv.code);
 };
 
