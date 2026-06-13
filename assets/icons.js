@@ -95,7 +95,8 @@
     'doc': '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/>',
     'sun': '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/>',
     'moon': '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
-    'leaf': '<path d="M4 20C4 11 11 4 20 4c0 9-7 16-16 16z"/><path d="M9 15C13 11 16 8 19 5"/>'
+    'leaf': '<path d="M4 20C4 11 11 4 20 4c0 9-7 16-16 16z"/><path d="M9 15C13 11 16 8 19 5"/>',
+    'bell': '<path d="M18 9a6 6 0 0 0-12 0c0 5-2 7-2 7h16s-2-2-2-7z"/><path d="M10.3 20a1.9 1.9 0 0 0 3.4 0"/>'
   };
 
   // ----- Trả về chuỗi <svg>. Không có tên -> trả lại nguyên chuỗi (emoji vẫn hiện). -----

@@ -386,6 +386,21 @@ body.login-mode .app { filter: blur(2px); pointer-events: none; }
   .card { border: none; box-shadow: none; }
 }
 
+/* ====================== VIỆC CẦN LÀM (Action Center) ====================== */
+.todo-hero-ic { width: 52px; height: 52px; border-radius: 14px; background: var(--teal-grad); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); flex-shrink: 0; }
+.todo-gic { display: inline-flex; align-items: center; color: var(--teal-d); }
+.todo-gic svg.icon { width: 18px; height: 18px; }
+body.dark .todo-gic { color: #a5d76e; }
+.todo-list { display: flex; flex-direction: column; }
+.todo-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+.todo-row:last-child { border-bottom: none; }
+.todo-main { flex: 1; min-width: 0; }
+.todo-text { font-size: 14px; display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-text.urgent { font-weight: 600; }
+.todo-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.todo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; display: inline-block; }
+
 /* ====================== TRỢ LÝ AI (chat nổi) ====================== */
 #ai-fab {
   position: fixed; right: 22px; bottom: 22px; z-index: 90;

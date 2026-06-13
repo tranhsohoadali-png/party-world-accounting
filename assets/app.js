@@ -7,6 +7,7 @@ const App = { current: 'dashboard' };
 App.menu = [
   { group: 'TỔNG QUAN', items: [
     { id: 'dashboard', label: 'Tổng quan', icon: 'home', title: 'Tổng quan' },
+    { id: 'todo', label: 'Việc cần làm', icon: 'bell', title: 'Việc cần làm hôm nay' },
     { id: 'analytics', label: 'Phân tích KD', icon: 'chart-pie', title: 'Phân tích kinh doanh', roles: ['admin', 'ketoan'] },
     { id: 'charts', label: 'Biểu đồ', icon: 'bar-chart', title: 'Biểu đồ phân tích', roles: ['admin', 'ketoan'] },
   ]},
@@ -158,6 +159,7 @@ App.refresh = function () {
   switch (App.current) {
     case 'catalog': return M.catalogHub(root);
     case 'dashboard': return M.dashboard(root);
+    case 'todo': return M.actionCenter(root);
     case 'charts': return M.charts(root);
     case 'analytics': return M.analytics(root);
     case 'crm': return M.crm(root);
