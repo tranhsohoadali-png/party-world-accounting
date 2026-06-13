@@ -335,6 +335,7 @@ M.productForm = function (p) {
   const isNew = !p;
   p = p || { code: PW.nextCode('HH'), name: '', group: '', unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
   const f = {
+    kind: C.select((M.PRODUCT_KINDS || [{ kind: 'hanghoa', label: 'Hàng hóa' }]).map(k => ({ value: k.kind, label: k.label })), p.kind || 'hanghoa'),
     code: C.input({ value: p.code }),
     name: C.input({ value: p.name }),
     group: C.input({ value: p.group || '', list: 'dl-pgroups' }),
@@ -380,6 +381,41 @@ M.productForm = function (p) {
   ]);
   drawBom();
 
+  // ----- Thành phần combo -----
+  let components = (p.components || []).map(c => Object.assign({}, c));
+  const comboBody = U.el('tbody');
+  function drawCombo() {
+    comboBody.innerHTML = '';
+    components.forEach((c, idx) => {
+      const picker = M.productPicker(c.productId, (pp) => { c.productId = pp.id; drawCombo(); }, { isSale: true });
+      const q = U.el('input', { type: 'number', value: c.qty, min: 0, step: 'any', style: 'text-align:right' });
+      q.addEventListener('input', () => { c.qty = Number(q.value) || 0; });
+      comboBody.appendChild(U.el('tr', null, [
+        U.el('td', null, picker),
+        U.el('td', { style: 'width:130px' }, q),
+        U.el('td', { class: 'center', style: 'width:40px' }, U.el('button', { class: 'btn sm danger', onclick: () => { components.splice(idx, 1); drawCombo(); } }, '×')),
+      ]));
+    });
+  }
+  const comboTable = U.el('table', { class: 'items-tbl' });
+  comboTable.appendChild(U.el('thead', null, U.el('tr', null, [U.el('th', null, 'Hàng thành phần'), U.el('th', null, 'Số lượng /1 combo'), U.el('th', null, '')])));
+  comboTable.appendChild(comboBody);
+  const comboSection = U.el('div', null, [
+    U.el('div', { class: 'card-title mt16', style: 'font-size:14px' }, '▦ Thành phần combo'),
+    U.el('div', { class: 'section-sub' }, 'Combo gồm những hàng nào — khi bán combo sẽ TỰ trừ kho + tính giá vốn theo từng món. Tồn của combo = số bộ tối đa lắp được.'),
+    U.el('div', { class: 'table-wrap' }, comboTable),
+    U.el('div', { class: 'mt8' }, C.btn('+ Thêm thành phần', () => { components.push({ productId: '', qty: 1 }); drawCombo(); }, 'sm')),
+  ]);
+  drawCombo();
+
+  // Hiện/ẩn section theo tính chất
+  function applyKind() {
+    const k = f.kind.value;
+    bomSection.style.display = (k === 'thanhpham' || (bom.length && k !== 'combo')) ? '' : 'none';
+    comboSection.style.display = (k === 'combo') ? '' : 'none';
+  }
+  f.kind.addEventListener('change', applyKind);
+
   // ----- Bảng giá theo kênh -----
   const chInputs = {};
   const chPriceGrid = U.el('div', { class: 'form-grid' });
@@ -396,9 +432,10 @@ M.productForm = function (p) {
 
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
+      C.field('Tính chất', f.kind),
       C.field('Mã hàng', f.code, { required: true }),
-      C.field('Nhóm hàng', f.group),
       C.field('Tên hàng hóa', f.name, { required: true, full: true }),
+      C.field('Nhóm hàng', f.group),
       C.field('Đơn vị tính', f.unit),
       C.field('Tồn kho đầu kỳ', f.stock),
       C.field('Tồn tối thiểu (cảnh báo)', f.minStock),
@@ -409,7 +446,9 @@ M.productForm = function (p) {
     M.datalist('dl-punits', PW.data.units.map(u => u.name)),
     chSection,
     bomSection,
+    comboSection,
   ]);
+  applyKind();
   C.modal({
     title: isNew ? 'Thêm hàng hóa' : 'Sửa hàng hóa', wide: true,
     body,
@@ -419,6 +458,7 @@ M.productForm = function (p) {
         if (!f.name.value.trim()) return U.toast('Nhập tên hàng hóa', 'error');
         const obj = {
           id: p.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
+          kind: f.kind.value,
           group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
           cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
           openingStock: Number(f.stock.value) || 0,
@@ -426,6 +466,7 @@ M.productForm = function (p) {
           bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
           channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
         };
+        if (f.kind.value === 'combo') obj.components = components.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
         if (isNew) PW.data.products.push(obj);
         else Object.assign(p, obj);
         PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu hàng hóa');

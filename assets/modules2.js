@@ -245,6 +245,31 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
     U.el('b', null, 'Tính chất: ' + kindObj.label),
     U.el('a', { href: '#', style: 'margin-left:8px', onclick: e => { e.preventDefault(); C.closeMini(); M.quickAddProduct(isSale, onAdded); } }, 'Đổi tính chất'),
   ]);
+  // Thành phần combo (chỉ khi tính chất = combo)
+  const comboComps = [];
+  const comboBody = U.el('tbody');
+  function drawCombo() {
+    comboBody.innerHTML = '';
+    comboComps.forEach((c, idx) => {
+      const pk = M.productPicker(c.productId, (pp) => { c.productId = pp.id; drawCombo(); }, { isSale: true });
+      const q = U.el('input', { type: 'number', value: c.qty, min: 0, step: 'any', style: 'text-align:right' });
+      q.addEventListener('input', () => { c.qty = Number(q.value) || 0; });
+      comboBody.appendChild(U.el('tr', null, [U.el('td', null, pk), U.el('td', { style: 'width:110px' }, q),
+        U.el('td', { class: 'center', style: 'width:36px' }, U.el('button', { class: 'btn sm danger', onclick: () => { comboComps.splice(idx, 1); drawCombo(); } }, '×'))]));
+    });
+  }
+  let comboSection = null;
+  if (kindObj.kind === 'combo') {
+    const t = U.el('table', { class: 'items-tbl' });
+    t.appendChild(U.el('thead', null, U.el('tr', null, [U.el('th', null, 'Hàng thành phần'), U.el('th', null, 'SL /1 combo'), U.el('th', null, '')])));
+    t.appendChild(comboBody);
+    comboSection = U.el('div', { class: 'mt8' }, [
+      U.el('div', { class: 'section-sub', style: 'font-weight:600' }, 'Thành phần combo (bán combo sẽ trừ kho từng món)'),
+      U.el('div', { class: 'table-wrap' }, t),
+      U.el('div', { class: 'mt8' }, C.btn('+ Thêm thành phần', () => { comboComps.push({ productId: '', qty: 1 }); drawCombo(); }, 'sm')),
+    ]);
+    comboComps.push({ productId: '', qty: 1 }); drawCombo();
+  }
   const body = U.el('div', null, [
     head,
     U.el('div', { class: 'form-grid' }, [
@@ -253,6 +278,7 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
       C.field('Đơn vị tính', unitI), C.field('Giá bán', priceI), C.field('Giá vốn', costI),
     ]),
     M.datalist('dl-qa-groups', PW.data.productGroups.map(g => g.name)),
+    comboSection,
   ]);
   C.miniModal({
     title: 'Thêm ' + kindObj.label.toLowerCase(),
@@ -263,6 +289,7 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
       const obj = { id: PW.uid(), code: codeP.value.trim() || PW.nextCode('HH'), name: nm,
         unit: unitI.value.trim() || 'Cái', group: groupI.value.trim(), kind: kindObj.kind,
         price: Number(priceI.value) || 0, cost: Number(costI.value) || 0, openingStock: 0 };
+      if (kindObj.kind === 'combo') obj.components = comboComps.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
       PW.data.products.push(obj); PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm ' + kindObj.label.toLowerCase());
     }, 'primary')],
   });
@@ -565,9 +592,11 @@ M.docForm = function (cfg) {
         valid.forEach(it => { need[it.productId] = (need[it.productId] || 0) + Number(it.qty); });
         const over = [];
         Object.keys(need).forEach(pid => {
+          const p = PW.product(pid);
+          if (p && p.kind === 'dichvu') return; // dịch vụ không có tồn kho
           let avail = PW.stockOf(pid);
           if (!isNew && doc.items) doc.items.forEach(oi => { if (oi.productId === pid) avail += Number(oi.qty); }); // hoàn lại phần của chính HĐ đang sửa
-          if (need[pid] > avail) { const p = PW.product(pid); over.push('• ' + (p ? p.name : pid) + ': cần ' + U.num(need[pid]) + ', tồn ' + U.num(avail)); }
+          if (need[pid] > avail) { over.push('• ' + (p ? p.name : pid) + ': cần ' + U.num(need[pid]) + ', tồn ' + U.num(avail)); }
         });
         if (over.length && !U.confirm('Tồn kho KHÔNG đủ:\n' + over.join('\n') + '\n\nVẫn lưu hóa đơn (tồn kho sẽ âm)?')) return;
       }

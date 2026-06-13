@@ -133,20 +133,48 @@ PW.account = id => PW.data.cashAccounts.find(a => a.id === id);
 /* ---------- Tính toán số dư / công nợ / tồn kho ---------- */
 
 // Tồn kho hiện tại của 1 sản phẩm
+// Tính chất hàng hóa: hanghoa | dichvu | nvl | thanhpham | ccdc | combo
+PW.productKind = p => (p && p.kind) || 'hanghoa';
+// Có theo dõi tồn kho không? Dịch vụ: không. Combo: tồn suy từ thành phần (xử lý riêng).
+PW.isStocked = p => !!p && p.kind !== 'dichvu' && p.kind !== 'combo';
+// Giá vốn 1 combo = tổng giá vốn các thành phần × số lượng
+PW.comboCost = function (p) {
+  if (!p || !p.components || !p.components.length) return Number(p ? (p.cost || 0) : 0);
+  return p.components.reduce((s, c) => { const m = PW.product(c.productId); return s + Number(c.qty || 0) * Number(m ? m.cost : 0); }, 0);
+};
+
 PW.stockOf = function (productId) {
   const p = PW.product(productId);
   if (!p) return 0;
+  // Dịch vụ: không có tồn kho
+  if (p.kind === 'dichvu') return 0;
+  // Combo: tồn = số bộ tối đa lắp được từ thành phần
+  if (p.kind === 'combo') {
+    if (!p.components || !p.components.length) return 0;
+    let n = Infinity;
+    p.components.forEach(c => { const cq = Number(c.qty || 0); if (cq > 0) n = Math.min(n, Math.floor(PW.stockOf(c.productId) / cq)); });
+    return n === Infinity ? 0 : n;
+  }
   let qty = Number(p.openingStock || 0);
   PW.data.purchases.forEach(pu => {
     pu.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
   });
   PW.data.salesInvoices.forEach(si => {
-    si.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
+    si.items.forEach(it => {
+      if (it.productId === productId) qty -= Number(it.qty);
+      // Bán combo -> trừ kho từng thành phần
+      else { const cp = PW.product(it.productId); if (cp && cp.kind === 'combo' && cp.components)
+        cp.components.forEach(c => { if (c.productId === productId) qty -= Number(c.qty || 0) * Number(it.qty); }); }
+    });
   });
   // Trả lại hàng bán -> hàng nhập lại kho (BỎ QUA phiếu "thất lạc" noRestock: hàng không về)
   PW.data.salesReturns.forEach(sr => {
     if (sr.noRestock) return;
-    sr.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
+    sr.items.forEach(it => {
+      if (it.productId === productId) qty += Number(it.qty);
+      else { const cp = PW.product(it.productId); if (cp && cp.kind === 'combo' && cp.components)
+        cp.components.forEach(c => { if (c.productId === productId) qty += Number(c.qty || 0) * Number(it.qty); }); }
+    });
   });
   // Trả lại hàng mua -> xuất khỏi kho trả nhà cung cấp
   PW.data.purchaseReturns.forEach(pr => {
@@ -167,7 +195,7 @@ PW.stockOf = function (productId) {
 // Danh sách hàng dưới mức tồn tối thiểu
 PW.stockBelowMin = function () {
   return PW.data.products
-    .filter(p => Number(p.minStock || 0) > 0 && PW.stockOf(p.id) < Number(p.minStock))
+    .filter(p => p.kind !== 'dichvu' && Number(p.minStock || 0) > 0 && PW.stockOf(p.id) < Number(p.minStock))
     .map(p => ({ p, stock: PW.stockOf(p.id), min: Number(p.minStock) }));
 };
 
@@ -235,7 +263,7 @@ PW.purchaseReturnTotal = function (pr) {
 PW.returnCost = function (sr) {
   return sr.items.reduce((s, it) => {
     const p = PW.product(it.productId);
-    return s + Number(it.qty) * Number(p ? p.cost : 0);
+    return s + Number(it.qty) * (p && p.kind === 'combo' ? PW.comboCost(p) : Number(p ? p.cost : 0));
   }, 0);
 };
 
@@ -425,7 +453,7 @@ PW.cogs = function (fromYmd, toYmd) {
   PW.data.salesInvoices.filter(si => inRange(si.date))
     .forEach(si => si.items.forEach(it => {
       const p = PW.product(it.productId);
-      total += Number(it.qty) * Number(p ? p.cost : 0);
+      total += Number(it.qty) * (p && p.kind === 'combo' ? PW.comboCost(p) : Number(p ? p.cost : 0));
     }));
   // Phiếu "thất lạc" (noRestock): hàng không về kho -> KHÔNG hoàn giá vốn (giữ làm tổn thất)
   total -= PW.data.salesReturns.filter(sr => inRange(sr.date) && !sr.noRestock)

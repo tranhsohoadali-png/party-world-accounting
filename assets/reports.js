@@ -280,7 +280,7 @@ M.reportProductCost = function (host, from, to) {
 };
 
 M.reportInventory = function (host) {
-  const rows = PW.data.products.map(p => ({ p, qty: PW.stockOf(p.id), val: PW.stockOf(p.id) * p.cost }));
+  const rows = PW.data.products.filter(p => p.kind !== 'dichvu').map(p => ({ p, qty: PW.stockOf(p.id), val: PW.stockOf(p.id) * p.cost }));
   const tot = rows.reduce((s, r) => s + r.val, 0);
   host.appendChild(C.table(rows, [
     { label: 'Mã', render: r => U.esc(r.p.code) },
