@@ -197,6 +197,49 @@ App.refresh = function () {
 
 /* ---------- Cài đặt / Sao lưu ---------- */
 App.settings = function (root) {
+  // ----- Thông tin doanh nghiệp (hiện trên hóa đơn / phiếu giao hàng khi in) -----
+  const co = (PW.data.meta.company = PW.data.meta.company || {});
+  const coCard = U.el('div', { class: 'card' });
+  coCard.appendChild(U.el('div', { class: 'card-title' }, '🏢 Thông tin doanh nghiệp (in chứng từ)'));
+  coCard.appendChild(U.el('p', { class: 'section-sub' },
+    'Các thông tin này in lên đầu hóa đơn, phiếu giao hàng. Logo lấy từ assets/logo-dali.png.'));
+  const coName = C.input({ value: co.name || PW.data.meta.companyName || 'DALI — Tô điểm cuộc sống', style: 'width:100%' });
+  const coAddr = C.input({ value: co.address || '', placeholder: 'Số nhà, đường, phường/xã, quận, tỉnh', style: 'width:100%' });
+  const coPhone = C.input({ value: co.phone || '', placeholder: 'VD: 0901 234 567', style: 'width:100%' });
+  const coMst = C.input({ value: co.mst || '', placeholder: 'Mã số thuế', style: 'width:100%' });
+  const coBank = C.input({ value: co.bank || '', placeholder: 'VD: Vietcombank — 0123456789 — CTY DALI', style: 'width:100%' });
+  const coNote = C.input({ value: co.note || 'Cảm ơn quý khách! Hân hạnh được phục vụ.', placeholder: 'Dòng chân chứng từ', style: 'width:100%' });
+  const coSize = C.select([
+    { value: 'A4', label: 'A4 — giấy thường' },
+    { value: 'A5', label: 'A5 — nửa trang' },
+    { value: '80', label: '80mm — máy in nhiệt / bill' },
+  ], co.printSize || 'A4');
+  const cg = U.el('div', { class: 'form-grid' });
+  cg.appendChild(C.field('Tên hiển thị', coName, { full: true }));
+  cg.appendChild(C.field('Địa chỉ', coAddr, { full: true }));
+  cg.appendChild(C.field('Điện thoại', coPhone));
+  cg.appendChild(C.field('Mã số thuế', coMst));
+  cg.appendChild(C.field('Tài khoản ngân hàng', coBank, { full: true }));
+  cg.appendChild(C.field('Dòng chân chứng từ', coNote, { full: true }));
+  cg.appendChild(C.field('Khổ giấy in mặc định', coSize));
+  coCard.appendChild(cg);
+  coCard.appendChild(U.el('div', { class: 'pill-row mt8' }, [
+    C.btn('Lưu thông tin', () => {
+      Object.assign(PW.data.meta.company, {
+        name: coName.value.trim(), address: coAddr.value.trim(), phone: coPhone.value.trim(),
+        mst: coMst.value.trim(), bank: coBank.value.trim(), note: coNote.value.trim(), printSize: coSize.value,
+      });
+      PW.data.meta.companyName = coName.value.trim() || PW.data.meta.companyName;
+      PW.save(); U.toast('Đã lưu thông tin doanh nghiệp');
+    }, 'primary'),
+    C.btn('🖨 In thử phiếu giao hàng', () => {
+      const si = PW.data.salesInvoices[0];
+      if (!si) { U.toast('Chưa có hóa đơn nào để in thử', 'error'); return; }
+      M.deliveryNote(si, coSize.value);
+    }),
+  ]));
+  root.appendChild(coCard);
+
   const card = U.el('div', { class: 'card' });
   card.appendChild(U.el('div', { class: 'card-title' }, '⚙️ Dữ liệu & Sao lưu'));
   card.appendChild(U.el('p', { class: 'section-sub' },
