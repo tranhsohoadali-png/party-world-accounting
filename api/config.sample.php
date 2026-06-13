@@ -47,6 +47,6 @@ return [
   'anthropic_chat_model' => 'claude-haiku-4-5-20251001',
 
   // Đồng bộ hóa đơn từ Cổng HĐĐT Tổng cục Thuế (màn "Hóa đơn thuế (cổng)").
-  // Chỉ đổi nếu cổng dùng host/cổng khác (vd 'https://hoadondientu.gdt.gov.vn:30000').
-  'tax_api_base' => 'https://hoadondientu.gdt.gov.vn',
+  // API của cổng nằm dưới /api . Chỉ đổi nếu cổng dời host về sau.
+  'tax_api_base' => 'https://hoadondientu.gdt.gov.vn/api',
 ];

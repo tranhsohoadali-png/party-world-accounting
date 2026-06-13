@@ -16,13 +16,13 @@ require __DIR__ . '/lib.php';
 require_role(['admin', 'ketoan']);
 
 $cfg = ai_cfg();
-// Cho phép đổi base qua config nếu cổng đổi cổng/host (vd ':30000').
-$BASE = rtrim($cfg['tax_api_base'] ?? 'https://hoadondientu.gdt.gov.vn', '/');
+// API của cổng nằm dưới /api . Đổi qua config nếu cổng dời host/cổng.
+$BASE = rtrim($cfg['tax_api_base'] ?? 'https://hoadondientu.gdt.gov.vn/api', '/');
 $action = $_GET['action'] ?? '';
 
 /* Gọi HTTP tới cổng thuế. $auth=true -> kèm Bearer token trong session. */
 function gdt_http(string $method, string $url, $body = null, bool $auth = false): array {
-  $headers = ['Accept: application/json'];
+  $headers = ['Accept: application/json, text/plain, */*', 'Accept-Language: vi'];
   if ($body !== null) $headers[] = 'Content-Type: application/json';
   if ($auth) {
     if (empty($_SESSION['tax_token'])) return [null, 401];
@@ -36,21 +36,26 @@ function gdt_http(string $method, string $url, $body = null, bool $auth = false)
     CURLOPT_TIMEOUT => 40,
     CURLOPT_CONNECTTIMEOUT => 15,
     CURLOPT_HTTPHEADER => $headers,
-    CURLOPT_USERAGENT => 'Mozilla/5.0 (DALI-ketoan sync)',
+    CURLOPT_ENCODING => '',   // tự giải nén gzip
+    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
   ]);
   if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, is_string($body) ? $body : json_encode($body, JSON_UNESCAPED_UNICODE));
   $raw = curl_exec($ch);
+  $errno = curl_errno($ch);
   $err = curl_error($ch);
   $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
   curl_close($ch);
-  if ($raw === false) { error_log('tax-portal curl: ' . $err); return [null, 0]; }
+  // Lưu lý do lỗi kết nối để màn hình hiển thị (giúp chẩn đoán HTTP 0)
+  $GLOBALS['gdt_err'] = ($raw === false) ? ('curl#' . $errno . ' ' . $err) : '';
+  if ($raw === false) { error_log('tax-portal curl: #' . $errno . ' ' . $err . ' @ ' . $url); return [null, 0]; }
   return [$raw, $code];
 }
+function gdt_errsuffix(): string { return !empty($GLOBALS['gdt_err']) ? ' · ' . $GLOBALS['gdt_err'] : ''; }
 
 /* ---------- Lấy captcha ---------- */
 if ($action === 'captcha') {
   list($raw, $code) = gdt_http('GET', $BASE . '/captcha');
-  if ($code !== 200 || !$raw) json_out(['error' => 'Không lấy được captcha từ cổng thuế (HTTP ' . $code . ')'], 502);
+  if ($code !== 200 || !$raw) json_out(['error' => 'Không lấy được captcha từ cổng thuế (HTTP ' . $code . gdt_errsuffix() . ')'], 502);
   $j = json_decode($raw, true);
   if (!isset($j['content'])) json_out(['error' => 'Cổng thuế trả captcha không đúng định dạng'], 502);
   json_out(['ok' => true, 'key' => $j['key'] ?? '', 'svg' => $j['content']]);
