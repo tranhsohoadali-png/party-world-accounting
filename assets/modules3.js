@@ -19,15 +19,11 @@ M.itemsEditor = function (items, opts) {
   function draw() {
     tbody.innerHTML = '';
     items.forEach((it, idx) => {
-      const prodSel = C.select(
-        [{ value: '', label: '-- Chọn hàng --' }].concat(PW.data.products.map(p => ({ value: p.id, label: p.code + ' - ' + p.name }))),
-        it.productId);
-      prodSel.addEventListener('change', () => {
-        it.productId = prodSel.value;
-        const p = PW.product(prodSel.value);
-        if (p) it[priceKey] = p[opts.productPriceKey || 'price'];
+      const prodSel = M.productPicker(it.productId, (p) => {
+        it.productId = p.id;
+        it[priceKey] = p[opts.productPriceKey || 'price'] || 0;
         draw(); onChange();
-      });
+      }, { isSale: (opts.productPriceKey || 'price') === 'price' });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       const priceI = U.el('input', { type: 'number', value: it[priceKey], min: 0, style: 'text-align:right' });
       const lt = U.el('span');

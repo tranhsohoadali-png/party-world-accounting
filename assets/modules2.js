@@ -243,6 +243,81 @@ M.quickAddTerm = function (onAdded) {
   setTimeout(() => nameI.focus(), 50);
 };
 
+/* ---------- Bộ chọn hàng hóa có tìm kiếm + cột Mã/Tên/Tồn/Giá (kiểu MISA) ----------
+   Dùng thay <select> khi danh mục nhiều SKU. onPick(product) khi chọn.
+   opts: { isSale } -> cột giá hiển thị giá bán (sale) hoặc giá vốn (mua). */
+M.productPicker = function (initialId, onPick, opts) {
+  opts = opts || {};
+  const isSale = opts.isSale !== false;
+  const norm = s => (M._ciNorm ? M._ciNorm(s) : String(s || '').toLowerCase());
+  const wrap = U.el('div', { class: 'pp-wrap' });
+  const btn = U.el('button', { type: 'button', class: 'inp pp-btn' });
+  let selId = initialId || '';
+  let panel = null, firstP = null;
+  function lbl() { const p = PW.product(selId); return p ? ((p.code ? p.code + ' - ' : '') + p.name) : '-- Chọn hàng --'; }
+  function refresh() { btn.textContent = lbl(); btn.classList.toggle('pp-empty', !selId); }
+  refresh();
+
+  function position() { if (!panel) return; const r = btn.getBoundingClientRect();
+    panel.style.left = Math.min(r.left, window.innerWidth - 470) + 'px';
+    panel.style.top = (r.bottom + 2) + 'px'; panel.style.width = Math.max(r.width, 450) + 'px'; }
+  function close() { if (!panel) return; panel.remove(); panel = null;
+    document.removeEventListener('mousedown', onDoc, true); window.removeEventListener('scroll', position, true); window.removeEventListener('resize', position); }
+  function onDoc(e) { if (panel && !panel.contains(e.target) && e.target !== btn) close(); }
+
+  function open() {
+    if (panel) { close(); return; }
+    const search = U.el('input', { class: 'inp', placeholder: 'Gõ mã / tên hàng để tìm...' });
+    const onlyChk = U.el('input', { type: 'checkbox' });
+    const list = U.el('div', { class: 'pp-list' });
+    const head = U.el('div', { class: 'pp-head' }, [
+      U.el('span', null, 'Mã hàng'), U.el('span', null, 'Tên hàng'),
+      U.el('span', { style: 'text-align:right' }, 'Tồn'), U.el('span', { style: 'text-align:right' }, isSale ? 'Giá bán' : 'Giá nhập'),
+    ]);
+    const top = U.el('div', { class: 'pp-top' }, [search, U.el('label', { class: 'pp-only' }, [onlyChk, 'Chỉ hàng còn tồn'])]);
+    const addBtn = U.el('button', { type: 'button' }, '+ Thêm hàng hóa mới');
+    addBtn.addEventListener('click', () => { close(); M.quickAddProduct(isSale, np => { selId = np.id; refresh(); onPick(np); }); });
+    const foot = U.el('div', { class: 'pp-foot' }, addBtn);
+    panel = U.el('div', { class: 'pp-panel' }, [top, head, list, foot]);
+    document.body.appendChild(panel); position();
+
+    function render() {
+      const q = norm(search.value); const only = onlyChk.checked;
+      list.innerHTML = ''; firstP = null;
+      const rows = PW.data.products.filter(p => {
+        if (only && PW.stockOf(p.id) <= 0) return false;
+        return !q || norm((p.code || '') + ' ' + p.name).indexOf(q) >= 0;
+      }).slice(0, 300);
+      if (!rows.length) { list.appendChild(U.el('div', { class: 'pp-empty-row' }, 'Không tìm thấy — bấm "+ Thêm hàng hóa mới" bên dưới')); return; }
+      firstP = rows[0];
+      rows.forEach((p, i) => {
+        const st = PW.stockOf(p.id);
+        const row = U.el('div', { class: 'pp-row' + (i === 0 ? ' pp-active' : '') }, [
+          U.el('span', { class: 'pp-code' }, p.code || ''),
+          U.el('span', { class: 'pp-name', title: p.name }, p.name),
+          U.el('span', { class: 'pp-stock' + (st <= 0 ? ' text-red' : '') }, U.num(st)),
+          U.el('span', { class: 'pp-price' }, U.money(isSale ? p.price : (p.cost || 0))),
+        ]);
+        row.addEventListener('mousedown', e => { e.preventDefault(); selId = p.id; refresh(); close(); onPick(p); });
+        list.appendChild(row);
+      });
+    }
+    search.addEventListener('input', render);
+    search.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { close(); btn.focus(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (firstP) { selId = firstP.id; refresh(); close(); onPick(firstP); } }
+    });
+    document.addEventListener('mousedown', onDoc, true);
+    window.addEventListener('scroll', position, true);
+    window.addEventListener('resize', position);
+    render(); search.focus();
+  }
+  btn.addEventListener('click', open);
+  wrap.appendChild(btn);
+  wrap.ppValue = () => selId;
+  return wrap;
+};
+
 M.docForm = function (cfg) {
   const { mode, doc, isNew, title, partnerLabel, partners, partnerKey, priceKey, onSave } = cfg;
   const isSale = mode === 'sale';
@@ -329,15 +404,11 @@ M.docForm = function (cfg) {
   function drawItems() {
     itemsBody.innerHTML = '';
     items.forEach((it, idx) => {
-      const prodSel = C.select(
-        [{ value: '', label: '-- Chọn hàng --' }].concat(PW.data.products.map(p => ({ value: p.id, label: p.code + ' - ' + p.name }))),
-        it.productId);
-      prodSel.addEventListener('change', () => {
-        it.productId = prodSel.value;
-        const p = PW.product(prodSel.value);
-        if (p) { it[unitField] = isSale ? PW.channelPrice(p, curChannel()) : p[priceKey]; }
+      const prodSel = M.productPicker(it.productId, (p) => {
+        it.productId = p.id;
+        it[unitField] = isSale ? PW.channelPrice(p, curChannel()) : (p[priceKey] || 0);
         drawItems(); calc();
-      });
+      }, { isSale: isSale });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; updateLine(); });
       const priceI = U.el('input', { type: 'number', value: it[unitField], min: 0, style: 'text-align:right' });
@@ -348,15 +419,9 @@ M.docForm = function (cfg) {
       const p = PW.product(it.productId);
       const stockInfo = isSale && p ? U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' }, 'Tồn: ' + U.num(PW.stockOf(p.id))) : null;
 
-      const prodCell = M.withAdd(prodSel, 'Thêm nhanh hàng hóa', () =>
-        M.quickAddProduct(isSale, np => {
-          it.productId = np.id;
-          it[unitField] = isSale ? PW.channelPrice(np, curChannel()) : (np[priceKey] || 0);
-          drawItems(); calc();
-        }));
       const tr = U.el('tr', null, [
         U.el('td', { class: 'center' }, String(idx + 1)),
-        U.el('td', null, [prodCell, stockInfo].filter(Boolean)),
+        U.el('td', null, [prodSel, stockInfo].filter(Boolean)),
         U.el('td', { style: 'width:90px' }, qtyI),
         U.el('td', { style: 'width:130px' }, priceI),
         U.el('td', { class: 'num', style: 'width:130px' }, lineTotal),

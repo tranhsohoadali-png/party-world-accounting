@@ -386,6 +386,33 @@ body.login-mode .app { filter: blur(2px); pointer-events: none; }
   .card { border: none; box-shadow: none; }
 }
 
+/* ====================== BỘ CHỌN HÀNG HÓA (tìm kiếm) ====================== */
+.pp-wrap { position: relative; flex: 1; min-width: 0; }
+.pp-btn { width: 100%; text-align: left; background: #fff; cursor: pointer; display: flex; align-items: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-btn.pp-empty { color: var(--muted); }
+.pp-panel { position: fixed; z-index: 150; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: var(--shadow-lg); overflow: hidden; display: flex; flex-direction: column; max-height: 360px; }
+.pp-top { padding: 8px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+.pp-top .inp { flex: 1; }
+.pp-only { font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.pp-only input { width: auto; margin: 0; }
+.pp-head, .pp-row { display: grid; grid-template-columns: 96px 1fr 64px 92px; gap: 8px; align-items: center; padding: 6px 10px; font-size: 13px; }
+.pp-head { background: #f4f7ee; color: var(--muted); font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: .3px; }
+.pp-list { overflow-y: auto; }
+.pp-row { cursor: pointer; border-bottom: 1px solid var(--line); }
+.pp-row:hover, .pp-row.pp-active { background: var(--brand-tint); }
+.pp-code { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-stock { text-align: right; color: var(--muted); }
+.pp-price { text-align: right; }
+.pp-foot button { width: 100%; border: none; border-top: 1px solid var(--line); background: none; padding: 10px;
+  color: var(--teal-d); font-weight: 600; cursor: pointer; text-align: left; }
+.pp-foot button:hover { background: var(--brand-tint); }
+.pp-empty-row { padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+body.dark .pp-btn { background: #1b2214; }
+body.dark .pp-head { background: #2a3320; }
+
 /* ====================== VIỆC CẦN LÀM (Action Center) ====================== */
 .todo-hero-ic { width: 52px; height: 52px; border-radius: 14px; background: var(--teal-grad); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); flex-shrink: 0; }
