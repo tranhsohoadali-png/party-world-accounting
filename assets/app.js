@@ -222,12 +222,17 @@ App.settings = function (root) {
   cg.appendChild(C.field('Tài khoản ngân hàng', coBank, { full: true }));
   cg.appendChild(C.field('Dòng chân chứng từ', coNote, { full: true }));
   cg.appendChild(C.field('Khổ giấy in mặc định', coSize));
+  const coAccD = C.input({ value: co.accDebit || '131', placeholder: '131', style: 'width:100%' });
+  const coAccC = C.input({ value: co.accCredit || '5111', placeholder: '5111', style: 'width:100%' });
+  cg.appendChild(C.field('TK Nợ (phiếu xuất kho)', coAccD));
+  cg.appendChild(C.field('TK Có (phiếu xuất kho)', coAccC));
   coCard.appendChild(cg);
   coCard.appendChild(U.el('div', { class: 'pill-row mt8' }, [
     C.btn('Lưu thông tin', () => {
       Object.assign(PW.data.meta.company, {
         name: coName.value.trim(), address: coAddr.value.trim(), phone: coPhone.value.trim(),
         mst: coMst.value.trim(), bank: coBank.value.trim(), note: coNote.value.trim(), printSize: coSize.value,
+        accDebit: coAccD.value.trim() || '131', accCredit: coAccC.value.trim() || '5111',
       });
       PW.data.meta.companyName = coName.value.trim() || PW.data.meta.companyName;
       PW.save(); U.toast('Đã lưu thông tin doanh nghiệp');

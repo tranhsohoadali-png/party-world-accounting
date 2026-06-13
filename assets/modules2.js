@@ -37,8 +37,7 @@ M.sales = function (root) {
         } },
       { label: '', render: si => C.actions([
           { label: 'Sửa', onClick: () => M.salesForm(si) },
-          { label: 'In HĐ', onClick: () => M.printInvoice(si) },
-          { label: 'Giao hàng', cls: 'primary', title: 'In phiếu giao hàng', onClick: () => M.printChooser('In phiếu giao hàng — ' + si.code, s => M.deliveryNote(si, s)) },
+          { label: '🖨 In', cls: 'primary', title: 'In phiếu xuất kho / hóa đơn / phiếu giao hàng', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
                 PW.data.salesInvoices = PW.data.salesInvoices.filter(x => x.id !== si.id);

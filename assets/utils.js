@@ -131,3 +131,39 @@ U.exportExcel = function (filename, headers, rows, title) {
   a.click(); URL.revokeObjectURL(url);
   U.toast('Đã xuất file Excel');
 };
+
+// Đọc số tiền VND thành chữ: 7039440 -> "Bảy triệu không trăm ba mươi chín nghìn bốn trăm bốn mươi đồng chẵn."
+U.readMoneyVN = function (num) {
+  num = Math.round(Math.abs(Number(num) || 0));
+  if (num === 0) return 'Không đồng.';
+  const ch = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+  // Đọc 1 nhóm 3 chữ số. full=true: luôn đọc "trăm" kể cả hàng trăm = 0 (nhóm không đứng đầu)
+  function triple(n, full) {
+    const tram = Math.floor(n / 100), chuc = Math.floor((n % 100) / 10), donvi = n % 10;
+    let s = '';
+    if (tram > 0 || full) s += ch[tram] + ' trăm';
+    if (chuc === 0) {
+      if (donvi > 0) { if (tram > 0 || full) s += ' lẻ'; s += ' ' + ch[donvi]; }
+    } else if (chuc === 1) {
+      s += ' mười';
+      if (donvi === 5) s += ' lăm'; else if (donvi > 0) s += ' ' + ch[donvi];
+    } else {
+      s += ' ' + ch[chuc] + ' mươi';
+      if (donvi === 1) s += ' mốt'; else if (donvi === 5) s += ' lăm'; else if (donvi > 0) s += ' ' + ch[donvi];
+    }
+    return s.trim();
+  }
+  const units = ['', ' nghìn', ' triệu', ' tỷ'];
+  const groups = [];
+  let n = num;
+  while (n > 0) { groups.unshift(n % 1000); n = Math.floor(n / 1000); }
+  const len = groups.length;
+  const parts = [];
+  for (let i = 0; i < len; i++) {
+    if (groups[i] === 0) continue;
+    parts.push(triple(groups[i], i > 0) + units[len - 1 - i]);
+  }
+  let r = parts.join(' ').replace(/\s+/g, ' ').trim();
+  r = r.charAt(0).toUpperCase() + r.slice(1);
+  return r + ' đồng chẵn.';
+};

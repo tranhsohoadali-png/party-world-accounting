@@ -129,6 +129,80 @@ M.deliveryNote = function (si, size) {
   M.printHTML('Phiếu giao hàng ' + si.code, inner, size);
 };
 
+/* ---------- PHIẾU XUẤT KHO BÁN HÀNG (mẫu chuẩn VN / MISA) ---------- */
+M.warehouseIssueNote = function (si, size) {
+  const c = M.company();
+  const cus = PW.customer(si.customerId);
+  const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
+  const sub = PW.invoiceTotal(si);
+  const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
+  const grand = sub + vat;
+  const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
+  const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
+  const [yy, mm, dd] = (si.date || U.today()).split('-');
+
+  const rows = si.items.map((it, i) => {
+    const p = PW.product(it.productId);
+    const price = Number(it.price || 0);
+    return '<tr><td class="c">' + (i + 1) + '</td><td>' + U.esc(p ? p.code : '') + '</td><td>' + U.esc(p ? p.name : '') + '</td>'
+      + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
+      + '<td class="r">' + U.money(price) + '</td><td class="r">' + U.money(Number(it.qty) * price) + '</td></tr>';
+  }).join('');
+
+  const inner =
+    '<div style="display:flex;gap:12px;align-items:flex-start">'
+    + (M._logoUrl() ? '<img src="' + M._logoUrl() + '" style="height:46px" onerror="this.style.display=\'none\'">' : '')
+    + '<div><div style="font-weight:700;text-transform:uppercase">' + U.esc(c.name) + '</div>'
+    + (c.address ? '<div style="font-style:italic;font-size:12px">' + U.esc(c.address) + '</div>' : '') + '</div></div>'
+    + '<h1 class="doc-title" style="margin-top:14px">PHIẾU XUẤT KHO BÁN HÀNG</h1>'
+    + '<div class="doc-sub" style="font-style:italic">Ngày ' + dd + ' tháng ' + mm + ' năm ' + yy + '</div>'
+    + '<div class="c" style="margin:-6px 0 12px;font-size:14px">Số: <b>' + U.esc(si.code) + '</b></div>'
+    + '<table style="width:100%"><tr>'
+    + '<td style="vertical-align:top;line-height:1.9;font-size:13px">'
+    + 'Người mua:<br>Tên khách hàng: <b>' + U.esc(cus ? cus.name : '') + '</b><br>'
+    + 'Địa chỉ: ' + U.esc(cus ? cus.address : '') + '<br>'
+    + 'Điện thoại: ' + U.esc(cus ? cus.phone : '') + '<br>'
+    + 'Mã số thuế: ' + U.esc(cus ? (cus.taxCode || '') : '') + '<br>'
+    + 'Diễn giải: ' + U.esc(si.note || '') + '<br>'
+    + 'Nhân viên bán hàng: ' + U.esc(emp ? emp.name : '') + '</td>'
+    + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
+    + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
+    + '</tr></table>'
+    + '<table class="it"><thead><tr><th class="c" style="width:32px">STT</th><th>Mã hàng</th><th>Tên hàng</th>'
+    + '<th class="c">Đơn vị</th><th class="r">Số lượng</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody></table>'
+    + '<table style="width:100%;margin-top:8px;font-size:13.5px"><tr><td class="r" style="padding:2px 0">Cộng tiền hàng:</td><td class="r" style="width:160px;padding:2px 0"><b>' + U.money(sub) + '</b></td></tr>'
+    + '<tr><td class="r" style="padding:2px 0">Thuế suất GTGT: ' + (Number(si.vatRate) || 0) + '% &nbsp; — &nbsp; Tiền thuế GTGT:</td><td class="r" style="padding:2px 0">' + U.money(vat) + '</td></tr>'
+    + '<tr><td class="r" style="padding:4px 0;font-size:15px;font-weight:800;color:#5a8e2e">TỔNG TIỀN THANH TOÁN:</td><td class="r" style="padding:4px 0;font-size:15px;font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr></table>'
+    + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
+    + '<div style="margin-top:4px;font-size:13px">Số chứng từ gốc kèm theo: .....</div>'
+    + '<div class="r" style="margin-top:14px;font-style:italic">Ngày ..... tháng ..... năm ........</div>'
+    + '<div class="sign"><div>Người mua hàng<br><i>(Ký, họ tên)</i></div><div>Kế toán trưởng<br><i>(Ký, họ tên)</i></div><div>Giám đốc<br><i>(Ký, họ tên, đóng dấu)</i></div></div>';
+  M.printHTML('Phiếu xuất kho ' + si.code, inner, size);
+};
+
+/* ---------- Menu in: chọn loại chứng từ + khổ giấy ---------- */
+M.printMenu = function (si) {
+  const sizeSel = C.select([
+    { value: 'A4', label: 'Khổ A4 (giấy thường)' },
+    { value: 'A5', label: 'Khổ A5 (nửa trang)' },
+    { value: '80', label: 'Khổ 80mm (máy in nhiệt / bill)' },
+  ], M.company().printSize || 'A4');
+  const doc = (fn) => () => { const s = sizeSel.value; C.closeModal(); fn(si, s); };
+  C.modal({
+    title: 'In chứng từ — ' + si.code,
+    body: U.el('div', null, [
+      C.field('Khổ giấy', sizeSel),
+      U.el('p', { class: 'section-sub', style: 'margin:10px 0 6px' }, 'Chọn loại chứng từ để in:'),
+      U.el('div', { class: 'pill-row' }, [
+        C.btn('🧾 Phiếu xuất kho bán hàng', doc(M.warehouseIssueNote), 'primary'),
+        C.btn('📄 Hóa đơn bán hàng', doc(M.printInvoice)),
+        C.btn('🚚 Phiếu giao hàng', doc(M.deliveryNote)),
+      ]),
+    ]),
+  });
+};
+
 // Hộp chọn khổ giấy rồi in (dùng khi muốn chọn nhanh A4/A5/80mm)
 M.printChooser = function (label, fn) {
   const sizes = [['A4', 'A4 (giấy thường)'], ['A5', 'A5 (nửa trang)'], ['80', '80mm (máy in nhiệt / bill)']];
