@@ -386,6 +386,23 @@ body.login-mode .app { filter: blur(2px); pointer-events: none; }
   .card { border: none; box-shadow: none; }
 }
 
+/* ====================== CHỌN TÍNH CHẤT HÀNG HÓA (như MISA) ====================== */
+.kind-list { display: flex; flex-direction: column; }
+.kind-row { display: flex; align-items: center; gap: 14px; padding: 12px 10px; border-bottom: 1px solid var(--line);
+  cursor: pointer; border-radius: 8px; transition: background var(--t-fast); }
+.kind-row:hover { background: var(--brand-tint); }
+.kind-row:last-child { border-bottom: none; }
+.kind-ic { width: 44px; height: 44px; border-radius: 10px; background: var(--brand-tint); color: var(--teal-d);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.kind-ic svg.icon { width: 24px; height: 24px; }
+.kind-ic.sm { width: 26px; height: 26px; border-radius: 7px; }
+.kind-ic.sm svg.icon { width: 16px; height: 16px; }
+.kind-title { font-weight: 600; }
+.kind-desc { font-size: 12.5px; color: var(--muted); }
+.qa-kind { display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin-bottom: 10px;
+  background: var(--brand-tint); border-radius: 8px; font-size: 13px; }
+body.dark .kind-ic, body.dark .qa-kind { background: #2e3b22; }
+
 /* ====================== BỘ CHỌN HÀNG HÓA (tìm kiếm) ====================== */
 .pp-wrap { position: relative; flex: 1; min-width: 0; }
 .pp-btn { width: 100%; text-align: left; background: #fff; cursor: pointer; display: flex; align-items: center;
