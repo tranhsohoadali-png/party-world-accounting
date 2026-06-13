@@ -422,6 +422,20 @@ body.login-mode .app { filter: blur(2px); pointer-events: none; }
 .ai-thinking { color: var(--muted); font-style: italic; animation: aiPulse 1.2s ease infinite; }
 @keyframes aiPulse { 50% { opacity: .45; } }
 .ai-tool-note { align-self: flex-start; font-size: 11.5px; color: var(--muted); padding: 0 6px; }
+/* Bảng lịch sử các đoạn chat */
+#ai-history { border-bottom: 1px solid var(--line); max-height: 45%; overflow-y: auto; background: var(--card); }
+.ai-h-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .4px; padding: 10px 14px 4px; }
+.ai-h-empty { padding: 8px 14px 12px; font-size: 13px; color: var(--muted); }
+.ai-h-row { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 14px; cursor: pointer;
+  border-left: 3px solid transparent; transition: background var(--t-fast); }
+.ai-h-row:hover { background: var(--brand-tint); }
+.ai-h-row.cur { border-left-color: var(--teal); background: var(--brand-tint); }
+.ai-h-main { flex: 1; min-width: 0; }
+.ai-h-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ai-h-date { font-size: 11px; color: var(--muted); }
+body.dark .ai-h-row:hover, body.dark .ai-h-row.cur { background: #2e3b22; }
+
 .ai-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
 .ai-chip { border: 1px solid var(--line); background: #fff; color: var(--teal-d);
   border-radius: 16px; padding: 6px 12px; font-size: 12.5px; transition: background var(--t-fast); }

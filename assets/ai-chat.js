@@ -11,9 +11,16 @@
 const AIC = {
   _open: false,
   _busy: false,
-  _msgs: [],        // lịch sử gửi API (giữ nguyên block tool_use/tool_result)
+  _msgs: [],        // lịch sử gửi API của đoạn chat đang mở (giữ nguyên block tool_use/tool_result)
+  _transcript: [],  // phần hiển thị của đoạn chat đang mở [{who, text}]
+  _convId: null,    // id đoạn chat đang mở
   _maxLoop: 6,      // số vòng tool tối đa cho 1 câu hỏi
+  MAX_CONVS: 15,    // giữ tối đa 15 đoạn chat / người dùng
 };
+
+AIC._uid = () => 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// Lưu riêng theo tài khoản đăng nhập (cùng máy nhiều người dùng không lẫn nhau)
+AIC._storeKey = () => 'PW_AI_CHATS_' + ((PW.user && PW.user.username) || 'local');
 
 /* ---------- Bộ TOOL: khai báo cho Claude ---------- */
 AIC.TOOLS = [
@@ -276,7 +283,7 @@ AIC.send = async function (text) {
   }
   thinking.remove();
   AIC._busy = false;
-  AIC._saveTranscript();
+  AIC.saveState();
 };
 
 /* ---------- Giao diện ---------- */
@@ -299,7 +306,9 @@ AIC.init = function () {
     U.el('b', null, 'Trợ lý AI'),
     U.el('span', { class: 'ai-head-sub' }, 'kế toán DALI'),
     U.el('span', { class: 'spacer' }),
-    U.el('button', { class: 'ai-hbtn', title: 'Xóa hội thoại', html: U.icon('trash'), onclick: AIC.clear }),
+    U.el('button', { class: 'ai-hbtn', title: 'Đoạn chat mới', html: U.icon('plus'), onclick: () => AIC.newChat() }),
+    U.el('button', { class: 'ai-hbtn', title: 'Lịch sử các đoạn chat', html: U.icon('rotate-left'), onclick: () => AIC.toggleHistory() }),
+    U.el('button', { class: 'ai-hbtn', title: 'Xóa đoạn chat này', html: U.icon('trash'), onclick: () => AIC.clear() }),
     U.el('button', { class: 'ai-hbtn', title: 'Đóng', html: U.icon('x'), onclick: AIC.toggle }),
   ]);
   const body = U.el('div', { class: 'ai-body', id: 'ai-body' });
@@ -316,7 +325,26 @@ AIC.init = function () {
   inputRow.appendChild(ta); inputRow.appendChild(sendBtn);
   panel.appendChild(head); panel.appendChild(body); panel.appendChild(quick); panel.appendChild(inputRow);
   document.body.appendChild(panel);
-  AIC._loadTranscript();
+  // Khôi phục đoạn chat đang mở dở (nếu có) — kèm chuyển dữ liệu bản cũ 1-đoạn
+  try {
+    const legacy = JSON.parse(localStorage.getItem('PW_AI_CHAT') || 'null');
+    if (Array.isArray(legacy) && legacy.length) {
+      AIC._convId = AIC._uid();
+      AIC._transcript = legacy.map(t => ({ who: t.who, text: t.text }));
+      AIC.saveState();
+      localStorage.removeItem('PW_AI_CHAT');
+    }
+  } catch (e) {}
+  const store = AIC._loadStore();
+  const cur = store.convs.find(c => c.id === store.active) || store.convs[0];
+  if (cur) {
+    AIC._convId = cur.id;
+    AIC._msgs = cur.msgs || [];
+    (cur.transcript || []).forEach(t => AIC._renderMsg(t.who, t.text, true));
+    AIC._transcript = (cur.transcript || []).slice();
+  } else {
+    AIC._convId = AIC._uid();
+  }
 };
 
 AIC.toggle = function () {
@@ -325,7 +353,8 @@ AIC.toggle = function () {
   p.classList.toggle('hidden', !AIC._open);
   if (AIC._open) {
     if (PW.mode !== 'server') {
-      AIC._renderMsg('ai', 'Trợ lý AI cần chạy trên máy chủ (ketoan.tranhdali.vn) và đã cấu hình khóa anthropic_api_key. Bản offline không chat được.');
+      // restoring=true: chỉ hiển thị, KHÔNG lưu câu nhắc hệ thống vào lịch sử đoạn chat
+      AIC._renderMsg('ai', 'Trợ lý AI cần chạy trên máy chủ (ketoan.tranhdali.vn) và đã cấu hình khóa anthropic_api_key. Bản offline không chat được.', true);
     }
     const ta = document.getElementById('ai-input');
     if (ta) ta.focus();
@@ -340,13 +369,121 @@ AIC._submit = function () {
   AIC.send(text);
 };
 
-AIC.clear = function () {
-  AIC._msgs = [];
+/* ---- Kho nhiều đoạn chat (localStorage, theo tài khoản) ---- */
+AIC._loadStore = function () {
+  try {
+    const s = JSON.parse(localStorage.getItem(AIC._storeKey()) || 'null');
+    if (s && Array.isArray(s.convs)) return s;
+  } catch (e) {}
+  return { active: null, convs: [] };
+};
+
+AIC.saveState = function () {
+  try {
+    const store = AIC._loadStore();
+    if (!AIC._convId) AIC._convId = AIC._uid();
+    const title = (AIC._transcript.find(t => t.who === 'user') || { text: 'Đoạn chat' }).text.slice(0, 48);
+    // Lưu cả lịch sử API (msgs) để mở lại đoạn cũ AI vẫn nhớ ngữ cảnh;
+    // tool_result quá nặng thì lược bớt cho nhẹ kho.
+    let msgs = AIC._msgs;
+    if (JSON.stringify(msgs).length > 150000) {
+      msgs = msgs.map(m => {
+        if (!Array.isArray(m.content)) return m;
+        return { role: m.role, content: m.content.map(b =>
+          (b.type === 'tool_result' && typeof b.content === 'string' && b.content.length > 2000)
+            ? Object.assign({}, b, { content: b.content.slice(0, 2000) + '...(đã lược bớt)' }) : b) };
+      });
+    }
+    const conv = { id: AIC._convId, title: title, at: Date.now(), msgs: msgs, transcript: AIC._transcript.slice(-60) };
+    const others = store.convs.filter(c => c.id !== AIC._convId);
+    let convs = [conv].concat(others).slice(0, AIC.MAX_CONVS);
+    const payload = { active: AIC._convId, convs: convs };
+    let json = JSON.stringify(payload);
+    while (json.length > 2500000 && convs.length > 1) {   // kho quá to -> bỏ đoạn cũ nhất
+      convs = convs.slice(0, -1);
+      json = JSON.stringify({ active: AIC._convId, convs: convs });
+    }
+    localStorage.setItem(AIC._storeKey(), json);
+  } catch (e) { /* localStorage đầy thì bỏ qua, chat vẫn chạy */ }
+};
+
+AIC._resetView = function () {
+  AIC._msgs = []; AIC._transcript = [];
   const body = document.getElementById('ai-body');
   if (body) body.innerHTML = '';
   const quick = document.getElementById('ai-quick');
   if (quick) quick.classList.remove('hidden');
-  localStorage.removeItem('PW_AI_CHAT');
+  AIC._hideHistory();
+};
+
+// Đoạn chat mới (đoạn hiện tại đã được lưu sẵn trong kho)
+AIC.newChat = function () {
+  if (AIC._busy) return;
+  if (AIC._msgs.length) AIC.saveState();
+  AIC._convId = AIC._uid();
+  AIC._resetView();
+};
+
+// Xóa hẳn đoạn chat đang mở
+AIC.clear = function () {
+  if (AIC._busy) return;
+  const store = AIC._loadStore();
+  store.convs = store.convs.filter(c => c.id !== AIC._convId);
+  store.active = null;
+  try { localStorage.setItem(AIC._storeKey(), JSON.stringify(store)); } catch (e) {}
+  AIC._convId = AIC._uid();
+  AIC._resetView();
+};
+
+// Mở lại 1 đoạn chat cũ (khôi phục cả ngữ cảnh AI)
+AIC.openConv = function (id) {
+  if (AIC._busy) return;
+  if (AIC._msgs.length) AIC.saveState();
+  const conv = AIC._loadStore().convs.find(c => c.id === id);
+  if (!conv) return;
+  AIC._resetView();
+  AIC._convId = conv.id;
+  AIC._msgs = conv.msgs || [];
+  (conv.transcript || []).forEach(t => AIC._renderMsg(t.who, t.text, true));
+  AIC._transcript = (conv.transcript || []).slice();
+  AIC.saveState();   // đưa lên đầu danh sách
+};
+
+/* ---- Bảng lịch sử các đoạn chat ---- */
+AIC.toggleHistory = function () {
+  const ex = document.getElementById('ai-history');
+  if (ex) { ex.remove(); return; }
+  if (AIC._msgs.length) AIC.saveState();
+  const store = AIC._loadStore();
+  const panel = document.getElementById('ai-panel');
+  const wrap = U.el('div', { id: 'ai-history' });
+  wrap.appendChild(U.el('div', { class: 'ai-h-title' }, 'Các đoạn chat đã lưu'));
+  if (!store.convs.length) wrap.appendChild(U.el('div', { class: 'ai-h-empty' }, 'Chưa có đoạn chat nào.'));
+  store.convs.forEach(c => {
+    const d = new Date(c.at || 0);
+    const row = U.el('div', { class: 'ai-h-row' + (c.id === AIC._convId ? ' cur' : '') });
+    const main = U.el('div', { class: 'ai-h-main' }, [
+      U.el('div', { class: 'ai-h-name' }, c.title || 'Đoạn chat'),
+      U.el('div', { class: 'ai-h-date' }, d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })),
+    ]);
+    main.addEventListener('click', () => { AIC.openConv(c.id); });
+    const del = U.el('button', { class: 'ai-hbtn', title: 'Xóa đoạn này', html: U.icon('trash') });
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const s2 = AIC._loadStore();
+      s2.convs = s2.convs.filter(x => x.id !== c.id);
+      try { localStorage.setItem(AIC._storeKey(), JSON.stringify(s2)); } catch (err) {}
+      if (c.id === AIC._convId) { AIC._convId = AIC._uid(); AIC._resetView(); }
+      else { AIC.toggleHistory(); AIC.toggleHistory(); }   // vẽ lại danh sách
+    });
+    row.appendChild(main); row.appendChild(del);
+    wrap.appendChild(row);
+  });
+  panel.insertBefore(wrap, document.getElementById('ai-body'));
+};
+AIC._hideHistory = function () {
+  const ex = document.getElementById('ai-history');
+  if (ex) ex.remove();
 };
 
 /* ---- Render ---- */
@@ -359,13 +496,14 @@ AIC._mdLite = function (s) {
   h = h.replace(/\n/g, '<br>');
   return h;
 };
-AIC._renderMsg = function (who, text) {
+AIC._renderMsg = function (who, text, restoring) {
   const body = document.getElementById('ai-body');
   if (!body) return;
   const quick = document.getElementById('ai-quick');
   if (quick) quick.classList.add('hidden');
   body.appendChild(U.el('div', { class: 'ai-msg ' + (who === 'user' ? 'me' : 'bot'), html: AIC._mdLite(text) }));
   body.scrollTop = body.scrollHeight;
+  if (!restoring) AIC._transcript.push({ who: who, text: text });
 };
 AIC._renderToolNote = function (name) {
   const body = document.getElementById('ai-body');
@@ -380,17 +518,3 @@ AIC._renderThinking = function () {
   return el;
 };
 
-/* ---- Lưu/khôi phục transcript hiển thị (chỉ phần chữ) ---- */
-AIC._saveTranscript = function () {
-  try {
-    const items = [...document.querySelectorAll('#ai-body .ai-msg')].slice(-30)
-      .map(el => ({ who: el.classList.contains('me') ? 'user' : 'ai', text: el.textContent }));
-    localStorage.setItem('PW_AI_CHAT', JSON.stringify(items));
-  } catch (e) {}
-};
-AIC._loadTranscript = function () {
-  try {
-    const items = JSON.parse(localStorage.getItem('PW_AI_CHAT') || '[]');
-    items.forEach(it => AIC._renderMsg(it.who, it.text));
-  } catch (e) {}
-};
