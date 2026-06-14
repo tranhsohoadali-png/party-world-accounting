@@ -215,3 +215,78 @@ M.printChooser = function (label, fn) {
     ]),
   });
 };
+
+/* ============================================================
+   NHẬT KÝ HOẠT ĐỘNG (audit log) — A4
+   Đọc PW.data.activityLog (ring buffer 2000). Lọc client-side.
+   ============================================================ */
+M.ACT_ENTITY_LABEL = {
+  salesInvoice: 'Hóa đơn bán', purchase: 'Phiếu nhập mua',
+  receipt: 'Phiếu thu', payment: 'Phiếu chi', product: 'Hàng hóa',
+  customer: 'Khách hàng', supplier: 'Nhà cung cấp', payroll: 'Bảng lương',
+  salesReturn: 'Trả lại hàng bán', purchaseReturn: 'Trả lại hàng mua',
+  salesDiscount: 'Giảm giá hàng bán', purchaseDiscount: 'Giảm giá hàng mua',
+  quotation: 'Báo giá', salesOrder: 'Đơn đặt hàng', purchaseOrder: 'Đơn mua hàng',
+};
+M.ACT_ACTION = { create: ['Tạo mới', 'green'], update: ['Sửa', 'orange'], delete: ['Xóa', 'red'] };
+
+M.activityLogScreen = function (root) {
+  const card = U.el('div', { class: 'card' });
+  const bar = U.el('div', { class: 'toolbar' });
+  const fromI = C.input({ type: 'date', value: U.addDays(U.today(), -30) });
+  const toI = C.input({ type: 'date', value: U.today() });
+  const log = (PW.data.activityLog || []).slice().reverse(); // mới nhất trước
+  const actors = Array.from(new Set(log.map(x => x.actor))).sort();
+  const whoSel = C.select([{ value: '', label: '-- Tất cả người --' }].concat(actors.map(a => ({ value: a, label: a }))), '');
+  const typeSel = C.select([{ value: '', label: '-- Tất cả loại --' }]
+    .concat(Object.keys(M.ACT_ENTITY_LABEL).map(k => ({ value: k, label: M.ACT_ENTITY_LABEL[k] }))), '');
+  const q = U.el('input', { class: 'search', placeholder: 'Tìm mã/tên/chi tiết...' });
+  [fromI, toI, whoSel, typeSel, q].forEach(el => { el.addEventListener('input', draw); el.addEventListener('change', draw); });
+  bar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Từ ngày'), fromI]));
+  bar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Đến ngày'), toI]));
+  bar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Người'), whoSel]));
+  bar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Loại'), typeSel]));
+  bar.appendChild(q);
+  bar.appendChild(U.el('div', { class: 'spacer' }));
+  bar.appendChild(C.btn('📊 Xuất Excel', doExport));
+  card.appendChild(bar);
+  const host = U.el('div'); card.appendChild(host); root.appendChild(card);
+
+  function filtered() {
+    const f = fromI.value, t = toI.value, who = whoSel.value, ty = typeSel.value;
+    const kw = q.value.trim().toLowerCase();
+    return log.filter(x => {
+      const d = (x.ts || '').slice(0, 10);
+      if (f && d < f) return false;
+      if (t && d > t) return false;
+      if (who && x.actor !== who) return false;
+      if (ty && x.entity !== ty) return false;
+      if (kw && !((x.name || '') + (x.detail || '')).toLowerCase().includes(kw)) return false;
+      return true;
+    });
+  }
+  function fmtTs(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return U.date(ts.slice(0, 10)) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function draw() {
+    host.innerHTML = '';
+    host.appendChild(C.table(filtered(), [
+      { label: 'Thời gian', render: x => fmtTs(x.ts) },
+      { label: 'Người', render: x => U.esc(x.actor) },
+      { label: 'Hành động', center: true, render: x => { const a = M.ACT_ACTION[x.action] || [x.action, 'gray']; return '<span class="tag ' + a[1] + '">' + a[0] + '</span>'; } },
+      { label: 'Loại', render: x => U.esc(M.ACT_ENTITY_LABEL[x.entity] || x.entity) },
+      { label: 'Mã / Tên', render: x => U.esc(x.name) },
+      { label: 'Chi tiết', render: x => U.esc(x.detail) },
+    ], { empty: 'Chưa có nhật ký hoạt động' }));
+  }
+  function doExport() {
+    const rows = filtered().map(x => [fmtTs(x.ts), x.actor, (M.ACT_ACTION[x.action] || [x.action])[0],
+      M.ACT_ENTITY_LABEL[x.entity] || x.entity, x.name, x.detail]);
+    if (!rows.length) return U.toast('Không có dữ liệu để xuất', 'error');
+    U.exportExcel('NhatKyHoatDong', ['Thời gian', 'Người', 'Hành động', 'Loại', 'Mã/Tên', 'Chi tiết'], rows, 'NHẬT KÝ HOẠT ĐỘNG');
+  }
+  draw();
+};

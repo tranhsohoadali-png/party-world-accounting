@@ -62,6 +62,7 @@ App.menu = [
     { id: 'reports', label: 'Báo cáo', icon: 'report', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'HỆ THỐNG', items: [
+    { id: 'activity-log', label: 'Nhật ký hoạt động', icon: 'book', title: 'Nhật ký hoạt động — Ai sửa gì, khi nào', roles: ['admin', 'ketoan'] },
     { id: 'settings', label: 'Dữ liệu & Sao lưu', icon: 'settings', title: 'Cài đặt — Sao lưu dữ liệu', roles: ['admin', 'ketoan'] },
     { id: 'users', label: 'Người dùng', icon: 'user', title: 'Quản lý người dùng', roles: ['admin'] },
   ]},
@@ -188,6 +189,7 @@ App.refresh = function () {
     case 'customers': return M.partners(root, 'customer');
     case 'suppliers': return M.partners(root, 'supplier');
     case 'reports': return M.reports(root);
+    case 'activity-log': return M.activityLogScreen(root);
     case 'settings': return App.settings(root);
     case 'users': return M.usersAdmin(root);
     case 'payroll': return M.payrolls(root);
@@ -294,7 +296,7 @@ App.settings = function (root) {
         quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
         purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
-        payrolls: [], productionOrders: [], channels: [], stockAdjustments: [],
+        payrolls: [], productionOrders: [], channels: [], stockAdjustments: [], activityLog: [],
       };
       PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }

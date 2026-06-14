@@ -57,6 +57,7 @@ M.payrolls = function (root) {
           { label: 'Mở / Tính lương', cls: 'primary', onClick: () => M.payrollDetail(p.id) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa bảng lương tháng ' + p.month + '?')) {
+                PW.logActivity('delete', 'payroll', 'Bảng lương ' + p.month, '');
                 PW.data.payrolls = PW.data.payrolls.filter(x => x.id !== p.id);
                 PW.save(); draw(); U.toast('Đã xóa');
               }
@@ -91,6 +92,7 @@ M.payrollCreate = function () {
         })),
       };
       PW.data.payrolls.push(p);
+      PW.logActivity('create', 'payroll', 'Bảng lương ' + month, p.lines.length + ' nhân viên');
       PW.save(); C.closeModal(); M.payrollDetail(p.id);
     }, 'primary')],
   });
@@ -426,6 +428,7 @@ M.payrollPay = function (p) {
       };
       PW.data.payments.push(pay);
       p.paidDate = pay.date; p.paymentId = pay.id;   // đánh dấu đã chi -> chống tạo trùng
+      PW.logActivity('create', 'payment', pay.code, 'Chi lương ' + p.month + ': ' + U.money(total) + ' đ');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã tạo phiếu chi lương ' + U.money(total) + ' đ');
     }, 'primary')],
   });

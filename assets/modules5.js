@@ -116,6 +116,7 @@ M.purchaseOrders = function (root) {
           { label: 'Sửa', onClick: () => M.purchaseOrderForm(o) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa đơn ' + o.code + '?')) {
+                PW.logActivity('delete', 'purchaseOrder', o.code, '');
                 PW.data.purchaseOrders = PW.data.purchaseOrders.filter(x => x.id !== o.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -173,6 +174,7 @@ M.purchaseOrderForm = function (o) {
         status: o.status || 'open', note: noteI.value };
       if (isNew) PW.data.purchaseOrders.push(obj);
       else { const i = PW.data.purchaseOrders.findIndex(x => x.id === obj.id); PW.data.purchaseOrders[i] = obj; }
+      PW.logActivity(isNew ? 'create' : 'update', 'purchaseOrder', obj.code, '');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu');
     }, 'primary')],
   });
@@ -187,6 +189,7 @@ M.convertToPurchase = function (o) {
   };
   PW.data.purchases.push(pu);
   o.status = 'converted';
+  PW.logActivity('create', 'purchase', pu.code, 'Từ ' + o.code);
   PW.save(); App.refresh(); U.toast('Đã tạo phiếu nhập ' + pu.code);
 };
 
@@ -219,6 +222,7 @@ M.purchaseReturns = function (root) {
           { label: 'Sửa', onClick: () => M.purchaseReturnForm(r) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + r.code + '?')) {
+                PW.logActivity('delete', 'purchaseReturn', r.code, '');
                 PW.data.purchaseReturns = PW.data.purchaseReturns.filter(x => x.id !== r.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -270,6 +274,7 @@ M.purchaseReturnForm = function (pr) {
         supplierId: supI.value, items: valid, note: noteI.value };
       if (isNew) PW.data.purchaseReturns.push(obj);
       else { const i = PW.data.purchaseReturns.findIndex(x => x.id === obj.id); PW.data.purchaseReturns[i] = obj; }
+      PW.logActivity(isNew ? 'create' : 'update', 'purchaseReturn', obj.code, '');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu trả lại');
     }, 'primary')],
   });
@@ -302,6 +307,7 @@ M.purchaseDiscounts = function (root) {
           { label: 'Sửa', onClick: () => M.purchaseDiscountForm(r) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + r.code + '?')) {
+                PW.logActivity('delete', 'purchaseDiscount', r.code, U.money(r.amount) + ' đ');
                 PW.data.purchaseDiscounts = PW.data.purchaseDiscounts.filter(x => x.id !== r.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -339,6 +345,7 @@ M.purchaseDiscountForm = function (g) {
         supplierId: f.sup.value, amount: amt, reason: f.reason.value };
       if (isNew) PW.data.purchaseDiscounts.push(obj);
       else Object.assign(g, obj);
+      PW.logActivity(isNew ? 'create' : 'update', 'purchaseDiscount', obj.code, U.money(amt) + ' đ');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu giảm giá');
     }, 'primary')],
   });

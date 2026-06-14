@@ -194,6 +194,7 @@ M.docListSimple = function (root, kind) {
           { label: 'Sửa', onClick: () => isQuote ? M.quoteForm(x) : M.orderForm(x) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa ' + x.code + '?')) {
+                PW.logActivity('delete', isQuote ? 'quotation' : 'salesOrder', x.code, '');
                 if (isQuote) PW.data.quotations = PW.data.quotations.filter(y => y.id !== x.id);
                 else PW.data.salesOrders = PW.data.salesOrders.filter(y => y.id !== x.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
@@ -274,6 +275,7 @@ M.convertToInvoice = function (src, kind) {
   PW.data.salesInvoices.push(inv);
   src.status = 'converted';
   src.convertedToId = inv.id; src.convertedToCode = inv.code;   // liên kết ngược
+  PW.logActivity('create', 'salesInvoice', inv.code, 'Từ ' + src.code);
   PW.save(); App.refresh(); U.toast('Đã tạo hóa đơn ' + inv.code);
 };
 
@@ -348,6 +350,7 @@ M.returns = function (root) {
           { label: 'Sửa', onClick: () => M.returnForm(r) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + r.code + '?')) {
+                PW.logActivity('delete', 'salesReturn', r.code, '');
                 PW.data.salesReturns = PW.data.salesReturns.filter(x => x.id !== r.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -406,6 +409,7 @@ M.returnForm = function (sr) {
       if (sr.noRestock !== undefined) obj.noRestock = sr.noRestock;   // giữ cờ thất lạc (do đối soát ghi)
       if (isNew) PW.data.salesReturns.push(obj);
       else { const i = PW.data.salesReturns.findIndex(x => x.id === obj.id); PW.data.salesReturns[i] = obj; }
+      PW.logActivity(isNew ? 'create' : 'update', 'salesReturn', obj.code, '');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu trả lại');
     }, 'primary')],
   });
@@ -439,6 +443,7 @@ M.discounts = function (root) {
           { label: 'Sửa', onClick: () => M.discountForm(r) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + r.code + '?')) {
+                PW.logActivity('delete', 'salesDiscount', r.code, U.money(r.amount) + ' đ');
                 PW.data.salesDiscounts = PW.data.salesDiscounts.filter(x => x.id !== r.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -482,6 +487,7 @@ M.discountForm = function (g) {
         customerId: f.cust.value, invoiceId: f.inv.value || null, amount: amt, reason: f.reason.value };
       if (isNew) PW.data.salesDiscounts.push(obj);
       else Object.assign(g, obj);
+      PW.logActivity(isNew ? 'create' : 'update', 'salesDiscount', obj.code, U.money(amt) + ' đ');
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu giảm giá');
     }, 'primary')],
   });

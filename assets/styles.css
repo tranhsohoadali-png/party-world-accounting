@@ -573,3 +573,23 @@ body.dark .ai-hbtn:hover { background: rgba(255,255,255,.08); }
   .form-grid { grid-template-columns: 1fr; }
   .userbar-name { display: none; }
 }
+
+/* ====================== BẢNG PHÍM TẮT (B4) ====================== */
+.kbd-help-back { position: fixed; inset: 0; z-index: 160; background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; }
+.kbd-help { background: var(--card, #fff); color: var(--text, #222); width: 380px; max-width: 92vw;
+  border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,.3); overflow: hidden; }
+.kbd-help-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--line, #e6e9ed); font-size: 15px; }
+.kbd-help-head .x { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text, #222);
+  width: 30px; height: 30px; border-radius: 8px; }
+.kbd-help-head .x:hover { background: rgba(0,0,0,.06); }
+.kbd-help-body { padding: 8px 16px 16px; }
+.kbd-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; }
+.kbd-row kbd { flex-shrink: 0; min-width: 92px; text-align: center; font-family: inherit; font-size: 12px;
+  font-weight: 700; padding: 4px 8px; border-radius: 7px; background: #eef2f6; border: 1px solid #d4dae1;
+  box-shadow: 0 1px 0 #c7ced6; color: #2b3a2f; }
+.kbd-row span { font-size: 13px; color: var(--muted, #6b7785); }
+body.dark .kbd-help { background: #1f2817; }
+body.dark .kbd-help-head .x:hover { background: #29331f; }
+body.dark .kbd-row kbd { background: #2a3320; border-color: #3b452c; box-shadow: 0 1px 0 #161d10; color: #d6e0c6; }

@@ -20,6 +20,7 @@ M.reports = function (root) {
     { value: 'agingReceivable', label: 'Tuổi nợ phải thu (0-30/30-60/60-90/>90)' },
     { value: 'payable', label: 'Công nợ phải trả' },
     { value: 'cashbook', label: 'Sổ quỹ tiền (thu/chi)' },
+    { value: 'cashflow', label: 'Lưu chuyển tiền tệ (dòng tiền vào/ra)' },
     { value: 'lowstock', label: 'Cảnh báo tồn tối thiểu' },
     { value: 'vat', label: 'Thuế GTGT (đầu ra - đầu vào)' },
     { value: 'commission', label: 'Hoa hồng CTV' },
@@ -60,6 +61,7 @@ M.reports = function (root) {
     if (type === 'agingReceivable') return M.reportAgingDetail(host);
     if (type === 'payable') return M.reportPayable(host);
     if (type === 'cashbook') return M.reportCashbook(host, from, to);
+    if (type === 'cashflow') return M.reportCashflow(host, from, to);
     if (type === 'lowstock') return M.reportLowStock(host);
     if (type === 'vat') return M.reportVAT(host, from, to);
     if (type === 'commission') return M.reportCommission(host, from, to);
@@ -389,6 +391,93 @@ M.reportCashbook = function (host, from, to) {
   ] }));
   host.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right;font-weight:700' },
     'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
+};
+
+/* Báo cáo Lưu chuyển tiền tệ — dòng tiền vào/ra phân nhóm + số dư đầu/cuối kỳ.
+   Nguồn tiền chuẩn (KHÔNG đếm trùng): vào = receipts[] + salesInvoices.paid;
+   ra = payments[] + purchases.paid. Lương đã nằm sẵn trong payments[] (chỉ phân loại lại). */
+M.reportCashflow = function (host, from, to) {
+  const inR = d => (!from || d >= from) && (!to || d <= to);
+  const isSalary = p => /lương|luong/i.test(p.reason || '');
+
+  // Số dư của 1 tài khoản TRƯỚC kỳ (cắt theo ngày < from) — KHÔNG dùng PW.accountBalance (tính tới hiện tại)
+  function balanceBefore(accId) {
+    const a = PW.account(accId);
+    let b = a ? Number(a.opening || 0) : 0;
+    PW.data.receipts.forEach(r => { if (r.accountId === accId && r.date < from) b += Number(r.amount || 0); });
+    PW.data.payments.forEach(p => { if (p.accountId === accId && p.date < from) b -= Number(p.amount || 0); });
+    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accId && si.date < from) b += Number(si.paid || 0); });
+    PW.data.purchases.forEach(pu => { if (pu.paidAccountId === accId && pu.date < from) b -= Number(pu.paid || 0); });
+    return b;
+  }
+
+  // Phân nhóm dòng tiền trong kỳ
+  const IN = { ban: 0, thuNo: 0, khac: 0 };
+  const OUT = { mua: 0, traNo: 0, luong: 0, khac: 0 };
+  PW.data.salesInvoices.forEach(si => { if (inR(si.date) && Number(si.paid) > 0) IN.ban += Number(si.paid); });
+  PW.data.receipts.forEach(r => { if (inR(r.date)) { if (r.customerId) IN.thuNo += Number(r.amount || 0); else IN.khac += Number(r.amount || 0); } });
+  PW.data.purchases.forEach(pu => { if (inR(pu.date) && Number(pu.paid) > 0) OUT.mua += Number(pu.paid); });
+  PW.data.payments.forEach(p => {
+    if (!inR(p.date)) return;
+    if (p.supplierId) OUT.traNo += Number(p.amount || 0);
+    else if (isSalary(p)) OUT.luong += Number(p.amount || 0);
+    else OUT.khac += Number(p.amount || 0);
+  });
+  const totIn = IN.ban + IN.thuNo + IN.khac;
+  const totOut = OUT.mua + OUT.traNo + OUT.luong + OUT.khac;
+  const opening = PW.data.cashAccounts.reduce((s, a) => s + balanceBefore(a.id), 0);
+  const net = totIn - totOut;
+  const closing = opening + net;
+
+  // Bảng 1: tóm tắt
+  const t = U.el('table', { class: 'tbl' });
+  const sec = txt => U.el('tr', { style: 'background:#f7f9fb' }, [U.el('td', { style: 'font-weight:700' }, txt), U.el('td')]);
+  const row = (label, val, indent, bold, cls) => U.el('tr', null, [
+    U.el('td', { style: (indent ? 'padding-left:24px;' : '') + (bold ? 'font-weight:700' : '') }, label),
+    U.el('td', { class: 'num ' + (cls || ''), style: bold ? 'font-weight:700' : '' }, U.money(val)),
+  ]);
+  t.appendChild(row('Số dư đầu kỳ (tiền mặt + ngân hàng)', opening, false, true));
+  t.appendChild(sec('I. DÒNG TIỀN VÀO'));
+  t.appendChild(row('Thu từ bán hàng (trả ngay)', IN.ban, true, false, 'text-green'));
+  t.appendChild(row('Thu nợ khách hàng', IN.thuNo, true, false, 'text-green'));
+  t.appendChild(row('Thu khác (góp vốn, hoàn, thu nhập...)', IN.khac, true, false, 'text-green'));
+  t.appendChild(row('Cộng dòng tiền vào', totIn, false, true, 'text-green'));
+  t.appendChild(sec('II. DÒNG TIỀN RA'));
+  t.appendChild(row('Chi mua hàng (trả ngay)', OUT.mua, true, false, 'text-red'));
+  t.appendChild(row('Trả nợ nhà cung cấp', OUT.traNo, true, false, 'text-red'));
+  t.appendChild(row('Trả lương nhân viên', OUT.luong, true, false, 'text-red'));
+  t.appendChild(row('Chi phí khác', OUT.khac, true, false, 'text-red'));
+  t.appendChild(row('Cộng dòng tiền ra', totOut, false, true, 'text-red'));
+  t.appendChild(row('Lưu chuyển tiền thuần trong kỳ', net, false, true, net >= 0 ? 'text-green' : 'text-red'));
+  t.appendChild(row('SỐ DƯ CUỐI KỲ', closing, false, true, closing >= 0 ? '' : 'text-red'));
+  host.appendChild(U.el('div', { class: 'table-wrap' }, t));
+
+  // Bảng 2: chi tiết theo từng tài khoản
+  host.appendChild(U.el('div', { class: 'card-title', style: 'margin-top:20px' }, '💳 Chi tiết theo tài khoản tiền'));
+  const accRows = PW.data.cashAccounts.map(a => {
+    const dau = balanceBefore(a.id);
+    let vao = 0, ra = 0;
+    PW.data.receipts.forEach(r => { if (r.accountId === a.id && inR(r.date)) vao += Number(r.amount || 0); });
+    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === a.id && inR(si.date)) vao += Number(si.paid || 0); });
+    PW.data.payments.forEach(p => { if (p.accountId === a.id && inR(p.date)) ra += Number(p.amount || 0); });
+    PW.data.purchases.forEach(pu => { if (pu.paidAccountId === a.id && inR(pu.date)) ra += Number(pu.paid || 0); });
+    return { a, dau, vao, ra, cuoi: dau + vao - ra };
+  });
+  const TT = accRows.reduce((s, r) => ({ dau: s.dau + r.dau, vao: s.vao + r.vao, ra: s.ra + r.ra, cuoi: s.cuoi + r.cuoi }),
+    { dau: 0, vao: 0, ra: 0, cuoi: 0 });
+  host.appendChild(C.table(accRows, [
+    { label: 'Tài khoản', render: r => U.esc(r.a.name) },
+    { label: 'Dư đầu kỳ', num: true, render: r => U.money(r.dau) },
+    { label: 'Tiền vào', num: true, render: r => `<span class="text-green">${U.money(r.vao)}</span>` },
+    { label: 'Tiền ra', num: true, render: r => `<span class="text-red">${U.money(r.ra)}</span>` },
+    { label: 'Dư cuối kỳ', num: true, render: r => `<b class="${r.cuoi < 0 ? 'text-red' : ''}">${U.money(r.cuoi)}</b>` },
+  ], { empty: 'Chưa có tài khoản tiền', footer: [
+    { html: 'TỔNG CỘNG' }, { html: U.money(TT.dau), num: true }, { html: U.money(TT.vao), num: true },
+    { html: U.money(TT.ra), num: true }, { html: U.money(TT.cuoi), num: true },
+  ] }));
+
+  host.appendChild(U.el('p', { class: 'section-sub', style: 'margin-top:10px' },
+    'Dòng tiền vào = phiếu thu + tiền khách trả ngay trên hóa đơn. Dòng tiền ra = phiếu chi (gồm trả NCC, lương, chi phí) + tiền trả ngay khi mua. Lương nhận diện theo lý do phiếu chi có chữ "Lương".'));
 };
 
 M.reportLowStock = function (host) {

@@ -320,6 +320,7 @@ M.products = function (root) {
           { label: 'Sửa', onClick: () => M.productForm(p) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hàng hóa "' + p.name + '"?')) {
+                PW.logActivity('delete', 'product', (p.code || '') + ' ' + p.name, '');
                 PW.data.products = PW.data.products.filter(x => x.id !== p.id);
                 PW.save(); draw(); U.toast('Đã xóa');
               }
@@ -479,6 +480,7 @@ M.productForm = function (p) {
         if (f.kind.value === 'combo') obj.components = components.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
         if (isNew) PW.data.products.push(obj);
         else Object.assign(p, obj);
+        PW.logActivity(isNew ? 'create' : 'update', 'product', (obj.code || '') + ' ' + obj.name, '');
         PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu hàng hóa');
       }, 'primary'),
     ],
@@ -545,12 +547,15 @@ M.partners = function (root, kind) {
     bulkBtn.textContent = '🗑 Xóa đã chọn (' + selected.size + ')';
   }
   function removeOne(id) {
+    const o = (isCus ? PW.data.customers : PW.data.suppliers).find(y => y.id === id);
+    PW.logActivity('delete', isCus ? 'customer' : 'supplier', o ? ((o.code || '') + ' ' + o.name) : id, '');
     if (isCus) PW.data.customers = PW.data.customers.filter(y => y.id !== id);
     else PW.data.suppliers = PW.data.suppliers.filter(y => y.id !== id);
     selected.delete(id); PW.save(); App.refresh(); U.toast('Đã xóa');
   }
   function bulkDelete() {
     if (!selected.size || !U.confirm('Xóa ' + selected.size + ' đối tượng đã chọn?')) return;
+    PW.logActivity('delete', isCus ? 'customer' : 'supplier', '(' + selected.size + ' đối tượng)', 'Xóa hàng loạt');
     if (isCus) PW.data.customers = PW.data.customers.filter(y => !selected.has(y.id));
     else PW.data.suppliers = PW.data.suppliers.filter(y => !selected.has(y.id));
     selected.clear(); PW.save(); App.refresh(); U.toast('Đã xóa các đối tượng đã chọn');
@@ -746,6 +751,7 @@ M.partnerForm = function (kind, x) {
     const obj = buildObj();
     const target = isCus ? PW.data.customers : PW.data.suppliers;
     if (isNew) target.push(obj); else Object.assign(x, obj);
+    PW.logActivity(isNew ? 'create' : 'update', isCus ? 'customer' : 'supplier', (obj.code || '') + ' ' + obj.name, '');
     // Nếu đánh dấu "cũng là ...", tạo bản sao sang danh sách kia (nếu chưa có cùng mã)
     if (alsoChk.checked) {
       const other = isCus ? PW.data.suppliers : PW.data.customers;
@@ -913,6 +919,7 @@ M.cash = function (root) {
           { label: 'Sửa', onClick: () => r.kind === 'thu' ? M.receiptForm(r) : M.paymentForm(r) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + r.code + '?')) {
+                PW.logActivity('delete', r.kind === 'thu' ? 'receipt' : 'payment', r.code, U.money(r.amount) + ' đ');
                 if (r.kind === 'thu') PW.data.receipts = PW.data.receipts.filter(x => x.id !== r.id);
                 else PW.data.payments = PW.data.payments.filter(x => x.id !== r.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
@@ -952,6 +959,7 @@ M.receiptForm = function (r, presetCustomerId) {
         accountId: f.account.value, customerId: f.customer.value || null,
         amount: amt, reason: f.reason.value, note: '' };
       if (isNew) PW.data.receipts.push(obj); else Object.assign(r, obj);
+      PW.logActivity(isNew ? 'create' : 'update', 'receipt', obj.code, U.money(obj.amount) + ' đ — ' + (obj.reason || ''));
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu thu');
     }, 'primary')],
   });
@@ -994,6 +1002,7 @@ M.paymentForm = function (p, presetSupplierId) {
         accountId: f.account.value, supplierId: f.supplier.value || null,
         amount: amt, reason: f.reason.value, note: '' };
       if (isNew) PW.data.payments.push(obj); else Object.assign(p, obj);
+      PW.logActivity(isNew ? 'create' : 'update', 'payment', obj.code, U.money(obj.amount) + ' đ — ' + (obj.reason || ''));
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu chi');
     }, 'orange')],
   });

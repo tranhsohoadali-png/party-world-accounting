@@ -41,6 +41,7 @@ M.sales = function (root) {
           { label: '🖨 In', cls: 'primary', title: 'In phiếu xuất kho / hóa đơn / phiếu giao hàng', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
+                PW.logActivity('delete', 'salesInvoice', si.code, U.money(PW.invoiceTotal(si)) + ' đ');
                 PW.data.salesInvoices = PW.data.salesInvoices.filter(x => x.id !== si.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -128,6 +129,7 @@ M.purchases = function (root) {
           { label: 'In', onClick: () => M.printDoc('purchase', pu) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu nhập ' + pu.code + '?')) {
+                PW.logActivity('delete', 'purchase', pu.code, U.money(PW.purchaseTotal(pu)) + ' đ');
                 PW.data.purchases = PW.data.purchases.filter(x => x.id !== pu.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -656,6 +658,8 @@ M.docForm = function (cfg) {
       ['reconciled', 'settledAmount', 'reconciledDate', 'sourceType', 'sourceId', 'sourceCode',
        'packed', 'packedAt', 'orderStatus', 'trackingCode'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
       onSave(obj);
+      PW.logActivity(isNew ? 'create' : 'update', isSale ? 'salesInvoice' : 'purchase', obj.code,
+        U.money(isSale ? PW.invoiceTotal(obj) : PW.purchaseTotal(obj)) + ' đ');
       PW.save(); C.closeModal(); App.refresh();
       U.toast(isSale ? 'Đã lưu hóa đơn bán' : 'Đã lưu phiếu nhập');
     }, 'primary')],

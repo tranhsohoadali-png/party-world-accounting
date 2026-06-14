@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices'];
+    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -115,6 +115,30 @@ PW.saveNow = async function () {
 /* ---------- Sinh mã / id ---------- */
 PW.uid = function () {
   return 'id' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+};
+
+/* ---------- Nhật ký hoạt động (audit log) ---------- */
+// Người thực hiện: server -> tên người đăng nhập; offline -> tên thiết bị (Cài đặt) hoặc 'offline'
+PW.currentActor = function () {
+  if (PW.mode === 'server' && PW.user) return PW.user.fullname || PW.user.username;
+  return (PW.data && PW.data.meta && PW.data.meta.deviceName) || 'offline';
+};
+PW.ACT_LOG_MAX = 2000;
+// action: 'create'|'update'|'delete'; entity: mã loại; name: mã/tên chứng từ; detail: mô tả ngắn.
+// KHÔNG tự gọi PW.save() — để caller lưu chung 1 lượt (log là 1 phần của PW.data).
+PW.logActivity = function (action, entity, name, detail) {
+  try {
+    if (!PW.data.activityLog) PW.data.activityLog = [];
+    PW.data.activityLog.push({
+      id: PW.uid(),
+      ts: new Date().toISOString(),
+      actor: PW.currentActor(),
+      role: (PW.user && PW.user.role) || (PW.mode === 'server' ? '' : 'offline'),
+      action: action, entity: entity, name: name || '', detail: detail || '',
+    });
+    if (PW.data.activityLog.length > PW.ACT_LOG_MAX)
+      PW.data.activityLog.splice(0, PW.data.activityLog.length - PW.ACT_LOG_MAX);
+  } catch (e) { /* không được làm vỡ luồng lưu chính */ }
 };
 
 PW.nextCode = function (prefix) {
