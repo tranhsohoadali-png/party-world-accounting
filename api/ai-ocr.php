@@ -19,6 +19,7 @@ if ($apiKey === '') {
 
 $b = body();
 $image = (string)($b['image'] ?? '');
+$kind = (string)($b['kind'] ?? '');   // '' = bảng kê bán/ký gửi (mặc định) | 'purchase' = hóa đơn mua từ NCC
 if ($image === '') json_out(['error' => 'Thiếu ảnh/PDF'], 400);
 if (strlen($image) > 12 * 1024 * 1024) json_out(['error' => 'File quá lớn (tối đa ~8MB)'], 400);
 
@@ -34,11 +35,19 @@ if (strpos($image, 'data:') === 0) {
 }
 if (base64_decode($base64, true) === false) json_out(['error' => 'Ảnh không phải base64 hợp lệ'], 400);
 
-$prompt = 'Đây là đơn hàng / bảng kê bán hàng (tranh số hóa) từ nhà sách ký gửi, có thể viết tay hoặc in. '
-  . 'Hãy trích xuất TẤT CẢ các dòng mặt hàng (mọi trang nếu nhiều trang). Trả về MỖI MẶT HÀNG MỘT DÒNG, định dạng đúng: '
-  . 'TÊN HÀNG NGUYÊN VĂN | SỐ LƯỢNG | ĐƠN GIÁ (để trống nếu không có). '
-  . 'Giữ nguyên mã hàng và kích thước nếu thấy (vd K452 20x25). '
-  . 'KHÔNG thêm lời giải thích, KHÔNG markdown, KHÔNG đánh số dòng.';
+if ($kind === 'purchase') {
+  $prompt = 'Đây là HÓA ĐƠN MUA HÀNG / phiếu giao hàng / bảng kê từ NHÀ CUNG CẤP (mua vào), có thể in hoặc viết tay. '
+    . 'Hãy trích xuất theo đúng định dạng sau, KHÔNG thêm lời giải thích, KHÔNG markdown, KHÔNG đánh số: '
+    . 'DÒNG ĐẦU TIÊN (nếu đọc được nhà cung cấp): "NCC | TÊN NHÀ CUNG CẤP | MÃ SỐ THUẾ" (mã số thuế để trống nếu không có). '
+    . 'CÁC DÒNG SAU: mỗi MẶT HÀNG một dòng theo định dạng: TÊN HÀNG NGUYÊN VĂN | SỐ LƯỢNG | ĐƠN GIÁ MUA (đơn giá 1 đơn vị, KHÔNG phải thành tiền; để trống nếu không có). '
+    . 'Giữ nguyên mã hàng / quy cách nếu thấy (vd VT001, giấy A4 80gsm). Bỏ qua dòng tổng cộng / thuế / chiết khấu.';
+} else {
+  $prompt = 'Đây là đơn hàng / bảng kê bán hàng (tranh số hóa) từ nhà sách ký gửi, có thể viết tay hoặc in. '
+    . 'Hãy trích xuất TẤT CẢ các dòng mặt hàng (mọi trang nếu nhiều trang). Trả về MỖI MẶT HÀNG MỘT DÒNG, định dạng đúng: '
+    . 'TÊN HÀNG NGUYÊN VĂN | SỐ LƯỢNG | ĐƠN GIÁ (để trống nếu không có). '
+    . 'Giữ nguyên mã hàng và kích thước nếu thấy (vd K452 20x25). '
+    . 'KHÔNG thêm lời giải thích, KHÔNG markdown, KHÔNG đánh số dòng.';
+}
 
 // PDF -> khối "document"; ảnh -> khối "image" (Claude đọc được cả PDF scan)
 $srcBlock = [

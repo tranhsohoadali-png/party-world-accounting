@@ -589,9 +589,11 @@ M._ciPrice = function (productId, channelId) {
 };
 
 /* ---------- AI đọc ảnh / PDF (Claude qua api/ai-ocr.php) ---------- */
-M._ciOcrSend = async function (dataUrl, onLines) {
+M._ciOcrSend = async function (dataUrl, onLines, kind) {
   try {
-    const r = await PW.api('ai-ocr.php', { method: 'POST', body: JSON.stringify({ image: dataUrl }) });
+    const payload = { image: dataUrl };
+    if (kind) payload.kind = kind;
+    const r = await PW.api('ai-ocr.php', { method: 'POST', body: JSON.stringify(payload) });
     if (r.status === 200 && r.data && r.data.ok) {
       U.toast('AI đã đọc ' + r.data.lines.length + ' dòng');
       onLines(r.data.lines);
@@ -603,7 +605,7 @@ M._ciOcrSend = async function (dataUrl, onLines) {
   }
 };
 
-M._ciOcr = function (file, onLines) {
+M._ciOcr = function (file, onLines, kind) {
   // Ảnh HEIC/HEIF (iPhone) — trình duyệt lẫn AI đều không đọc được định dạng này
   if (/\.hei[cf]$/i.test(file.name) || /heic|heif/i.test(file.type)) {
     U.toast('Ảnh HEIC của iPhone chưa hỗ trợ — đổi Cài đặt > Camera > Định dạng sang "Tương thích nhất" (JPEG), hoặc gửi PDF', 'error');
@@ -614,7 +616,7 @@ M._ciOcr = function (file, onLines) {
     if (file.size > 8 * 1024 * 1024) { U.toast('PDF quá lớn (tối đa 8MB) — tách nhỏ hoặc chụp ảnh từng trang', 'error'); return; }
     U.toast('Đang gửi PDF cho AI đọc...');
     const rd = new FileReader();
-    rd.onload = () => M._ciOcrSend(rd.result, onLines);
+    rd.onload = () => M._ciOcrSend(rd.result, onLines, kind);
     rd.onerror = () => U.toast('Không đọc được file PDF', 'error');
     rd.readAsDataURL(file);
     return;
@@ -631,7 +633,7 @@ M._ciOcr = function (file, onLines) {
     cv.width = Math.round(img.width * scale);
     cv.height = Math.round(img.height * scale);
     cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-    M._ciOcrSend(cv.toDataURL('image/jpeg', 0.85), onLines);
+    M._ciOcrSend(cv.toDataURL('image/jpeg', 0.85), onLines, kind);
   };
   img.onerror = () => {
     URL.revokeObjectURL(url);

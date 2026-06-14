@@ -34,6 +34,7 @@ App.menu = [
     { id: 'purchase-flow', label: 'Quy trình', icon: 'route', title: 'Quy trình mua hàng', roles: ['admin', 'ketoan'] },
     { id: 'purchase-orders', label: 'Đơn mua hàng', icon: 'file-edit', title: 'Đơn mua hàng', roles: ['admin', 'ketoan'] },
     { id: 'purchases', label: 'Phiếu nhập mua', icon: 'package', title: 'Mua hàng & Công nợ phải trả', roles: ['admin', 'ketoan'] },
+    { id: 'purchase-scan', label: 'Quét hóa đơn mua (AI)', icon: 'scan', title: 'Quét hóa đơn mua bằng camera + AI', roles: ['admin', 'ketoan'] },
     { id: 'purchase-returns', label: 'Trả lại hàng mua', icon: 'rotate-right', title: 'Trả lại hàng mua', roles: ['admin', 'ketoan'] },
     { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: 'tag', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
     { id: 'stockcount', label: 'Kiểm kê kho', icon: 'clipboard-check', title: 'Kiểm kê kho', roles: ['admin', 'ketoan'] },
@@ -181,6 +182,7 @@ App.refresh = function () {
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
     case 'purchases': return M.purchases(root);
+    case 'purchase-scan': return M.purchaseScan(root);
     case 'purchase-flow': return M.purchaseWorkflow(root);
     case 'purchase-orders': return M.purchaseOrders(root);
     case 'purchase-returns': return M.purchaseReturns(root);
