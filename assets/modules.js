@@ -772,79 +772,117 @@ M.partnerForm = function (kind, x) {
   const isNew = !x;
   x = x || { code: PW.nextCode(isCus ? 'KH' : 'NCC'), type: 'org', name: '' };
 
-  // Loại đối tượng + cờ "cũng là ..."
+  const LABEL = isCus ? 'khách hàng' : 'nhà cung cấp';
+  const empLabel = isCus ? 'Nhân viên phụ trách' : 'Nhân viên mua hàng';
+
+  // ----- Hàng đầu: Tổ chức/Cá nhân + cờ chéo + đối tượng nội bộ -----
   const tOrg = U.el('input', { type: 'radio', name: 'pw-ptype', value: 'org' });
   const tInd = U.el('input', { type: 'radio', name: 'pw-ptype', value: 'individual' });
   (x.type === 'individual' ? tInd : tOrg).checked = true;
   const alsoChk = U.el('input', { type: 'checkbox' }); if (x.alsoOther) alsoChk.checked = true;
-  // Nhân viên (server) không được tạo NCC -> ẩn lựa chọn "cũng là ..." (tránh ghi suppliers -> 403 mất cả lưu)
+  const internalChk = U.el('input', { type: 'checkbox' }); if (x.isInternal) internalChk.checked = true;
   const pfRestricted = PW.mode === 'server' && PW.user && PW.user.role === 'nhanvien';
-  const typeRow = U.el('div', { class: 'full', style: 'display:flex;gap:26px;align-items:center;flex-wrap:wrap' }, [
+  const typeRow = U.el('div', { class: 'full', style: 'display:flex;gap:24px;align-items:center;flex-wrap:wrap' }, [
     U.el('label', { class: 'radio' }, [tOrg, ' Tổ chức']),
     U.el('label', { class: 'radio' }, [tInd, ' Cá nhân']),
-    pfRestricted ? null : U.el('label', { class: 'radio' }, [alsoChk, ' ' + (isCus ? 'Là nhà cung cấp' : 'Là khách hàng')]),
+    U.el('div', { style: 'flex:1' }),
+    pfRestricted ? null : U.el('label', { class: 'radio' }, [alsoChk, ' Là ' + (isCus ? 'nhà cung cấp' : 'khách hàng')]),
+    U.el('label', { class: 'radio' }, [internalChk, ' Là đối tượng nội bộ']),
   ]);
 
+  const SALUT = ['', 'Ông', 'Bà', 'Anh', 'Chị', 'Cô', 'Chú'].map(s => ({ value: s, label: s || 'Xưng hô' }));
   const f = {
     code: C.input({ value: x.code || '' }),
     name: C.input({ value: x.name || '' }),
     tax: C.input({ value: x.taxCode || '' }),
+    dvqhns: C.input({ value: x.dvqhns || '' }),
+    cccd: C.input({ value: x.cccd || '' }),
+    cccdDate: C.input({ type: 'date', value: x.cccdDate || '' }),
+    cccdPlace: C.input({ value: x.cccdPlace || '' }),
+    passport: C.input({ value: x.passport || '' }),
     phone: C.input({ value: x.phone || '' }),
     email: C.input({ value: x.email || '', type: 'email' }),
     website: C.input({ value: x.website || '' }),
     debt: C.input({ type: 'number', value: x.openingDebt || 0 }),
+    contactSalut: C.select(SALUT, x.contactSalut || ''),
     contactName: C.input({ value: x.contactName || '' }),
     contactEmail: C.input({ value: x.contactEmail || '' }),
     contactPhone: C.input({ value: x.contactPhone || '' }),
     rep: C.input({ value: x.rep || '' }),
     bankName: C.input({ value: x.bankName || '' }),
     bankAccount: C.input({ value: x.bankAccount || '' }),
+    bankHolder: C.input({ value: x.bankHolder || '' }),
   };
+  const salutSel = C.select(SALUT, x.salutation || ''); salutSel.style.maxWidth = '110px';
+  f.name.style.flex = '1';
+  const nameWrap = U.el('div', { style: 'display:flex;gap:6px' }, [salutSel, f.name]);
   const addrTa = C.textarea({ rows: 2, placeholder: 'VD: Số 82 Duy Tân, Cầu Giấy, Hà Nội' }); addrTa.value = x.address || '';
+  const addr2Ta = C.textarea({ rows: 2, placeholder: 'Địa chỉ giao hàng / nhận hàng khác (nếu khác địa chỉ chính)' }); addr2Ta.value = x.address2 || '';
   const noteTa = C.textarea({ rows: 3 }); noteTa.value = x.note || '';
 
   // Nhóm KH/NCC (select + thêm nhanh)
   const groupOpts = () => [{ value: '', label: '-- Chọn nhóm --' }].concat(PW.data.partnerGroups.map(g => ({ value: g.id, label: g.name })));
   const groupSel = C.select(groupOpts(), x.groupId || '');
-  const addGroupBtn = U.el('button', { class: 'btn sm', type: 'button', title: 'Thêm nhóm mới', onclick: () => {
-    const name = prompt('Tên nhóm mới:');
+  const addGroupBtn = U.el('button', { class: 'btn sm primary', type: 'button', title: 'Thêm nhóm mới', onclick: () => {
+    const name = prompt('Tên nhóm ' + LABEL + ' mới:');
     if (name && name.trim()) {
       const g = { id: PW.uid(), name: name.trim() };
       PW.data.partnerGroups.push(g); PW.save();
-      groupSel.innerHTML = '';
-      groupOpts().forEach(o => groupSel.appendChild(U.el('option', { value: o.value }, o.label)));
-      groupSel.value = g.id; U.toast('Đã thêm nhóm');
+      M.rebuildSelect(groupSel, groupOpts(), g.id); U.toast('Đã thêm nhóm');
     }
   } }, '+');
   const groupRow = U.el('div', { style: 'display:flex;gap:6px' }, [groupSel, addGroupBtn]);
 
-  // Nhân viên phụ trách
-  const empSel = C.select([{ value: '', label: '-- Không --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name }))), x.employeeId || '');
-  // Điều khoản TT mặc định
+  // Nhân viên phụ trách / mua hàng (+ thêm nhanh)
+  const empOpts = () => [{ value: '', label: '-- Không --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name })));
+  const empSel = C.select(empOpts(), x.employeeId || '');
+  const empRow = U.el('div', { style: 'display:flex;gap:6px' }, [empSel,
+    U.el('button', { class: 'btn sm primary', type: 'button', title: 'Thêm nhân viên', onclick: () => M.quickAddEmployee(ne => M.rebuildSelect(empSel, empOpts(), ne.id)) }, '+')]);
+
   const termSel = C.select([{ value: '', label: '-- Mặc định --' }].concat(PW.data.paymentTerms.map(t => ({ value: t.id, label: t.name }))), x.paymentTermId || '');
-  // Hoa hồng CTV (chỉ khách hàng)
   const commI = isCus ? C.input({ type: 'number', value: x.commissionPercent || 0, min: 0, max: 100 }) : null;
+
+  // ----- Các ô đổi theo Tổ chức/Cá nhân -----
+  const fTax = C.field('Mã số thuế', f.tax);
+  const fDvqhns = C.field('Mã ĐVQHNS', f.dvqhns);
+  const fCccd = C.field('Số CCCD', f.cccd);
+  const fCccdDate = C.field('Ngày cấp', f.cccdDate);
+  const fCccdPlace = C.field('Nơi cấp', f.cccdPlace);
+  const fWebsite = C.field('Website', f.website);
+  const fName = C.field('Tên ' + LABEL, nameWrap, { required: true, full: true });
 
   const header = U.el('div', { class: 'form-grid' }, [
     typeRow,
-    C.field('Mã số thuế / CCCD', f.tax),
-    C.field('Mã ' + (isCus ? 'khách hàng' : 'NCC'), f.code, { required: true }),
-    C.field('Tên ' + (isCus ? 'khách hàng' : 'nhà cung cấp'), f.name, { required: true, full: true }),
+    fCccd, fCccdDate, fCccdPlace,
+    fTax, fDvqhns,
+    C.field('Mã ' + (isCus ? 'KH' : 'NCC'), f.code, { required: true }),
+    fWebsite,
+    fName,
+    C.field('Nhóm ' + (isCus ? 'KH' : 'NCC'), groupRow),
     C.field('Địa chỉ', addrTa, { full: true }),
     C.field('Điện thoại', f.phone),
     C.field('Email', f.email),
-    C.field('Website', f.website),
+    C.field(empLabel, empRow),
     C.field('Nợ đầu kỳ ' + (isCus ? 'phải thu' : 'phải trả') + ' (đ)', f.debt),
-    C.field('Nhóm ' + (isCus ? 'khách hàng' : 'NCC'), groupRow),
-    C.field('Nhân viên phụ trách', empSel),
-    isCus ? C.field('Hoa hồng CTV (%) — để 0 nếu không phải CTV', commI) : null,
+    isCus ? C.field('Hoa hồng CTV (%) — 0 nếu không phải CTV', commI) : null,
   ]);
+
+  // Chuyển giao diện Tổ chức <-> Cá nhân
+  function applyType() {
+    const ind = tInd.checked;
+    [fCccd, fCccdDate, fCccdPlace].forEach(el => el.style.display = ind ? '' : 'none');
+    [fDvqhns, fWebsite].forEach(el => el.style.display = ind ? 'none' : '');
+    salutSel.style.display = ind ? '' : 'none';
+  }
+  tOrg.addEventListener('change', applyType);
+  tInd.addEventListener('change', applyType);
 
   const tabs = C.tabs([
     { label: 'Thông tin liên hệ', content: U.el('div', { class: 'form-grid' }, [
-      C.field('Người liên hệ', f.contactName),
+      C.field('Người liên hệ', U.el('div', { style: 'display:flex;gap:6px' }, [(f.contactSalut.style.maxWidth = '110px', f.contactSalut), (f.contactName.style.flex = '1', f.contactName)]), { full: true }),
       C.field('Email liên hệ', f.contactEmail),
       C.field('Điện thoại liên hệ', f.contactPhone),
+      C.field('Số hộ chiếu', f.passport),
       C.field('Đại diện theo pháp luật', f.rep),
     ]) },
     { label: 'Điều khoản thanh toán', content: U.el('div', { class: 'form-grid' }, [
@@ -854,22 +892,28 @@ M.partnerForm = function (kind, x) {
     { label: 'Tài khoản ngân hàng', content: U.el('div', { class: 'form-grid' }, [
       C.field('Ngân hàng', f.bankName),
       C.field('Số tài khoản', f.bankAccount),
+      C.field('Chủ tài khoản', f.bankHolder, { full: true }),
     ]) },
+    { label: 'Địa chỉ khác', content: C.field('Địa chỉ giao/nhận hàng khác', addr2Ta, { full: true }) },
     { label: 'Ghi chú', content: C.field('Ghi chú', noteTa, { full: true }) },
   ]);
 
   const body = U.el('div', null, [header, tabs]);
+  applyType();
 
   function buildObj() {
     return {
       id: x.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
-      type: tInd.checked ? 'individual' : 'org', alsoOther: alsoChk.checked,
-      taxCode: f.tax.value.trim(), phone: f.phone.value.trim(), email: f.email.value.trim(),
-      website: f.website.value.trim(), address: addrTa.value.trim(),
+      type: tInd.checked ? 'individual' : 'org', alsoOther: alsoChk.checked, isInternal: internalChk.checked,
+      salutation: tInd.checked ? salutSel.value : '',
+      taxCode: f.tax.value.trim(), dvqhns: f.dvqhns.value.trim(),
+      cccd: f.cccd.value.trim(), cccdDate: f.cccdDate.value || '', cccdPlace: f.cccdPlace.value.trim(), passport: f.passport.value.trim(),
+      phone: f.phone.value.trim(), email: f.email.value.trim(), website: f.website.value.trim(),
+      address: addrTa.value.trim(), address2: addr2Ta.value.trim(),
       groupId: groupSel.value || null, employeeId: empSel.value || null, paymentTermId: termSel.value || null,
-      contactName: f.contactName.value.trim(), contactEmail: f.contactEmail.value.trim(),
+      contactSalut: f.contactSalut.value, contactName: f.contactName.value.trim(), contactEmail: f.contactEmail.value.trim(),
       contactPhone: f.contactPhone.value.trim(), rep: f.rep.value.trim(),
-      bankName: f.bankName.value.trim(), bankAccount: f.bankAccount.value.trim(),
+      bankName: f.bankName.value.trim(), bankAccount: f.bankAccount.value.trim(), bankHolder: f.bankHolder.value.trim(),
       note: noteTa.value.trim(), openingDebt: Number(f.debt.value) || 0,
       commissionPercent: commI ? (Number(commI.value) || 0) : (x.commissionPercent || 0),
       isCollaborator: commI ? (Number(commI.value) > 0) : (x.isCollaborator || false),
