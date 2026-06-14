@@ -449,8 +449,9 @@ M.products = function (root) {
   draw();
 };
 
-M.productForm = function (p) {
+M.productForm = function (p, opts) {
   const isNew = !p;
+  const quick = !!(opts && opts.onSaved);   // thêm nhanh: mở chồng (lớp 2) + chọn lại
   p = p || { code: PW.nextCode('HH'), name: '', group: '', unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
   const f = {
     kind: C.select((M.PRODUCT_KINDS || [{ kind: 'hanghoa', label: 'Hàng hóa' }]).map(k => ({ value: k.kind, label: k.label })), p.kind || 'hanghoa'),
@@ -571,37 +572,41 @@ M.productForm = function (p) {
     comboSection,
   ]);
   applyKind();
-  C.modal({
-    title: isNew ? 'Thêm hàng hóa' : 'Sửa hàng hóa', wide: true,
-    body,
-    footer: [
-      C.btn('Hủy', C.closeModal),
-      C.btn('Lưu', () => {
-        if (!f.name.value.trim()) return U.toast('Nhập tên hàng hóa', 'error');
-        if (f.kind.value === 'combo') {
-          const comps = components.filter(c => c.productId && Number(c.qty) > 0);
-          if (!comps.length) return U.toast('Combo cần ít nhất 1 thành phần', 'error');
-          const bad = comps.map(c => PW.product(c.productId)).find(m => m && (m.kind === 'combo' || m.kind === 'dichvu'));
-          if (bad) return U.toast('Combo không được chứa ' + (bad.kind === 'combo' ? 'combo khác' : 'dịch vụ') + ': ' + bad.name, 'error');
-        }
-        const obj = {
-          id: p.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
-          kind: f.kind.value,
-          group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
-          cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
-          openingStock: Number(f.stock.value) || 0,
-          minStock: Number(f.minStock.value) || 0,
-          bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
-          channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
-        };
-        if (f.kind.value === 'combo') obj.components = components.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
-        if (isNew) PW.data.products.push(obj);
-        else Object.assign(p, obj);
-        PW.logActivity(isNew ? 'create' : 'update', 'product', (obj.code || '') + ' ' + obj.name, '');
-        PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu hàng hóa');
-      }, 'primary'),
-    ],
-  });
+  function saveProduct() {
+    if (!f.name.value.trim()) return U.toast('Nhập tên hàng hóa', 'error');
+    if (f.kind.value === 'combo') {
+      const comps = components.filter(c => c.productId && Number(c.qty) > 0);
+      if (!comps.length) return U.toast('Combo cần ít nhất 1 thành phần', 'error');
+      const bad = comps.map(c => PW.product(c.productId)).find(m => m && (m.kind === 'combo' || m.kind === 'dichvu'));
+      if (bad) return U.toast('Combo không được chứa ' + (bad.kind === 'combo' ? 'combo khác' : 'dịch vụ') + ': ' + bad.name, 'error');
+    }
+    const obj = {
+      id: p.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
+      kind: f.kind.value,
+      group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
+      cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
+      openingStock: Number(f.stock.value) || 0,
+      minStock: Number(f.minStock.value) || 0,
+      bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
+      channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
+    };
+    if (f.kind.value === 'combo') obj.components = components.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
+    if (isNew) PW.data.products.push(obj);
+    else Object.assign(p, obj);
+    PW.logActivity(isNew ? 'create' : 'update', 'product', (obj.code || '') + ' ' + obj.name, '');
+    PW.save();
+    if (quick) { C.closeMini(); opts.onSaved(obj); }
+    else { C.closeModal(); App.refresh(); }
+    U.toast('Đã lưu hàng hóa');
+  }
+  const title = isNew ? 'Thêm hàng hóa' : 'Sửa hàng hóa';
+  if (quick) {
+    C.miniModal({ title: title, wide: true, body,
+      footer: [C.btn('Hủy', C.closeMini), C.btn('Cất & chọn', saveProduct, 'primary')] });
+  } else {
+    C.modal({ title: title, wide: true, body,
+      footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu', saveProduct, 'primary')] });
+  }
 };
 
 /* =====================================================================
@@ -767,9 +772,10 @@ M.partners = function (root, kind) {
   draw();
 };
 
-M.partnerForm = function (kind, x) {
+M.partnerForm = function (kind, x, opts) {
   const isCus = kind === 'customer';
   const isNew = !x;
+  const quick = !!(opts && opts.onSaved);   // chế độ "thêm nhanh": mở chồng (lớp 2) + chọn lại vào ô gọi
   x = x || { code: PW.nextCode(isCus ? 'KH' : 'NCC'), type: 'org', name: '' };
 
   const LABEL = isCus ? 'khách hàng' : 'nhà cung cấp';
@@ -836,7 +842,7 @@ M.partnerForm = function (kind, x) {
   // Nhân viên phụ trách / mua hàng (+ thêm nhanh)
   const empOpts = () => [{ value: '', label: '-- Không --' }].concat(PW.data.employees.map(e => ({ value: e.id, label: e.name })));
   const empSel = C.select(empOpts(), x.employeeId || '');
-  const empRow = U.el('div', { style: 'display:flex;gap:6px' }, [empSel,
+  const empRow = quick ? empSel : U.el('div', { style: 'display:flex;gap:6px' }, [empSel,
     U.el('button', { class: 'btn sm primary', type: 'button', title: 'Thêm nhân viên', onclick: () => M.quickAddEmployee(ne => M.rebuildSelect(empSel, empOpts(), ne.id)) }, '+')]);
 
   const termSel = C.select([{ value: '', label: '-- Mặc định --' }].concat(PW.data.paymentTerms.map(t => ({ value: t.id, label: t.name }))), x.paymentTermId || '');
@@ -919,8 +925,16 @@ M.partnerForm = function (kind, x) {
       isCollaborator: commI ? (Number(commI.value) > 0) : (x.isCollaborator || false),
     };
   }
-  function save(addAnother) {
+  function save(mode) {  // mode: 'normal' | 'addAnother' | 'quick'
     if (!f.name.value.trim()) return U.toast('Nhập tên', 'error');
+    // Cảnh báo trùng (theo SĐT hoặc tên) khi tạo mới — tránh tách công nợ
+    if (isNew) {
+      const list = isCus ? PW.data.customers : PW.data.suppliers;
+      const ph = f.phone.value.trim();
+      const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const dup = list.find(c => (ph && c.phone && c.phone === ph) || norm(c.name) === norm(f.name.value));
+      if (dup && !U.confirm('Đã có "' + dup.name + '"' + (dup.phone ? ' · ' + dup.phone : '') + ' tương tự.\nVẫn tạo MỚI? (nên dùng lại để không tách công nợ)')) return;
+    }
     const obj = buildObj();
     const target = isCus ? PW.data.customers : PW.data.suppliers;
     if (isNew) target.push(obj); else Object.assign(x, obj);
@@ -931,18 +945,21 @@ M.partnerForm = function (kind, x) {
       if (!other.some(o => o.code === obj.code)) other.push(Object.assign({}, obj, { id: PW.uid(), openingDebt: 0 }));
     }
     PW.save(); U.toast('Đã lưu');
-    if (addAnother && isNew) { C.closeModal(); M.partnerForm(kind); }
+    if (mode === 'quick') { C.closeMini(); opts.onSaved(obj); }
+    else if (mode === 'addAnother' && isNew) { C.closeModal(); M.partnerForm(kind); }
     else { C.closeModal(); App.refresh(); }
   }
 
-  const footer = [C.btn('Hủy', C.closeModal)];
-  if (isNew) footer.push(C.btn('Cất và Thêm', () => save(true)));
-  footer.push(C.btn('Cất', () => save(false), 'primary'));
-
-  C.modal({
-    title: (isNew ? 'Thêm ' : 'Sửa ') + (isCus ? 'khách hàng' : 'nhà cung cấp'),
-    wide: true, body, footer,
-  });
+  const title = (isNew ? 'Thêm ' : 'Sửa ') + (isCus ? 'khách hàng' : 'nhà cung cấp');
+  if (quick) {
+    C.miniModal({ title: title, wide: true, body,
+      footer: [C.btn('Hủy', C.closeMini), C.btn('Cất & chọn', () => save('quick'), 'primary')] });
+  } else {
+    const footer = [C.btn('Hủy', C.closeModal)];
+    if (isNew) footer.push(C.btn('Cất và Thêm', () => save('addAnother')));
+    footer.push(C.btn('Cất', () => save('normal'), 'primary'));
+    C.modal({ title: title, wide: true, body, footer });
+  }
 };
 
 /* =====================================================================

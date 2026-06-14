@@ -228,34 +228,10 @@ M.partnerAdd = function (sel, isCustomer, leadOpts) {
     });
   });
 };
+// "Thêm nhanh" = nút tắt mở FORM ĐẦY ĐỦ (Tổ chức/Cá nhân + các tab) dạng cửa sổ chồng,
+// lưu xong tự chọn lại vào ô đang gọi (không cắt bớt chi tiết).
 M.quickAddPartner = function (isSale, onAdded) {
-  const nameI = C.input({ style: 'width:100%' });
-  const phoneI = C.input({ style: 'width:100%' });
-  const taxI = C.input({ style: 'width:100%' });
-  const addrI = C.input({ style: 'width:100%' });
-  C.miniModal({
-    title: 'Thêm nhanh ' + (isSale ? 'khách hàng' : 'nhà cung cấp'),
-    body: U.el('div', { class: 'form-grid' }, [
-      C.field('Tên *', nameI, { full: true }),
-      C.field('Điện thoại', phoneI), C.field('Mã số thuế', taxI),
-      C.field('Địa chỉ', addrI, { full: true }),
-    ]),
-    footer: [C.btn('Lưu & chọn', () => {
-      const nm = nameI.value.trim();
-      if (!nm) return U.toast('Nhập tên', 'error');
-      // Cảnh báo trùng (theo SĐT hoặc tên đã chuẩn hóa) để tránh tách công nợ
-      const list = isSale ? PW.data.customers : PW.data.suppliers;
-      const ph = phoneI.value.trim();
-      const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-      const dup = list.find(c => (ph && c.phone && c.phone === ph) || norm(c.name) === norm(nm));
-      if (dup && !U.confirm('Đã có "' + dup.name + '"' + (dup.phone ? ' · ' + dup.phone : '') + ' tương tự.\nVẫn tạo MỚI? (nên dùng lại để không tách công nợ)')) return;
-      const obj = { id: PW.uid(), code: PW.nextCode(isSale ? 'KH' : 'NCC'), name: nm, type: 'org',
-        phone: ph, taxCode: taxI.value.trim(), address: addrI.value.trim(), openingDebt: 0 };
-      (isSale ? PW.data.customers : PW.data.suppliers).push(obj);
-      PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm "' + nm + '"');
-    }, 'primary')],
-  });
-  setTimeout(() => nameI.focus(), 50);
+  M.partnerForm(isSale ? 'customer' : 'supplier', null, { onSaved: onAdded });
 };
 M.quickAddEmployee = function (onAdded) {
   const nameI = C.input({ style: 'width:100%' });
@@ -296,9 +272,10 @@ M.productTypeChooser = function (onPick) {
   C.miniModal({ title: 'Chọn tính chất hàng hóa / dịch vụ', body: list });
 };
 
-// Bước 1 (chọn tính chất) -> Bước 2 (form thêm), giữ tương thích lời gọi cũ
+// "Thêm hàng hóa mới" = nút tắt mở FORM ĐẦY ĐỦ (chọn Tính chất ngay trong form + đủ tab/giá kênh/BOM/combo)
+// dạng cửa sổ chồng, lưu xong tự chọn lại vào ô đang gọi.
 M.quickAddProduct = function (isSale, onAdded) {
-  M.productTypeChooser(k => M._quickAddProductForm(isSale, k, onAdded));
+  M.productForm(null, { onSaved: onAdded });
 };
 
 M._quickAddProductForm = function (isSale, kindObj, onAdded) {

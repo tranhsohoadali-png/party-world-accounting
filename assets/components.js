@@ -33,11 +33,11 @@ C.closeModal = function () {
 };
 
 /* Modal LỚP 2 — đè lên modal đang mở (để "thêm nhanh" trong form mà không đóng form) */
-C.miniModal = function ({ title, body, footer }) {
+C.miniModal = function ({ title, body, footer, wide }) {
   C.closeMini();
   const back = U.el('div', { class: 'modal-back', id: 'pw-modal2', style: 'z-index:140' });
   back.addEventListener('mousedown', e => { if (e.target === back) C.closeMini(); });
-  const modal = U.el('div', { class: 'modal' });
+  const modal = U.el('div', { class: 'modal' + (wide ? ' wide' : '') });
   const head = U.el('div', { class: 'm-head' }, [
     U.el('h3', null, title),
     U.el('button', { class: 'x', onclick: C.closeMini }, '×'),
