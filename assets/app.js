@@ -437,6 +437,14 @@ App.boot = async function () {
   App.render();
   App.refresh();
   if (typeof AIC !== 'undefined') AIC.init();   // trợ lý AI nổi ở mọi màn hình
+  App.registerPWA();                            // đăng ký service worker (cài app ra điện thoại)
+};
+
+/* ---------- PWA: đăng ký service worker (chỉ chạy trên http/https, bỏ qua file://) ---------- */
+App.registerPWA = function () {
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* bỏ qua nếu lỗi, app vẫn chạy */ });
+  }
 };
 
 window.addEventListener('DOMContentLoaded', () => { App.boot(); });

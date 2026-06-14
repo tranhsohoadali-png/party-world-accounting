@@ -16,3 +16,6 @@ RedirectMatch 404 /(\.git|\.claude|mcp|scripts)(/|$)
 
 # UTF-8 cho tiếng Việt
 AddDefaultCharset utf-8
+
+# PWA: kiểu MIME cho web app manifest (cài app ra màn hình điện thoại)
+AddType application/manifest+json .webmanifest

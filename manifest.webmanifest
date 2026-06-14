@@ -1,0 +1,22 @@
+{
+  "id": "dali-ketoan",
+  "name": "DALI — Phần mềm kế toán",
+  "short_name": "DALI Kế toán",
+  "description": "Phần mềm kế toán DALI: bán hàng, mua hàng, kho, công nợ, báo cáo. Tô điểm cuộc sống.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#7cb342",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "assets/logo-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

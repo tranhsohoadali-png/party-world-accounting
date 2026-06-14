@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" font-family="'Arial Rounded MT Bold','Trebuchet MS',Arial,sans-serif">
+  <defs>
+    <linearGradient id="mG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9bce4a"/>
+      <stop offset="1" stop-color="#6fae33"/>
+    </linearGradient>
+  </defs>
+  <!-- nền tràn viền (cho icon maskable / apple-touch: hệ điều hành tự bo góc) -->
+  <rect x="0" y="0" width="120" height="120" fill="url(#mG)"/>
+  <!-- chiếc lá trắng, nằm trong vùng an toàn -->
+  <path d="M34,82 C34,50 58,30 90,28 C87,60 62,82 34,82 Z" fill="#ffffff"/>
+  <path d="M42,76 C58,62 74,46 86,30" stroke="#7cb342" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>
