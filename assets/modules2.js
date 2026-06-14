@@ -574,9 +574,14 @@ M.docForm = function (cfg) {
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; updateLine(); });
       const priceI = U.el('input', { type: 'number', value: it[unitField], min: 0, style: 'text-align:right' });
       priceI.addEventListener('input', () => { it[unitField] = Number(priceI.value) || 0; updateLine(); });
-      const lineTotal = U.el('span');
-      function updateLine() { lineTotal.textContent = U.money((Number(it.qty) || 0) * (Number(it[unitField]) || 0)); calc(); }
-      updateLine();
+      // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
+      const lineTotal = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)), min: 0, style: 'text-align:right' });
+      function updateLine() { lineTotal.value = Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)); calc(); }
+      lineTotal.addEventListener('input', () => {
+        const tt = Number(lineTotal.value) || 0, q = Number(it.qty) || 0;
+        if (q > 0) { it[unitField] = Math.round(tt / q * 100) / 100; priceI.value = it[unitField]; }
+        calc(); scheduleDraft();
+      });
       const p = PW.product(it.productId);
       const stockInfo = isSale && p ? U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' }, 'Tồn: ' + U.num(PW.stockOf(p.id))) : null;
 

@@ -26,11 +26,16 @@ M.itemsEditor = function (items, opts) {
       }, { isSale: (opts.productPriceKey || 'price') === 'price' });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       const priceI = U.el('input', { type: 'number', value: it[priceKey], min: 0, style: 'text-align:right' });
-      const lt = U.el('span');
-      function upd() { lt.textContent = U.money((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)); onChange(); }
-      qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; upd(); });
-      priceI.addEventListener('input', () => { it[priceKey] = Number(priceI.value) || 0; upd(); });
-      lt.textContent = U.money((Number(it.qty) || 0) * (Number(it[priceKey]) || 0));
+      // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
+      const totalI = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)), min: 0, style: 'text-align:right' });
+      function syncTotal() { totalI.value = Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)); onChange(); }
+      qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; syncTotal(); });
+      priceI.addEventListener('input', () => { it[priceKey] = Number(priceI.value) || 0; syncTotal(); });
+      totalI.addEventListener('input', () => {
+        const tt = Number(totalI.value) || 0, q = Number(it.qty) || 0;
+        if (q > 0) { it[priceKey] = Math.round(tt / q * 100) / 100; priceI.value = it[priceKey]; }
+        onChange();
+      });
       const p = PW.product(it.productId);
       const stockInfo = opts.showStock && p ? U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' }, 'Tồn: ' + U.num(PW.stockOf(p.id))) : null;
       tbody.appendChild(U.el('tr', null, [
@@ -38,7 +43,7 @@ M.itemsEditor = function (items, opts) {
         U.el('td', null, [prodSel, stockInfo].filter(Boolean)),
         U.el('td', { style: 'width:90px' }, qtyI),
         U.el('td', { style: 'width:130px' }, priceI),
-        U.el('td', { class: 'num', style: 'width:130px' }, lt),
+        U.el('td', { class: 'num', style: 'width:130px' }, totalI),
         U.el('td', { class: 'center', style: 'width:40px' },
           U.el('button', { class: 'btn sm danger', onclick: () => { items.splice(idx, 1); if (!items.length) items.push({ productId: '', qty: 1, [priceKey]: 0 }); draw(); onChange(); } }, '×')),
       ]));
