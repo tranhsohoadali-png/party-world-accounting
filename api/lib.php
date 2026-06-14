@@ -75,6 +75,48 @@ function require_role(array $roles): array {
   return $u;
 }
 
+/* ---------- Phân quyền GHI theo "section" (top-level key của PW.data) ----------
+   Mô hình document-store: mỗi lần lưu là ghi đè cả cục JSON. Để chặn nhân viên
+   giả mạo request sửa phần ngoài quyền, ta so sánh JSON cũ vs mới và chỉ cho qua
+   nếu các section thay đổi đều nằm trong whitelist của vai trò.
+   Trả về null = toàn quyền ghi (admin/ketoan). */
+function pw_allowed_sections(string $role): ?array {
+  if ($role === 'admin' || $role === 'ketoan') return null;
+  if ($role === 'nhanvien') {
+    return [
+      'meta',            // BẮT BUỘC: nextCode() tăng meta.counters mỗi lần tạo chứng từ
+      'activityLog',     // BẮT BUỘC: A4 ghi nhật ký vào mỗi thao tác của nhân viên
+      'salesInvoices',   // Lập/sửa HĐ bán; trạm quét đóng gói; gom đơn ký gửi; convert báo giá/đơn
+      'quotations',      // Báo giá
+      'salesOrders',     // Đơn đặt hàng
+      'salesReturns',    // Trả lại hàng bán + trạm quét nhận trả
+      'salesDiscounts',  // Giảm giá hàng bán
+      'products',        // Thêm/sửa hàng hóa (màn Hàng hóa + quick-add trong form)
+      'customers',       // Thêm/sửa khách hàng
+      'productAliases',  // Học bí danh khi gom đơn ký gửi
+      'employees',       // quick-add nhân viên từ form HĐ bán
+      'paymentTerms',    // quick-add điều khoản thanh toán từ form HĐ bán
+    ];
+  }
+  return []; // vai trò lạ -> không được ghi gì
+}
+// Trả về danh sách top-level key bị thêm/xóa/đổi nội dung giữa $old và $new.
+function pw_changed_top_keys($old, $new): array {
+  if (!is_array($new)) $new = [];
+  if (!is_array($old)) $old = [];   // old=null (lần lưu đầu) -> mọi key trong new coi là 'thay đổi'
+  $changed = [];
+  $keys = array_unique(array_merge(array_keys($old), array_keys($new)));
+  foreach ($keys as $k) {
+    $oHas = array_key_exists($k, $old);
+    $nHas = array_key_exists($k, $new);
+    if ($oHas !== $nHas) { $changed[] = $k; continue; }
+    if (json_encode($old[$k], JSON_UNESCAPED_UNICODE) !== json_encode($new[$k], JSON_UNESCAPED_UNICODE)) {
+      $changed[] = $k;
+    }
+  }
+  return $changed;
+}
+
 /* ---------- Chống CSRF (giả mạo yêu cầu từ trang khác) ----------
    Chỉ áp dụng cho request THAY ĐỔI dữ liệu (POST/PUT/PATCH/DELETE).
    Request đọc (GET/HEAD) và lệnh chạy nền (CLI/cron, không có REQUEST_METHOD)

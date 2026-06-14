@@ -105,6 +105,11 @@ PW.saveNow = async function () {
     // Người khác vừa cập nhật -> tải lại để tránh mất dữ liệu
     if (typeof U !== 'undefined') U.toast('Dữ liệu vừa được người khác cập nhật, đang tải lại...', 'error');
     setTimeout(() => location.reload(), 1500);
+  } else if (r.status === 403) {
+    // Không đủ quyền sửa một số phần dữ liệu -> KHÔNG reload (giữ nguyên màn hình)
+    const secs = (r.data && r.data.sections) ? r.data.sections.join(', ') : '';
+    if (typeof U !== 'undefined')
+      U.toast('Không đủ quyền lưu thay đổi' + (secs ? ' (mục: ' + secs + ')' : '') + '. Liên hệ kế toán/admin.', 'error');
   } else if (r.status === 401) {
     location.reload();
   } else if (typeof U !== 'undefined') {

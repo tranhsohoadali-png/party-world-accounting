@@ -27,12 +27,33 @@ if ($action === 'save') {
 
   $pdo = pdo();
   $pdo->beginTransaction();
-  $cur = (int)$pdo->query('SELECT version FROM app_data WHERE id = 1 FOR UPDATE')->fetchColumn();
+  // Lấy cả data + version trong 1 truy vấn (vẫn FOR UPDATE để khóa dòng)
+  $row = $pdo->query('SELECT data, version FROM app_data WHERE id = 1 FOR UPDATE')->fetch();
+  $cur = (int)($row['version'] ?? 0);
   // Chống ghi đè: nếu version client gửi lên khác version hiện tại -> xung đột
   if ($clientVersion !== -1 && $clientVersion !== $cur) {
     $pdo->rollBack();
     json_out(['error' => 'conflict', 'message' => 'Dữ liệu đã được người khác cập nhật. Hãy tải lại.', 'version' => $cur], 409);
   }
+
+  /* ----- Phân quyền GHI theo section (chỉ với vai trò bị giới hạn) ----- */
+  $allowed = pw_allowed_sections($user['role']);
+  if ($allowed !== null) {                 // null = admin/ketoan: bỏ qua
+    $curData = (isset($row['data']) && $row['data'] !== null) ? json_decode($row['data'], true) : null;
+    if ($curData !== null) {                // bỏ qua lần khởi tạo seed đầu tiên (data=NULL)
+      $changed = pw_changed_top_keys($curData, $b['data']);
+      $violations = array_values(array_diff($changed, $allowed));
+      if ($violations) {
+        $pdo->rollBack();
+        json_out([
+          'error' => 'forbidden_sections',
+          'message' => 'Tài khoản của bạn không được phép sửa: ' . implode(', ', $violations),
+          'sections' => $violations,
+        ], 403);
+      }
+    }
+  }
+
   $newVersion = $cur + 1;
   $json = json_encode($b['data'], JSON_UNESCAPED_UNICODE);
   $st = $pdo->prepare('UPDATE app_data SET data = ?, version = ?, updated_by = ? WHERE id = 1');
