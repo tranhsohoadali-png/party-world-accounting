@@ -575,7 +575,7 @@ M.partners = function (root, kind) {
     if (page > pages) page = pages;
     const pageRows = pageSize === 'all' ? rows : rows.slice((page - 1) * size, (page - 1) * size + size);
 
-    const t = U.el('table', { class: 'tbl' });
+    const t = U.el('table', { class: 'tbl tbl-cards' });
     const headChk = U.el('input', { type: 'checkbox' });
     headChk.checked = pageRows.length > 0 && pageRows.every(r => selected.has(r.id));
     headChk.addEventListener('change', () => {
@@ -610,14 +610,14 @@ M.partners = function (root, kind) {
       acts.push({ label: 'Sửa', onClick: () => M.partnerForm(kind, x) });
       acts.push({ label: 'Xóa', cls: 'danger', onClick: () => { if (U.confirm('Xóa "' + x.name + '"?')) removeOne(x.id); } });
       tb.appendChild(U.el('tr', null, [
-        U.el('td', null, chk),
-        U.el('td', null, U.esc(x.code)),
-        U.el('td', null, U.esc(x.name)),
-        U.el('td', null, U.esc(x.address || '')),
-        U.el('td', null, U.esc(x.taxCode || '')),
-        U.el('td', null, U.esc(x.phone || '')),
-        U.el('td', { class: 'num', html: fmtDebt(debtFn(x.id)) }),
-        U.el('td', { class: 'center' }, C.actions(acts)),
+        U.el('td', { 'data-label': '' }, chk),
+        U.el('td', { 'data-label': 'Mã' }, U.esc(x.code)),
+        U.el('td', { 'data-label': 'Tên' }, U.esc(x.name)),
+        U.el('td', { 'data-label': 'Địa chỉ' }, U.esc(x.address || '')),
+        U.el('td', { 'data-label': 'MST/CCCD' }, U.esc(x.taxCode || '')),
+        U.el('td', { 'data-label': 'Điện thoại' }, U.esc(x.phone || '')),
+        U.el('td', { class: 'num', 'data-label': isCus ? 'Công nợ phải thu' : 'Công nợ phải trả', html: fmtDebt(debtFn(x.id)) }),
+        U.el('td', { class: 'center', 'data-label': '' }, C.actions(acts)),
       ]));
     });
     t.appendChild(tb);

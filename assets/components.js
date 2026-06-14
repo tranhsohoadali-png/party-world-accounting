@@ -88,7 +88,7 @@ C.btn = function (label, onClick, cls) {
 C.table = function (rows, columns, opts) {
   opts = opts || {};
   const wrap = U.el('div', { class: 'table-wrap' });
-  const t = U.el('table', { class: 'tbl' });
+  const t = U.el('table', { class: 'tbl tbl-cards' });   // tbl-cards: trên điện thoại tự xếp thành thẻ
   const thead = U.el('thead');
   const htr = U.el('tr');
   columns.forEach(c => {
@@ -107,7 +107,7 @@ C.table = function (rows, columns, opts) {
     rows.forEach(row => {
       const tr = U.el('tr');
       columns.forEach(c => {
-        const td = U.el('td', { class: (c.num ? 'num' : '') + (c.center ? ' center' : '') });
+        const td = U.el('td', { class: (c.num ? 'num' : '') + (c.center ? ' center' : ''), 'data-label': (typeof c.label === 'string' ? c.label : '') });
         const v = c.render ? c.render(row) : row[c.key];
         if (v == null) td.textContent = '';
         else if (typeof v === 'string' || typeof v === 'number') td.innerHTML = v;

@@ -574,6 +574,61 @@ body.dark .ai-hbtn:hover { background: rgba(255,255,255,.08); }
   .userbar-name { display: none; }
 }
 
+/* ====================== TỐI ƯU CHO ĐIỆN THOẠI (≤560px) ====================== */
+@media (max-width: 560px) {
+  .content { padding: 12px; }
+  .card { padding: 14px; border-radius: var(--radius-md); }
+
+  /* Vùng chạm to hơn cho ngón tay */
+  .btn { padding: 10px 14px; font-size: 14px; min-height: 42px; }
+  .btn.sm { padding: 7px 11px; min-height: 36px; font-size: 13px; }
+  .field input, .field select, .field textarea,
+  input.inp, select.inp, textarea.inp, input.search { min-height: 44px; font-size: 16px; } /* 16px: iOS không tự zoom */
+
+  /* Thanh công cụ: ô tìm full dòng, nút tạo mới trải rộng */
+  .toolbar { gap: 8px; }
+  .toolbar .search, .toolbar input { flex: 1 1 100%; }
+  .toolbar .spacer { display: none; }
+  .toolbar .btn.primary { flex: 1 1 100%; justify-content: center; }
+
+  /* Danh sách dạng BẢNG -> THẺ xếp dọc (dễ đọc, hết kéo ngang) */
+  .tbl-cards { font-size: 14px; }
+  .tbl-cards thead { display: none; }
+  .tbl-cards, .tbl-cards tbody { display: block; width: 100%; }
+  .tbl-cards tr { display: block; border: 1px solid var(--line); border-radius: 12px;
+    padding: 6px 12px; margin-bottom: 10px; background: var(--card); box-shadow: var(--shadow-sm); }
+  .tbl-cards tbody tr:hover { background: var(--card); }
+  .tbl-cards td { display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    padding: 7px 0; border: none; border-bottom: 1px dashed var(--line); text-align: right; white-space: normal; }
+  .tbl-cards tr td:last-child { border-bottom: none; }
+  .tbl-cards td::before { content: attr(data-label); font-weight: 600; color: var(--muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: .3px; text-align: left; flex-shrink: 0; }
+  .tbl-cards td.num { font-weight: 600; }
+  /* Ô không nhãn (cột nút thao tác, checkbox) -> trải cả dòng, ẩn nhãn */
+  .tbl-cards td[data-label=""] { padding-top: 8px; }
+  .tbl-cards td[data-label=""]::before { display: none; }
+  .tbl-cards td[data-label=""] .pill-row { width: 100%; }
+  .tbl-cards td[data-label=""] .pill-row .btn { flex: 1; min-width: 0; }
+  /* Dòng "chưa có dữ liệu" (colspan) */
+  .tbl-cards td[colspan] { justify-content: center; text-align: center; }
+  .tbl-cards td[colspan]::before { display: none; }
+
+  /* Modal = tấm trượt gần full màn hình, nút đáy dính */
+  .modal-back { padding: 0; align-items: flex-end; }
+  .modal, .modal.wide { width: 100%; max-width: 100%; max-height: 96vh; height: auto;
+    border-radius: 18px 18px 0 0; display: flex; flex-direction: column; }
+  .modal .m-body { padding: 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; }
+  .modal .m-head { padding: 14px 16px; }
+  .modal .m-foot { padding: 12px 16px; position: sticky; bottom: 0; background: var(--card); }
+  .modal .m-foot .btn { flex: 1; justify-content: center; }
+
+  /* Bảng nhập dòng hàng trong chứng từ: thu gọn padding */
+  .items-tbl th, .items-tbl td { padding: 6px 5px; }
+
+  /* Hero banner thấp lại cho gọn */
+  .hero-banner img, .hero-banner svg { max-height: 120px; }
+}
+
 /* ====================== BẢNG PHÍM TẮT (B4) ====================== */
 .kbd-help-back { position: fixed; inset: 0; z-index: 160; background: rgba(0,0,0,.4);
   display: flex; align-items: center; justify-content: center; }
