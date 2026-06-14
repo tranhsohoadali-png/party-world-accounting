@@ -23,21 +23,33 @@ M.draft = {
    ===================================================================== */
 M.sales = function (root) {
   const card = U.el('div', { class: 'card' });
-  const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: 'Tìm số HĐ / khách hàng...' });
-  toolbar.appendChild(search);
-  toolbar.appendChild(U.el('div', { class: 'spacer' }));
-  toolbar.appendChild(C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary'));
-  card.appendChild(toolbar);
   const host = U.el('div');
+  const fb = M.filterBar({
+    storageKey: 'sales',
+    onChange: draw,
+    fields: [
+      { type: 'period', key: 'period', label: 'Kỳ', default: 'all', presets: ['today', 'thisWeek', 'thisMonth', 'lastMonth', 'thisQuarter', 'ytd', 'thisYear', 'all', 'custom'] },
+      { type: 'select', key: 'customerId', label: 'Khách hàng', source: 'customers' },
+      { type: 'select', key: 'channelId', label: 'Kênh bán', source: () => (PW.data.channels || []).map(c => ({ value: c.id, label: c.name })) },
+      { type: 'select', key: 'paymentStatus', label: 'Thanh toán', options: [{ value: '', label: 'Tất cả' }, { value: 'no', label: 'Còn nợ' }, { value: 'paid', label: 'Đã thu đủ' }] },
+      { type: 'amountRange', key: 'amount', label: 'Tổng tiền' },
+      { type: 'search', key: 'q', placeholder: 'Tìm số HĐ / khách hàng...' },
+    ],
+    actions: [C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary')],
+  });
+  card.appendChild(fb.el);
   card.appendChild(host);
   root.appendChild(card);
 
   function draw() {
-    const q = search.value.trim().toLowerCase();
-    const rows = PW.data.salesInvoices.filter(si => {
-      const c = PW.customer(si.customerId);
-      return !q || si.code.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
+    const st = fb.getState();
+    const rows = M.applyFilter(PW.data.salesInvoices, st, {
+      date: si => si.date,
+      customerId: si => si.customerId,
+      channelId: si => si.channelId || '',
+      amount: si => PW.invoiceTotal(si),
+      paymentStatus: si => (PW.invoiceTotal(si) - (si.paid || 0) > 0 ? 'no' : 'paid'),
+      text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
@@ -63,9 +75,8 @@ M.sales = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có hóa đơn bán hàng' }));
+    ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc' }));
   }
-  search.addEventListener('input', draw);
   draw();
 };
 
@@ -112,21 +123,31 @@ M.salesForm = function (si, presetCustomerId) {
    ===================================================================== */
 M.purchases = function (root) {
   const card = U.el('div', { class: 'card' });
-  const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: 'Tìm số phiếu / NCC...' });
-  toolbar.appendChild(search);
-  toolbar.appendChild(U.el('div', { class: 'spacer' }));
-  toolbar.appendChild(C.btn('+ Lập phiếu nhập mua', () => M.purchaseForm(), 'primary'));
-  card.appendChild(toolbar);
   const host = U.el('div');
+  const fb = M.filterBar({
+    storageKey: 'purchases',
+    onChange: draw,
+    fields: [
+      { type: 'period', key: 'period', label: 'Kỳ', default: 'all', presets: ['today', 'thisWeek', 'thisMonth', 'lastMonth', 'thisQuarter', 'ytd', 'thisYear', 'all', 'custom'] },
+      { type: 'select', key: 'supplierId', label: 'Nhà cung cấp', source: 'suppliers' },
+      { type: 'select', key: 'paymentStatus', label: 'Thanh toán', options: [{ value: '', label: 'Tất cả' }, { value: 'no', label: 'Còn nợ' }, { value: 'paid', label: 'Đã trả đủ' }] },
+      { type: 'amountRange', key: 'amount', label: 'Tổng tiền' },
+      { type: 'search', key: 'q', placeholder: 'Tìm số phiếu / NCC...' },
+    ],
+    actions: [C.btn('+ Lập phiếu nhập mua', () => M.purchaseForm(), 'primary')],
+  });
+  card.appendChild(fb.el);
   card.appendChild(host);
   root.appendChild(card);
 
   function draw() {
-    const q = search.value.trim().toLowerCase();
-    const rows = PW.data.purchases.filter(pu => {
-      const s = PW.supplier(pu.supplierId);
-      return !q || pu.code.toLowerCase().includes(q) || (s && s.name.toLowerCase().includes(q));
+    const st = fb.getState();
+    const rows = M.applyFilter(PW.data.purchases, st, {
+      date: pu => pu.date,
+      supplierId: pu => pu.supplierId,
+      amount: pu => PW.purchaseTotal(pu),
+      paymentStatus: pu => (PW.purchaseTotal(pu) - (pu.paid || 0) > 0 ? 'no' : 'paid'),
+      text: pu => { const s = PW.supplier(pu.supplierId); return [pu.code, s ? s.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
@@ -152,9 +173,8 @@ M.purchases = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có phiếu nhập mua' }));
+    ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc' }));
   }
-  search.addEventListener('input', draw);
   draw();
 };
 

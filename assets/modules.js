@@ -394,20 +394,34 @@ M.dashboard = function (root) {
    ===================================================================== */
 M.products = function (root) {
   const card = U.el('div', { class: 'card' });
-  const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã hàng...' });
-  toolbar.appendChild(search);
-  toolbar.appendChild(U.el('div', { class: 'spacer' }));
-  toolbar.appendChild(C.btn('+ Thêm hàng hóa', () => M.productForm(), 'primary'));
-  card.appendChild(toolbar);
   const tableHost = U.el('div');
+  function kindOpts() { return [{ value: '', label: 'Tất cả' }].concat((M.PRODUCT_KINDS || []).map(k => ({ value: k.kind, label: k.label }))); }
+  function groupOpts() { const set = new Set(); PW.data.products.forEach(p => p.group && set.add(p.group)); return [{ value: '', label: 'Tất cả' }].concat([...set].sort().map(g => ({ value: g, label: g }))); }
+  const fb = M.filterBar({
+    storageKey: 'products',
+    onChange: draw,
+    fields: [
+      { type: 'select', key: 'kind', label: 'Tính chất', source: kindOpts },
+      { type: 'select', key: 'group', label: 'Nhóm hàng', source: groupOpts },
+      { type: 'select', key: 'stockStatus', label: 'Tồn kho', options: [{ value: '', label: 'Tất cả' }, { value: 'in', label: 'Còn tồn' }, { value: 'low', label: 'Dưới tối thiểu' }, { value: 'out', label: 'Hết hàng' }] },
+      { type: 'amountRange', key: 'amount', label: 'Giá bán' },
+      { type: 'search', key: 'q', placeholder: 'Tìm theo tên / mã hàng...' },
+    ],
+    actions: [C.btn('+ Thêm hàng hóa', () => M.productForm(), 'primary')],
+  });
+  card.appendChild(fb.el);
   card.appendChild(tableHost);
   root.appendChild(card);
 
   function draw() {
-    const q = search.value.trim().toLowerCase();
-    const rows = PW.data.products.filter(p =>
-      !q || p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
+    const st = fb.getState();
+    const rows = M.applyFilter(PW.data.products, st, {
+      kind: p => PW.productKind(p),
+      group: p => p.group || '',
+      amount: p => Number(p.price || 0),
+      stockStatus: p => { const q = PW.stockOf(p.id); if (q <= 0) return 'out'; if (p.minStock && q < Number(p.minStock)) return 'low'; return 'in'; },
+      text: p => [p.code, p.name, p.group].join(' '),
+    });
     tableHost.innerHTML = '';
     tableHost.appendChild(C.table(rows, [
       { label: 'Mã', render: p => U.esc(p.code) },
@@ -430,9 +444,8 @@ M.products = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có hàng hóa' }));
+    ], { empty: 'Không có hàng hóa phù hợp bộ lọc' }));
   }
-  search.addEventListener('input', draw);
   draw();
 };
 
