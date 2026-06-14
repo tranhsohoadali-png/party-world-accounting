@@ -107,6 +107,41 @@ M.applyFilter = function (rows, s, map) {
   });
 };
 
+/* Trình soạn NHIỀU DÒNG trong form (người liên hệ / tài khoản NH / địa chỉ...).
+   fields: [{key,label,placeholder,type:'text'|'select',options,width}]. Trả { el, get() }. */
+M._rowsEditor = function (rows, fields, addLabel) {
+  rows = (rows || []).map(r => Object.assign({}, r));
+  if (!rows.length) rows.push({});
+  const tbody = U.el('tbody');
+  function draw() {
+    tbody.innerHTML = '';
+    rows.forEach((r, idx) => {
+      const tds = fields.map(fd => {
+        let inp;
+        if (fd.type === 'select') inp = C.select(fd.options || [], r[fd.key] || '');
+        else inp = U.el('input', { class: 'inp', type: fd.type || 'text', value: r[fd.key] || '', placeholder: fd.placeholder || '' });
+        if (fd.width) inp.style.width = fd.width;
+        const sync = () => { r[fd.key] = inp.value; };
+        inp.addEventListener('input', sync); inp.addEventListener('change', sync);
+        return U.el('td', { 'data-label': fd.label || '' }, inp);
+      });
+      tds.push(U.el('td', { class: 'center', style: 'width:36px', 'data-label': '' },
+        U.el('button', { class: 'btn sm danger', type: 'button', onclick: () => { rows.splice(idx, 1); if (!rows.length) rows.push({}); draw(); } }, '×')));
+      tbody.appendChild(U.el('tr', null, tds));
+    });
+  }
+  draw();
+  const tbl = U.el('table', { class: 'items-tbl' }, [
+    U.el('thead', null, U.el('tr', null, fields.map(fd => U.el('th', null, fd.label)).concat([U.el('th', null, '')]))),
+    tbody,
+  ]);
+  const wrap = U.el('div', null, [
+    U.el('div', { class: 'table-wrap' }, tbl),
+    U.el('div', { class: 'mt8' }, C.btn('+ ' + addLabel, () => { rows.push({}); draw(); }, 'sm')),
+  ]);
+  return { el: wrap, get: () => rows.filter(r => fields.some(fd => String(r[fd.key] || '').trim())) };
+};
+
 /* =====================================================================
    TỔNG QUAN (Dashboard)
    ===================================================================== */
@@ -883,24 +918,56 @@ M.partnerForm = function (kind, x, opts) {
   tOrg.addEventListener('change', applyType);
   tInd.addEventListener('change', applyType);
 
+  // ----- Chiều sâu từng tab: nhiều người liên hệ / TK ngân hàng / địa chỉ + hạn mức công nợ -----
+  const initContacts = (x.contacts && x.contacts.length) ? x.contacts
+    : (x.contactName ? [{ salutation: x.contactSalut || '', name: x.contactName, role: '', email: x.contactEmail || '', phone: x.contactPhone || '' }] : []);
+  const contactsEd = M._rowsEditor(initContacts, [
+    { key: 'salutation', label: 'Xưng hô', type: 'select', options: SALUT, width: '90px' },
+    { key: 'name', label: 'Họ và tên', placeholder: 'Nguyễn Văn A' },
+    { key: 'role', label: 'Chức danh', placeholder: 'Kế toán / GĐ' },
+    { key: 'email', label: 'Email' },
+    { key: 'phone', label: 'Điện thoại', width: '120px' },
+  ], 'Thêm người liên hệ');
+
+  const initBanks = (x.banks && x.banks.length) ? x.banks
+    : (x.bankName || x.bankAccount ? [{ bankName: x.bankName || '', account: x.bankAccount || '', holder: x.bankHolder || '', branch: '' }] : []);
+  const banksEd = M._rowsEditor(initBanks, [
+    { key: 'bankName', label: 'Ngân hàng', placeholder: 'Vietcombank' },
+    { key: 'account', label: 'Số tài khoản', width: '150px' },
+    { key: 'holder', label: 'Chủ tài khoản' },
+    { key: 'branch', label: 'Chi nhánh' },
+  ], 'Thêm tài khoản');
+
+  const initAddrs = (x.addresses && x.addresses.length) ? x.addresses
+    : (x.address2 ? [{ label: '', address: x.address2 }] : []);
+  const addrsEd = M._rowsEditor(initAddrs, [
+    { key: 'label', label: 'Nhãn', placeholder: 'Kho HN / CN2', width: '150px' },
+    { key: 'address', label: 'Địa chỉ giao/nhận' },
+  ], 'Thêm địa chỉ');
+
+  const creditDaysI = C.input({ type: 'number', value: x.creditDays || 0, min: 0 });
+  const creditLimitI = C.input({ type: 'number', value: x.creditLimit || 0, min: 0 });
+  const industryI = C.input({ value: x.industry || '' });
+  const payPrefSel = C.select([{ value: '', label: '-- Không --' }, { value: 'cash', label: 'Tiền mặt' }, { value: 'transfer', label: 'Chuyển khoản' }], x.payPref || '');
+
   const tabs = C.tabs([
-    { label: 'Thông tin liên hệ', content: U.el('div', { class: 'form-grid' }, [
-      C.field('Người liên hệ', U.el('div', { style: 'display:flex;gap:6px' }, [(f.contactSalut.style.maxWidth = '110px', f.contactSalut), (f.contactName.style.flex = '1', f.contactName)]), { full: true }),
-      C.field('Email liên hệ', f.contactEmail),
-      C.field('Điện thoại liên hệ', f.contactPhone),
+    { label: 'Người liên hệ', content: U.el('div', null, [
+      contactsEd.el,
+      U.el('div', { class: 'form-grid mt16' }, [C.field('Đại diện theo pháp luật', f.rep, { full: true })]),
+    ]) },
+    { label: 'Điều khoản & công nợ', content: U.el('div', { class: 'form-grid' }, [
+      C.field('Điều khoản TT mặc định', termSel),
+      C.field('Số ngày được nợ', creditDaysI),
+      C.field('Hạn mức công nợ (đ) — 0 = không giới hạn', creditLimitI, { full: true }),
+      U.el('div', { class: 'section-sub full' }, 'Hạn thanh toán tự tính theo điều khoản. Khi lập ' + (isCus ? 'hóa đơn bán' : 'phiếu nhập') + ' làm công nợ VƯỢT hạn mức sẽ có cảnh báo.'),
+    ]) },
+    { label: 'Tài khoản ngân hàng', content: banksEd.el },
+    { label: 'Địa chỉ giao/nhận', content: addrsEd.el },
+    { label: 'Thông tin bổ sung', content: U.el('div', { class: 'form-grid' }, [
+      C.field('Ngành nghề / lĩnh vực', industryI),
+      C.field('Hình thức TT ưa thích', payPrefSel),
       C.field('Số hộ chiếu', f.passport),
-      C.field('Đại diện theo pháp luật', f.rep),
     ]) },
-    { label: 'Điều khoản thanh toán', content: U.el('div', { class: 'form-grid' }, [
-      C.field('Điều khoản TT mặc định', termSel, { full: true }),
-      U.el('div', { class: 'section-sub full' }, 'Khi lập hóa đơn/chứng từ cho đối tượng này, "Hạn thanh toán" sẽ tự tính theo điều khoản mặc định.'),
-    ]) },
-    { label: 'Tài khoản ngân hàng', content: U.el('div', { class: 'form-grid' }, [
-      C.field('Ngân hàng', f.bankName),
-      C.field('Số tài khoản', f.bankAccount),
-      C.field('Chủ tài khoản', f.bankHolder, { full: true }),
-    ]) },
-    { label: 'Địa chỉ khác', content: C.field('Địa chỉ giao/nhận hàng khác', addr2Ta, { full: true }) },
     { label: 'Ghi chú', content: C.field('Ghi chú', noteTa, { full: true }) },
   ]);
 
@@ -908,6 +975,8 @@ M.partnerForm = function (kind, x, opts) {
   applyType();
 
   function buildObj() {
+    const contacts = contactsEd.get(), banks = banksEd.get(), addresses = addrsEd.get();
+    const c0 = contacts[0] || {}, b0 = banks[0] || {};
     return {
       id: x.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
       type: tInd.checked ? 'individual' : 'org', alsoOther: alsoChk.checked, isInternal: internalChk.checked,
@@ -915,11 +984,15 @@ M.partnerForm = function (kind, x, opts) {
       taxCode: f.tax.value.trim(), dvqhns: f.dvqhns.value.trim(),
       cccd: f.cccd.value.trim(), cccdDate: f.cccdDate.value || '', cccdPlace: f.cccdPlace.value.trim(), passport: f.passport.value.trim(),
       phone: f.phone.value.trim(), email: f.email.value.trim(), website: f.website.value.trim(),
-      address: addrTa.value.trim(), address2: addr2Ta.value.trim(),
+      address: addrTa.value.trim(),
       groupId: groupSel.value || null, employeeId: empSel.value || null, paymentTermId: termSel.value || null,
-      contactSalut: f.contactSalut.value, contactName: f.contactName.value.trim(), contactEmail: f.contactEmail.value.trim(),
-      contactPhone: f.contactPhone.value.trim(), rep: f.rep.value.trim(),
-      bankName: f.bankName.value.trim(), bankAccount: f.bankAccount.value.trim(), bankHolder: f.bankHolder.value.trim(),
+      creditDays: Number(creditDaysI.value) || 0, creditLimit: Number(creditLimitI.value) || 0,
+      industry: industryI.value.trim(), payPref: payPrefSel.value,
+      // nhiều dòng + giữ ô đơn (tương thích nơi cũ đọc bankName/contactName/address2)
+      contacts: contacts, contactSalut: c0.salutation || '', contactName: c0.name || '', contactEmail: c0.email || '', contactPhone: c0.phone || '',
+      rep: f.rep.value.trim(),
+      banks: banks, bankName: b0.bankName || '', bankAccount: b0.account || '', bankHolder: b0.holder || '',
+      addresses: addresses, address2: (addresses[0] && addresses[0].address) || '',
       note: noteTa.value.trim(), openingDebt: Number(f.debt.value) || 0,
       commissionPercent: commI ? (Number(commI.value) || 0) : (x.commissionPercent || 0),
       isCollaborator: commI ? (Number(commI.value) > 0) : (x.isCollaborator || false),

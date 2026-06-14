@@ -797,6 +797,15 @@ M.docForm = function (cfg) {
       // Giữ lại trạng thái đối soát sàn + tham chiếu nguồn khi sửa lại hóa đơn
       ['reconciled', 'settledAmount', 'reconciledDate', 'sourceType', 'sourceId', 'sourceCode',
        'packed', 'packedAt', 'orderStatus', 'trackingCode'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
+      // Cảnh báo vượt hạn mức công nợ của khách hàng (chỉ HĐ bán lập mới)
+      if (isSale && isNew) {
+        const cust = PW.customer(partnerI.value);
+        if (cust && Number(cust.creditLimit) > 0) {
+          const projected = PW.customerDebt(cust.id) + (PW.invoiceTotal(obj) - (Number(obj.paid) || 0));
+          if (projected > Number(cust.creditLimit) &&
+            !U.confirm('Công nợ của "' + cust.name + '" sẽ là ' + U.money(projected) + ' đ — VƯỢT hạn mức ' + U.money(cust.creditLimit) + ' đ.\n\nVẫn lưu hóa đơn?')) return;
+        }
+      }
       onSave(obj);
       PW.logActivity(isNew ? 'create' : 'update', isSale ? 'salesInvoice' : 'purchase', obj.code,
         U.money(isSale ? PW.invoiceTotal(obj) : PW.purchaseTotal(obj)) + ' đ');
