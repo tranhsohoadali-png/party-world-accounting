@@ -933,7 +933,7 @@ M.receiptForm = function (r, presetCustomerId) {
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
     C.field('Nộp vào tài khoản', f.account, { required: true }),
-    C.field('Khách hàng (thu nợ)', f.customer),
+    C.field('Khách hàng (thu nợ)', M.partnerAdd(f.customer, true, [{ value: '', label: '-- Không gắn khách hàng --' }])),
     C.field('Số tiền (đ)', f.amount, { required: true }),
     C.field('Lý do thu', f.reason, { full: true }),
   ]);
@@ -967,7 +967,7 @@ M.paymentForm = function (p, presetSupplierId) {
       C.field('Số phiếu', f.code),
       C.field('Ngày', f.date, { required: true }),
       C.field('Chi từ tài khoản', f.account, { required: true }),
-      C.field('Nhà cung cấp (trả nợ)', f.supplier),
+      C.field('Nhà cung cấp (trả nợ)', M.partnerAdd(f.supplier, false, [{ value: '', label: '-- Chi phí (không gắn NCC) --' }])),
       C.field('Số tiền (đ)', f.amount, { required: true }),
       C.field('Khoản mục / Lý do chi', f.reason, { full: true }),
     ]),

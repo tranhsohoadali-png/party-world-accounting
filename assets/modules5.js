@@ -151,7 +151,7 @@ M.purchaseOrderForm = function (o) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số chứng từ', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Nhà cung cấp', supI, { required: true, full: true }),
+      C.field('Nhà cung cấp', M.partnerAdd(supI, false), { required: true, full: true }),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa đặt mua'),
     editor.wrap,
@@ -251,7 +251,7 @@ M.purchaseReturnForm = function (pr) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số phiếu', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Trả lại nhà cung cấp', supI, { required: true, full: true }),
+      C.field('Trả lại nhà cung cấp', M.partnerAdd(supI, false), { required: true, full: true }),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Hàng hóa trả lại nhà cung cấp'),
     editor.wrap,
@@ -326,7 +326,7 @@ M.purchaseDiscountForm = function (g) {
   const body = U.el('div', { class: 'form-grid' }, [
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
-    C.field('Nhà cung cấp', f.sup, { required: true, full: true }),
+    C.field('Nhà cung cấp', M.partnerAdd(f.sup, false), { required: true, full: true }),
     C.field('Số tiền giảm (đ)', f.amount, { required: true }),
     C.field('Lý do giảm giá', f.reason, { full: true }),
   ]);

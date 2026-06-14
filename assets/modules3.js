@@ -234,7 +234,7 @@ M.simpleDocForm = function (kind, doc) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số chứng từ', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Khách hàng', custI, { required: true, full: true }),
+      C.field('Khách hàng', M.partnerAdd(custI, true), { required: true, full: true }),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa'),
     editor.wrap,
@@ -385,7 +385,7 @@ M.returnForm = function (sr) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số phiếu', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Khách hàng trả lại', custI, { required: true }),
+      C.field('Khách hàng trả lại', M.partnerAdd(custI, true), { required: true }),
       C.field('Từ hóa đơn gốc (để đối chiếu)', invSel),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Hàng hóa khách trả lại'),
@@ -468,7 +468,7 @@ M.discountForm = function (g) {
   const body = U.el('div', { class: 'form-grid' }, [
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
-    C.field('Khách hàng', f.cust, { required: true }),
+    C.field('Khách hàng', M.partnerAdd(f.cust, true), { required: true }),
     C.field('Từ hóa đơn gốc (để đối chiếu)', f.inv),
     C.field('Số tiền giảm (đ)', f.amount, { required: true }),
     C.field('Lý do giảm giá', f.reason, { full: true }),

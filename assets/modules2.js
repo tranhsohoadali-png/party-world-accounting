@@ -160,6 +160,16 @@ M.withAdd = function (inputEl, title, onClick) {
   const b = C.btn('+', onClick, 'sm primary'); b.title = title; b.style.flexShrink = '0';
   return U.el('div', { style: 'display:flex;gap:6px;align-items:stretch' }, [inputEl, b]);
 };
+// Bọc 1 <select> đối tác + nút "+" thêm nhanh KH/NCC (giữ option đầu nếu có)
+M.partnerAdd = function (sel, isCustomer, leadOpts) {
+  return M.withAdd(sel, 'Thêm nhanh ' + (isCustomer ? 'khách hàng' : 'nhà cung cấp'), function () {
+    M.quickAddPartner(isCustomer, function (np) {
+      const list = isCustomer ? PW.data.customers : PW.data.suppliers;
+      M.rebuildSelect(sel, (leadOpts || []).concat(list.map(function (x) { return { value: x.id, label: x.name }; })), np.id);
+      sel.dispatchEvent(new Event('change'));
+    });
+  });
+};
 M.quickAddPartner = function (isSale, onAdded) {
   const nameI = C.input({ style: 'width:100%' });
   const phoneI = C.input({ style: 'width:100%' });
