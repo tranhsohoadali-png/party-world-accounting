@@ -8,6 +8,20 @@ require __DIR__ . '/lib.php';
 
 $pdo = pdo();
 
+// Chốt an toàn: nếu đã cài (đã có người dùng) thì TỪ CHỐI chạy lại.
+// Tránh việc bất kỳ ai mở URL này cũng dò được cấu trúc CSDL.
+try {
+  $already = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+  if ($already > 0) {
+    json_out([
+      'ok' => false,
+      'message' => 'Hệ thống đã được cài đặt. Vì an toàn, hãy XÓA file api/install.php trên máy chủ.',
+    ], 403);
+  }
+} catch (Throwable $e) {
+  // Bảng users chưa tồn tại -> đây là lần cài đầu tiên, cho phép tiếp tục.
+}
+
 // Tạo bảng users
 $pdo->exec("CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
