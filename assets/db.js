@@ -137,10 +137,28 @@ PW.account = id => PW.data.cashAccounts.find(a => a.id === id);
 PW.productKind = p => (p && p.kind) || 'hanghoa';
 // Có theo dõi tồn kho không? Dịch vụ: không. Combo: tồn suy từ thành phần (xử lý riêng).
 PW.isStocked = p => !!p && p.kind !== 'dichvu' && p.kind !== 'combo';
+// Giá mua BÌNH QUÂN của 1 hàng (theo các phiếu nhập, có thể giới hạn khoảng ngày)
+PW.avgPurchaseCost = function (productId, from, to) {
+  let qty = 0, val = 0;
+  PW.data.purchases.forEach(pu => {
+    if (from && pu.date < from) return;
+    if (to && pu.date > to) return;
+    pu.items.forEach(it => { if (it.productId === productId) { qty += Number(it.qty); val += Number(it.qty) * Number(it.cost || 0); } });
+  });
+  return qty > 0 ? val / qty : 0;
+};
+// Giá vốn 1 đơn vị (dùng thống nhất): combo -> tổng thành phần; có giá vốn nhập tay -> dùng;
+// NVL/hàng để trống giá vốn -> lấy BÌNH QUÂN giá mua (tới ngày 'to' nếu có).
+PW.unitCost = function (p, to) {
+  if (!p) return 0;
+  if (p.kind === 'combo') return PW.comboCost(p, to);
+  if (Number(p.cost) > 0) return Number(p.cost);
+  return PW.avgPurchaseCost(p.id, null, to);
+};
 // Giá vốn 1 combo = tổng giá vốn các thành phần × số lượng
-PW.comboCost = function (p) {
+PW.comboCost = function (p, to) {
   if (!p || !p.components || !p.components.length) return Number(p ? (p.cost || 0) : 0);
-  return p.components.reduce((s, c) => { const m = PW.product(c.productId); return s + Number(c.qty || 0) * Number(m ? m.cost : 0); }, 0);
+  return p.components.reduce((s, c) => { const m = PW.product(c.productId); return s + Number(c.qty || 0) * PW.unitCost(m, to); }, 0);
 };
 
 PW.stockOf = function (productId) {
@@ -231,14 +249,14 @@ PW.customerStats = function (customerId) {
 PW.bomMaterialCost = function (product) {
   return (product.bom || []).reduce((s, b) => {
     const p = PW.product(b.materialId);
-    return s + Number(b.qty) * Number(p ? p.cost : 0);
+    return s + Number(b.qty) * PW.unitCost(p);
   }, 0);
 };
 // Giá thành 1 đơn vị của 1 lệnh sản xuất = (NVL + công + chi phí khác) / số lượng
 PW.productionUnitCost = function (po) {
   const matCost = (po.materials || []).reduce((s, m) => {
     const p = PW.product(m.productId);
-    return s + Number(m.qty) * Number(p ? p.cost : 0);
+    return s + Number(m.qty) * PW.unitCost(p, po.date);
   }, 0);
   const total = matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
   return Number(po.qty) > 0 ? total / Number(po.qty) : 0;
@@ -246,7 +264,7 @@ PW.productionUnitCost = function (po) {
 PW.productionTotalCost = function (po) {
   const matCost = (po.materials || []).reduce((s, m) => {
     const p = PW.product(m.productId);
-    return s + Number(m.qty) * Number(p ? p.cost : 0);
+    return s + Number(m.qty) * PW.unitCost(p, po.date);
   }, 0);
   return matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
 };
@@ -263,7 +281,7 @@ PW.purchaseReturnTotal = function (pr) {
 PW.returnCost = function (sr) {
   return sr.items.reduce((s, it) => {
     const p = PW.product(it.productId);
-    return s + Number(it.qty) * (p && p.kind === 'combo' ? PW.comboCost(p) : Number(p ? p.cost : 0));
+    return s + Number(it.qty) * PW.unitCost(p, sr.date);
   }, 0);
 };
 
@@ -453,7 +471,7 @@ PW.cogs = function (fromYmd, toYmd) {
   PW.data.salesInvoices.filter(si => inRange(si.date))
     .forEach(si => si.items.forEach(it => {
       const p = PW.product(it.productId);
-      total += Number(it.qty) * (p && p.kind === 'combo' ? PW.comboCost(p) : Number(p ? p.cost : 0));
+      total += Number(it.qty) * PW.unitCost(p, si.date);
     }));
   // Phiếu "thất lạc" (noRestock): hàng không về kho -> KHÔNG hoàn giá vốn (giữ làm tổn thất)
   total -= PW.data.salesReturns.filter(sr => inRange(sr.date) && !sr.noRestock)

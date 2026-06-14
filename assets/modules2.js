@@ -206,12 +206,12 @@ M.quickAddEmployee = function (onAdded) {
 };
 // Tính chất hàng hóa (như MISA) — quyết định nhóm VTHH mặc định + cờ kind
 M.PRODUCT_KINDS = [
-  { kind: 'hanghoa', label: 'Hàng hóa', desc: 'Sản phẩm mua về bán lại cho khách', icon: 'box', group: 'Hàng hóa' },
-  { kind: 'dichvu', label: 'Dịch vụ', desc: 'Dịch vụ cung cấp cho khách (không theo dõi tồn kho)', icon: 'wand', group: 'Dịch vụ' },
-  { kind: 'nvl', label: 'Nguyên vật liệu', desc: 'Nguyên liệu đầu vào cho sản xuất', icon: 'package', group: 'Vật tư' },
-  { kind: 'thanhpham', label: 'Thành phẩm', desc: 'Sản phẩm đầu ra của quá trình sản xuất', icon: 'factory', group: 'Thành phẩm' },
-  { kind: 'ccdc', label: 'Công cụ dụng cụ', desc: 'Công cụ, dụng cụ dùng trong vận hành', icon: 'settings', group: 'Công cụ dụng cụ' },
-  { kind: 'combo', label: 'Combo sản phẩm', desc: 'Nhiều hàng hóa bán theo combo', icon: 'grid', group: 'Combo' },
+  { kind: 'hanghoa', label: 'Hàng hóa', desc: 'Sản phẩm mua về bán lại cho khách', icon: 'box', group: 'Hàng hóa', prefix: 'HH' },
+  { kind: 'dichvu', label: 'Dịch vụ', desc: 'Dịch vụ cung cấp cho khách (không theo dõi tồn kho)', icon: 'wand', group: 'Dịch vụ', prefix: 'DV' },
+  { kind: 'nvl', label: 'Nguyên vật liệu', desc: 'Nguyên liệu đầu vào cho sản xuất', icon: 'package', group: 'Vật tư', prefix: 'VT' },
+  { kind: 'thanhpham', label: 'Thành phẩm', desc: 'Sản phẩm đầu ra của quá trình sản xuất', icon: 'factory', group: 'Thành phẩm', prefix: 'TP' },
+  { kind: 'ccdc', label: 'Công cụ dụng cụ', desc: 'Công cụ, dụng cụ dùng trong vận hành', icon: 'settings', group: 'Công cụ dụng cụ', prefix: 'CC' },
+  { kind: 'combo', label: 'Combo sản phẩm', desc: 'Nhiều hàng hóa bán theo combo', icon: 'grid', group: 'Combo', prefix: 'CB' },
 ];
 
 // Bước 1: chọn tính chất hàng hóa
@@ -234,12 +234,13 @@ M.quickAddProduct = function (isSale, onAdded) {
 };
 
 M._quickAddProductForm = function (isSale, kindObj, onAdded) {
-  const codeP = C.input({ value: PW.nextCode('HH'), style: 'width:100%' });
+  const codeP = C.input({ value: PW.nextCode(kindObj.prefix || 'HH'), style: 'width:100%' });
   const nameI = C.input({ style: 'width:100%' });
   const groupI = C.input({ value: kindObj.group, list: 'dl-qa-groups', style: 'width:100%' });
   const unitI = C.input({ value: kindObj.kind === 'dichvu' ? 'Lần' : 'Cái', style: 'width:100%' });
   const priceI = C.input({ type: 'number', value: 0, style: 'width:100%' });
   const costI = C.input({ type: 'number', value: 0, style: 'width:100%' });
+  const isNVL = kindObj.kind === 'nvl';
   const head = U.el('div', { class: 'qa-kind' }, [
     U.el('span', { class: 'kind-ic sm', html: U.icon(kindObj.icon) }),
     U.el('b', null, 'Tính chất: ' + kindObj.label),
@@ -270,13 +271,16 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
     ]);
     comboComps.push({ productId: '', qty: 1 }); drawCombo();
   }
+  const gridFields = [
+    C.field('Tên hàng *', nameI, { full: true }),
+    C.field('Mã hàng', codeP), C.field('Nhóm (VTHH)', groupI),
+    C.field('Đơn vị tính', unitI),
+  ];
+  if (!isNVL) gridFields.push(C.field('Giá bán', priceI), C.field('Giá vốn', costI));
   const body = U.el('div', null, [
     head,
-    U.el('div', { class: 'form-grid' }, [
-      C.field('Tên hàng *', nameI, { full: true }),
-      C.field('Mã hàng', codeP), C.field('Nhóm (VTHH)', groupI),
-      C.field('Đơn vị tính', unitI), C.field('Giá bán', priceI), C.field('Giá vốn', costI),
-    ]),
+    U.el('div', { class: 'form-grid' }, gridFields),
+    isNVL ? U.el('div', { class: 'section-sub', style: 'margin:-4px 0 4px' }, '💡 Giá vốn NVL không cần nhập — báo cáo tự lấy giá mua bình quân theo kỳ.') : null,
     M.datalist('dl-qa-groups', PW.data.productGroups.map(g => g.name)),
     comboSection,
   ]);

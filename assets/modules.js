@@ -349,7 +349,7 @@ M.productForm = function (p) {
   let bom = (p.bom || []).map(b => Object.assign({}, b));
   const bomBody = U.el('tbody');
   const bomCostCell = U.el('span', { class: 'text-muted' });
-  function bomCost() { return bom.reduce((s, b) => { const m = PW.product(b.materialId); return s + (Number(b.qty) || 0) * Number(m ? m.cost : 0); }, 0); }
+  function bomCost() { return bom.reduce((s, b) => { const m = PW.product(b.materialId); return s + (Number(b.qty) || 0) * PW.unitCost(m); }, 0); }
   function refreshBomCost() { bomCostCell.textContent = U.money(bomCost()) + ' đ'; }
   function drawBom() {
     bomBody.innerHTML = '';
@@ -413,6 +413,10 @@ M.productForm = function (p) {
     const k = f.kind.value;
     bomSection.style.display = (k === 'thanhpham' || (bom.length && k !== 'combo')) ? '' : 'none';
     comboSection.style.display = (k === 'combo') ? '' : 'none';
+    // NVL: ẩn giá vốn + giá bán (giá đổi theo NCC/thời điểm -> báo cáo lấy giá mua bình quân)
+    const hide = (k === 'nvl');
+    f.cost.parentElement.style.display = hide ? 'none' : '';
+    f.price.parentElement.style.display = hide ? 'none' : '';
   }
   f.kind.addEventListener('change', applyKind);
 

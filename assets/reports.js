@@ -280,14 +280,14 @@ M.reportProductCost = function (host, from, to) {
 };
 
 M.reportInventory = function (host) {
-  const rows = PW.data.products.filter(p => p.kind !== 'dichvu').map(p => ({ p, qty: PW.stockOf(p.id), val: PW.stockOf(p.id) * p.cost }));
+  const rows = PW.data.products.filter(p => p.kind !== 'dichvu').map(p => { const u = PW.unitCost(p); return { p, qty: PW.stockOf(p.id), unit: u, val: PW.stockOf(p.id) * u }; });
   const tot = rows.reduce((s, r) => s + r.val, 0);
   host.appendChild(C.table(rows, [
     { label: 'Mã', render: r => U.esc(r.p.code) },
     { label: 'Tên hàng', render: r => U.esc(r.p.name) },
     { label: 'ĐVT', center: true, render: r => U.esc(r.p.unit) },
     { label: 'Tồn kho', num: true, render: r => `<span class="${r.qty <= 0 ? 'text-red' : ''}">${U.num(r.qty)}</span>` },
-    { label: 'Giá vốn', num: true, render: r => U.money(r.p.cost) },
+    { label: 'Giá vốn (BQ nếu NVL)', num: true, render: r => U.money(r.unit) },
     { label: 'Giá trị tồn', num: true, render: r => U.money(r.val) },
   ], { footer: [
     { html: 'TỔNG GIÁ TRỊ TỒN KHO', colspan: 5 },
