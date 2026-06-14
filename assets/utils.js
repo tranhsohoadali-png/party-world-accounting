@@ -50,18 +50,44 @@ U.addDays = function (ymd, days) {
   return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 };
 
-// Khoảng thời gian theo kỳ: 'month' | 'quarter' | 'year'
-U.period = function (kind) {
-  const t = U.today();
-  const Y = t.slice(0, 4), Mo = t.slice(5, 7);
-  if (kind === 'month') return { from: `${Y}-${Mo}-01`, to: `${Y}-${Mo}-31`, label: 'Tháng này', year: Y };
-  if (kind === 'quarter') {
-    const q = Math.floor((Number(Mo) - 1) / 3);
-    const sm = String(q * 3 + 1).padStart(2, '0');
-    const em = String(q * 3 + 3).padStart(2, '0');
-    return { from: `${Y}-${sm}-01`, to: `${Y}-${em}-31`, label: 'Quý này', year: Y };
+// ----- Khoảng thời gian theo preset (kiểu MISA) -----
+U._eom = function (y, m1) { return new Date(y, m1, 0).getDate(); };   // ngày cuối tháng thật (m1 = tháng 1-based)
+U._mondayOf = function (ymd) { const [y, m, d] = ymd.split('-').map(Number); const wd = (new Date(y, m - 1, d).getDay() + 6) % 7; return U.addDays(ymd, -wd); };
+U.PERIOD_PRESETS = ['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'thisQuarter', 'lastQuarter', 'mtd', 'ytd', 'thisYear', 'lastYear', 'all', 'custom'];
+U.PERIOD_LABEL = {
+  today: 'Hôm nay', yesterday: 'Hôm qua', thisWeek: 'Tuần này', lastWeek: 'Tuần trước',
+  thisMonth: 'Tháng này', lastMonth: 'Tháng trước', thisQuarter: 'Quý này', lastQuarter: 'Quý trước',
+  mtd: 'Từ đầu tháng', ytd: 'Từ đầu năm', thisYear: 'Năm nay', lastYear: 'Năm trước', all: 'Tất cả', custom: 'Tùy chọn…',
+};
+// Trả { from, to, label, key, year }. from/to = null nghĩa là không giới hạn.
+U.periodPreset = function (key, anchor) {
+  const a = anchor || U.today();
+  const [Y, Mo] = a.split('-').map(Number);
+  const p = x => String(x).padStart(2, '0');
+  const eom = (y, m1) => `${y}-${p(m1)}-${p(U._eom(y, m1))}`;
+  let from, to;
+  switch (key) {
+    case 'today': from = to = a; break;
+    case 'yesterday': from = to = U.addDays(a, -1); break;
+    case 'thisWeek': from = U._mondayOf(a); to = U.addDays(from, 6); break;
+    case 'lastWeek': from = U._mondayOf(U.addDays(a, -7)); to = U.addDays(from, 6); break;
+    case 'thisMonth': from = `${Y}-${p(Mo)}-01`; to = eom(Y, Mo); break;
+    case 'lastMonth': { const ly = Mo === 1 ? Y - 1 : Y, lm = Mo === 1 ? 12 : Mo - 1; from = `${ly}-${p(lm)}-01`; to = eom(ly, lm); break; }
+    case 'thisQuarter': { const q = Math.floor((Mo - 1) / 3); from = `${Y}-${p(q * 3 + 1)}-01`; to = eom(Y, q * 3 + 3); break; }
+    case 'lastQuarter': { let q = Math.floor((Mo - 1) / 3) - 1, qy = Y; if (q < 0) { q = 3; qy = Y - 1; } from = `${qy}-${p(q * 3 + 1)}-01`; to = eom(qy, q * 3 + 3); break; }
+    case 'mtd': from = `${Y}-${p(Mo)}-01`; to = a; break;
+    case 'ytd': from = `${Y}-01-01`; to = a; break;
+    case 'lastYear': from = `${Y - 1}-01-01`; to = `${Y - 1}-12-31`; break;
+    case 'all': case 'custom': from = null; to = null; break;
+    case 'thisYear': default: from = `${Y}-01-01`; to = `${Y}-12-31`; break;
   }
-  return { from: `${Y}-01-01`, to: `${Y}-12-31`, label: 'Năm nay', year: Y };
+  return { from: from, to: to, label: U.PERIOD_LABEL[key] || '', key: key, year: from ? from.slice(0, 4) : String(Y) };
+};
+// Tương thích cũ: 'month' | 'quarter' | 'year'
+U.period = function (kind) {
+  if (kind === 'month') return U.periodPreset('thisMonth');
+  if (kind === 'quarter') return U.periodPreset('thisQuarter');
+  return U.periodPreset('thisYear');
 };
 
 // Tạo phần tử nhanh

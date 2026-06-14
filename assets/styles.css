@@ -588,6 +588,8 @@ body.dark .ai-hbtn:hover { background: rgba(255,255,255,.08); }
   /* Thanh công cụ: ô tìm full dòng, nút tạo mới trải rộng */
   .toolbar { gap: 8px; }
   .toolbar .search, .toolbar input { flex: 1 1 100%; }
+  .toolbar .field { flex: 1 1 100%; margin: 0; }   /* mỗi ô lọc xuống dòng full trên điện thoại */
+  .toolbar .field select, .toolbar .field input { width: 100%; }
   .toolbar .spacer { display: none; }
   .toolbar .btn.primary { flex: 1 1 100%; justify-content: center; }
 

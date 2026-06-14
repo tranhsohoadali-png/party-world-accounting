@@ -4,6 +4,110 @@
 const M = {};
 
 /* =====================================================================
+   BỘ LỌC DÙNG CHUNG (filterBar) + áp bộ lọc (applyFilter)
+   Dùng cho mọi danh sách: kỳ (preset MISA) + select/trạng thái + tìm +
+   đối tượng KH/NCC + khoảng số tiền. Trả { el, getState() }; danh sách tự draw lại.
+   ===================================================================== */
+M.filterBar = function (cfg) {
+  cfg = cfg || {};
+  const el = U.el('div', { class: 'toolbar' });
+  const readers = [];
+  const debounceMs = cfg.debounce != null ? cfg.debounce : 250;
+  let saved = {};
+  if (cfg.storageKey) { try { saved = JSON.parse(localStorage.getItem('PW_FLT_' + cfg.storageKey) || '{}') || {}; } catch (e) { saved = {}; } }
+  let timer = null;
+  function getState() { const s = { _raw: {} }; readers.forEach(rd => rd(s)); return s; }
+  function emit(now) {
+    const run = () => { const s = getState(); if (cfg.storageKey) { try { localStorage.setItem('PW_FLT_' + cfg.storageKey, JSON.stringify(s._raw)); } catch (e) {} } (cfg.onChange || function () {})(s); };
+    clearTimeout(timer); if (now) run(); else timer = setTimeout(run, debounceMs);
+  }
+  function fld(label, ctrl) { return label ? U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, label), ctrl]) : ctrl; }
+  function optsFromSource(src) {
+    let o;
+    if (typeof src === 'function') o = src();
+    else if (src === 'cashAccounts') o = PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name }));
+    else if (src === 'customers') o = PW.data.customers.map(a => ({ value: a.id, label: a.name }));
+    else if (src === 'suppliers') o = PW.data.suppliers.map(a => ({ value: a.id, label: a.name }));
+    else if (Array.isArray(src)) o = src;
+    else o = [];
+    // tự chèn "Tất cả" nếu chưa có option rỗng
+    if (!o.some(x => String(x.value) === '')) o = [{ value: '', label: 'Tất cả' }].concat(o);
+    return o;
+  }
+  function buildField(f) {
+    if (f.type === 'period') {
+      const presets = f.presets || U.PERIOD_PRESETS;
+      const sel = C.select(presets.map(k => ({ value: k, label: U.PERIOD_LABEL[k] || k })), saved[f.key] || f.default || 'thisMonth');
+      const fromI = C.input({ type: 'date', style: 'width:140px' });
+      const toI = C.input({ type: 'date', style: 'width:140px' });
+      const dateWrap = U.el('div', { style: 'display:flex;gap:6px' }, [fromI, toI]);
+      function applyPreset() { if (sel.value !== 'custom') { const p = U.periodPreset(sel.value); fromI.value = p.from || ''; toI.value = p.to || ''; } }
+      if (saved[f.key] === 'custom') { fromI.value = saved[f.key + '_from'] || ''; toI.value = saved[f.key + '_to'] || ''; } else applyPreset();
+      function syncVis() { dateWrap.style.display = sel.value === 'custom' ? 'flex' : 'none'; }
+      syncVis();
+      sel.addEventListener('change', () => { applyPreset(); syncVis(); emit(true); });
+      fromI.addEventListener('change', () => emit(true));
+      toI.addEventListener('change', () => emit(true));
+      el.appendChild(fld(f.label || 'Kỳ', U.el('div', { style: 'display:flex;gap:6px;align-items:center;flex-wrap:wrap' }, [sel, dateWrap])));
+      readers.push(s => {
+        let from, to;
+        if (sel.value === 'custom') { from = fromI.value || null; to = toI.value || null; }
+        else { const p = U.periodPreset(sel.value); from = p.from; to = p.to; }
+        s.from = from; s.to = to; s.periodKey = sel.value;
+        s._raw[f.key] = sel.value; if (sel.value === 'custom') { s._raw[f.key + '_from'] = fromI.value; s._raw[f.key + '_to'] = toI.value; }
+      });
+    } else if (f.type === 'search') {
+      const inp = U.el('input', { class: 'search', placeholder: f.placeholder || 'Tìm...', value: saved[f.key] || '' });
+      inp.addEventListener('input', () => emit());
+      el.appendChild(inp);
+      readers.push(s => { s[f.key] = inp.value.trim().toLowerCase(); s._raw[f.key] = inp.value; });
+    } else if (f.type === 'amountRange') {
+      const minI = C.input({ type: 'number', placeholder: f.minLabel || 'Từ', style: 'width:100px', value: saved[f.key + '_min'] || '' });
+      const maxI = C.input({ type: 'number', placeholder: f.maxLabel || 'Đến', style: 'width:100px', value: saved[f.key + '_max'] || '' });
+      minI.addEventListener('input', () => emit()); maxI.addEventListener('input', () => emit());
+      el.appendChild(fld(f.label || 'Khoảng số', U.el('div', { style: 'display:flex;gap:6px' }, [minI, maxI])));
+      readers.push(s => { s.amountMin = minI.value !== '' ? Number(minI.value) : null; s.amountMax = maxI.value !== '' ? Number(maxI.value) : null; s._raw[f.key + '_min'] = minI.value; s._raw[f.key + '_max'] = maxI.value; });
+    } else if (f.type === 'partySearch') {
+      const opts = [{ value: '', label: '-- Tất cả đối tượng --' }];
+      PW.data.customers.forEach(c => opts.push({ value: 'c:' + c.id, label: 'KH: ' + c.name }));
+      PW.data.suppliers.forEach(sp => opts.push({ value: 's:' + sp.id, label: 'NCC: ' + sp.name }));
+      const sel = C.select(opts, saved[f.key] || '');
+      sel.addEventListener('change', () => emit(true));
+      el.appendChild(fld(f.label || 'Đối tượng', sel));
+      readers.push(s => { const v = sel.value; s._raw[f.key] = v; if (v) { s.partyKind = v[0] === 'c' ? 'customer' : 'supplier'; s.partyId = v.slice(2); } else { s.partyKind = null; s.partyId = null; } });
+    } else { // select | status
+      const sel = C.select(f.options || optsFromSource(f.source), saved[f.key] || f.default || '');
+      sel.addEventListener('change', () => emit(true));
+      el.appendChild(fld(f.label || '', sel));
+      readers.push(s => { s[f.key] = sel.value; s._raw[f.key] = sel.value; });
+    }
+  }
+  (cfg.fields || []).forEach(buildField);
+  if (cfg.actions && cfg.actions.length) {
+    el.appendChild(U.el('div', { class: 'spacer' }));
+    cfg.actions.forEach(a => el.appendChild(a && a.nodeType ? a : C.btn(a.label, a.onClick, a.cls)));
+  }
+  return { el: el, getState: getState };
+};
+
+// Áp bộ lọc lên mảng rows theo map field->getter. '' / null = bỏ qua.
+M.applyFilter = function (rows, s, map) {
+  return rows.filter(r => {
+    if (map.date) { const d = map.date(r); if (s.from && d < s.from) return false; if (s.to && d > s.to) return false; }
+    if (map.amount) { const v = Number(map.amount(r)) || 0; if (s.amountMin != null && v < s.amountMin) return false; if (s.amountMax != null && v > s.amountMax) return false; }
+    if (map.party && s.partyId) { const pp = map.party(r); if (!pp || pp.kind !== s.partyKind || pp.id !== s.partyId) return false; }
+    if (map.text && s.q) { if (String(map.text(r) || '').toLowerCase().indexOf(s.q) < 0) return false; }
+    for (const k in map) {
+      if (k === 'date' || k === 'amount' || k === 'party' || k === 'text') continue;
+      const want = s[k];
+      if (want === '' || want == null) continue;
+      if (String(map[k](r)) !== String(want)) return false;
+    }
+    return true;
+  });
+};
+
+/* =====================================================================
    TỔNG QUAN (Dashboard)
    ===================================================================== */
 M.dashboard = function (root) {
@@ -906,32 +1010,48 @@ M._cashFld = function (label, el) { return U.el('div', { class: 'field', style: 
 M._cashLedgerTab = function () {
   const wrap = U.el('div');
   const card = U.el('div', { class: 'card' });
-  const periodSel = C.select([{ value: 'month', label: 'Tháng này' }, { value: 'quarter', label: 'Quý này' }, { value: 'year', label: 'Năm nay' }, { value: 'all', label: 'Tất cả' }], 'year');
-  const typeSel = C.select([{ value: '', label: 'Tất cả' }, { value: 'thu', label: 'Phiếu thu' }, { value: 'chi', label: 'Phiếu chi' }], '');
-  const search = U.el('input', { class: 'search', placeholder: 'Tìm số phiếu / đối tượng / diễn giải...' });
-  const bar = U.el('div', { class: 'toolbar' });
-  bar.appendChild(M._cashFld('Kỳ', periodSel));
-  bar.appendChild(M._cashFld('Loại', typeSel));
-  bar.appendChild(search);
-  bar.appendChild(U.el('div', { class: 'spacer' }));
-  bar.appendChild(C.btn('+ Phiếu thu', () => M.receiptForm(), 'primary'));
-  bar.appendChild(C.btn('+ Phiếu chi', () => M.paymentForm(), 'orange'));
-  card.appendChild(bar);
   const host = U.el('div');
+  function distinctReasons() {
+    const set = new Set();
+    PW.data.receipts.forEach(x => x.reason && set.add(x.reason));
+    PW.data.payments.forEach(x => x.reason && set.add(x.reason));
+    return [{ value: '', label: 'Tất cả' }].concat([...set].sort().map(r => ({ value: r, label: r })));
+  }
+  const fb = M.filterBar({
+    storageKey: 'cashLedger',
+    onChange: draw,
+    fields: [
+      { type: 'period', key: 'period', label: 'Kỳ', default: 'thisYear', presets: ['today', 'thisWeek', 'thisMonth', 'lastMonth', 'thisQuarter', 'ytd', 'thisYear', 'lastYear', 'all', 'custom'] },
+      { type: 'select', key: 'kind', label: 'Loại', options: [{ value: '', label: 'Tất cả' }, { value: 'thu', label: 'Phiếu thu' }, { value: 'chi', label: 'Phiếu chi' }] },
+      { type: 'select', key: 'accountId', label: 'Tài khoản', source: 'cashAccounts' },
+      { type: 'select', key: 'reason', label: 'Lý do thu/chi', source: distinctReasons },
+      { type: 'partySearch', key: 'partyId', label: 'Đối tượng' },
+      { type: 'amountRange', key: 'amount', label: 'Số tiền' },
+      { type: 'search', key: 'q', placeholder: 'Tìm số phiếu / đối tượng / diễn giải...' },
+    ],
+    actions: [
+      C.btn('+ Phiếu thu', () => M.receiptForm(), 'primary'),
+      C.btn('+ Phiếu chi', () => M.paymentForm(), 'orange'),
+    ],
+  });
+  card.appendChild(fb.el);
   card.appendChild(host);
   wrap.appendChild(card);
 
-  function range() { if (periodSel.value === 'all') return { from: null, to: null }; const p = U.period(periodSel.value); return { from: p.from, to: p.to }; }
+  function partyName(x) { if (x.customerId) { const c = PW.customer(x.customerId); return c ? c.name : ''; } if (x.supplierId) { const s = PW.supplier(x.supplierId); return s ? s.name : ''; } return ''; }
   function draw() {
-    const r = range(); const inR = d => (!r.from || d >= r.from) && (!r.to || d <= r.to);
-    const q = search.value.trim().toLowerCase();
+    const st = fb.getState();
     let rows = [];
     PW.data.receipts.forEach(x => rows.push(Object.assign({ kind: 'thu' }, x)));
     PW.data.payments.forEach(x => rows.push(Object.assign({ kind: 'chi' }, x)));
-    rows = rows.filter(x => inR(x.date) && (!typeSel.value || x.kind === typeSel.value));
-    if (q) rows = rows.filter(x => {
-      const party = x.customerId ? PW.customer(x.customerId) : (x.supplierId ? PW.supplier(x.supplierId) : null);
-      return (x.code || '').toLowerCase().includes(q) || (x.reason || '').toLowerCase().includes(q) || (party && party.name.toLowerCase().includes(q));
+    rows = M.applyFilter(rows, st, {
+      date: x => x.date,
+      kind: x => x.kind,
+      accountId: x => x.accountId,
+      reason: x => x.reason || '',
+      amount: x => Number(x.amount || 0),
+      party: x => x.customerId ? { kind: 'customer', id: x.customerId } : (x.supplierId ? { kind: 'supplier', id: x.supplierId } : null),
+      text: x => [x.code, x.reason, partyName(x)].join(' '),
     });
     rows.sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     const totThu = rows.filter(x => x.kind === 'thu').reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -963,8 +1083,6 @@ M._cashLedgerTab = function () {
     host.appendChild(U.el('div', { class: 'mt8', style: 'text-align:right;font-weight:700' },
       'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
   }
-  [periodSel, typeSel].forEach(e => e.addEventListener('change', draw));
-  search.addEventListener('input', draw);
   draw();
   return wrap;
 };
