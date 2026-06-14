@@ -675,7 +675,7 @@ M.partners = function (root, kind) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
   const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã / điện thoại...' });
-  const debtSel = C.select([{ value: '', label: 'Tất cả công nợ' }, { value: 'owing', label: 'Còn nợ' }, { value: 'clear', label: 'Hết nợ' }], '');
+  const debtSel = C.select([{ value: '', label: 'Tất cả công nợ' }, { value: 'owing', label: 'Còn nợ' }, { value: 'clear', label: 'Hết nợ' }, { value: 'over', label: 'Vượt hạn mức' }], '');
   const bulkBtn = C.btn('🗑 Xóa đã chọn', () => bulkDelete(), 'danger sm');
   bulkBtn.style.display = 'none';
   toolbar.appendChild(search);
@@ -696,7 +696,12 @@ M.partners = function (root, kind) {
     const ds = debtSel.value;
     return list.filter(x => {
       if (q && !((x.name || '').toLowerCase().includes(q) || (x.code || '').toLowerCase().includes(q) || (x.phone || '').includes(q))) return false;
-      if (ds) { const d = debtFn(x.id); if (ds === 'owing' && d <= 0) return false; if (ds === 'clear' && d > 0) return false; }
+      if (ds) {
+        const d = debtFn(x.id);
+        if (ds === 'owing' && d <= 0) return false;
+        if (ds === 'clear' && d > 0) return false;
+        if (ds === 'over' && !(Number(x.creditLimit) > 0 && d > Number(x.creditLimit))) return false;
+      }
       return true;
     });
   }
@@ -704,6 +709,12 @@ M.partners = function (root, kind) {
     if (d < 0) return `<span class="text-red">(${U.money(-d)})</span>`;
     if (d > 0) return `<span class="${isCus ? 'text-blue' : 'text-red'}">${U.money(d)}</span>`;
     return '<span class="text-muted">0</span>';
+  }
+  function debtCell(x) {
+    const d = debtFn(x.id);
+    let h = fmtDebt(d);
+    if (Number(x.creditLimit) > 0 && d > Number(x.creditLimit)) h += ' <span class="tag red" style="font-size:10px">⚠ vượt HM ' + U.money(x.creditLimit) + '</span>';
+    return h;
   }
   function updateBulk() {
     bulkBtn.style.display = selected.size ? 'inline-flex' : 'none';
@@ -779,7 +790,7 @@ M.partners = function (root, kind) {
         U.el('td', { 'data-label': 'Địa chỉ' }, U.esc(x.address || '')),
         U.el('td', { 'data-label': 'MST/CCCD' }, U.esc(x.taxCode || '')),
         U.el('td', { 'data-label': 'Điện thoại' }, U.esc(x.phone || '')),
-        U.el('td', { class: 'num', 'data-label': isCus ? 'Công nợ phải thu' : 'Công nợ phải trả', html: fmtDebt(debtFn(x.id)) }),
+        U.el('td', { class: 'num', 'data-label': isCus ? 'Công nợ phải thu' : 'Công nợ phải trả', html: debtCell(x) }),
         U.el('td', { class: 'center', 'data-label': '' }, C.actions(acts)),
       ]));
     });

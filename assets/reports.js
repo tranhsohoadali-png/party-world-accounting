@@ -21,6 +21,7 @@ M.reports = function (root) {
     { value: 'payable', label: 'Công nợ phải trả' },
     { value: 'cashbook', label: 'Sổ quỹ tiền (thu/chi)' },
     { value: 'cashflow', label: 'Lưu chuyển tiền tệ (dòng tiền vào/ra)' },
+    { value: 'dailyCash', label: 'Bảng kê số dư tiền theo ngày' },
     { value: 'lowstock', label: 'Cảnh báo tồn tối thiểu' },
     { value: 'vat', label: 'Thuế GTGT (đầu ra - đầu vào)' },
     { value: 'commission', label: 'Hoa hồng CTV' },
@@ -62,6 +63,7 @@ M.reports = function (root) {
     if (type === 'payable') return M.reportPayable(host);
     if (type === 'cashbook') return M.reportCashbook(host, from, to);
     if (type === 'cashflow') return M.reportCashflow(host, from, to);
+    if (type === 'dailyCash') return M.reportDailyCash(host, from, to);
     if (type === 'lowstock') return M.reportLowStock(host);
     if (type === 'vat') return M.reportVAT(host, from, to);
     if (type === 'commission') return M.reportCommission(host, from, to);
@@ -478,6 +480,31 @@ M.reportCashflow = function (host, from, to) {
 
   host.appendChild(U.el('p', { class: 'section-sub', style: 'margin-top:10px' },
     'Dòng tiền vào = phiếu thu + tiền khách trả ngay trên hóa đơn. Dòng tiền ra = phiếu chi (gồm trả NCC, lương, chi phí) + tiền trả ngay khi mua. Lương nhận diện theo lý do phiếu chi có chữ "Lương".'));
+};
+
+/* Bảng kê số dư tiền theo ngày — tồn quỹ cuối mỗi ngày có phát sinh trong kỳ. */
+M.reportDailyCash = function (host, from, to) {
+  const inR = d => (!from || d >= from) && (!to || d <= to);
+  const days = {};
+  function add(date, i, o) { if (!inR(date)) return; if (!days[date]) days[date] = { in: 0, out: 0 }; days[date].in += i; days[date].out += o; }
+  PW.data.receipts.forEach(r => add(r.date, Number(r.amount || 0), 0));
+  PW.data.payments.forEach(p => add(p.date, 0, Number(p.amount || 0)));
+  PW.data.salesInvoices.forEach(si => { if (Number(si.paid) > 0) add(si.date, Number(si.paid), 0); });
+  PW.data.purchases.forEach(pu => { if (Number(pu.paid) > 0) add(pu.date, 0, Number(pu.paid)); });
+  const opening = PW.data.cashAccounts.reduce((s, a) => s + PW.balanceAsOf(a.id, U.addDays(from, -1)), 0);
+  let bal = opening;
+  const rows = Object.keys(days).sort().map(d => { const x = days[d]; bal += x.in - x.out; return { date: d, in: x.in, out: x.out, bal: bal }; });
+  const totIn = rows.reduce((s, r) => s + r.in, 0), totOut = rows.reduce((s, r) => s + r.out, 0);
+  host.appendChild(U.el('div', { class: 'section-sub', style: 'margin-bottom:8px' },
+    'Số dư đầu kỳ (trước ' + U.date(from) + '): ' + U.money(opening) + ' đ'));
+  host.appendChild(C.table(rows, [
+    { label: 'Ngày', render: r => U.date(r.date) },
+    { label: 'Thu trong ngày', num: true, render: r => r.in ? `<span class="text-green">${U.money(r.in)}</span>` : '' },
+    { label: 'Chi trong ngày', num: true, render: r => r.out ? `<span class="text-red">${U.money(r.out)}</span>` : '' },
+    { label: 'Tồn quỹ cuối ngày', num: true, render: r => `<b class="${r.bal < 0 ? 'text-red' : ''}">${U.money(r.bal)}</b>` },
+  ], { empty: 'Không có phát sinh tiền trong kỳ', footer: [
+    { html: 'TỔNG CỘNG' }, { html: U.money(totIn), num: true }, { html: U.money(totOut), num: true }, { html: U.money(bal), num: true },
+  ] }));
 };
 
 M.reportLowStock = function (host) {

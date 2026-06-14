@@ -445,7 +445,18 @@ App.boot = async function () {
 /* ---------- PWA: đăng ký service worker (chỉ chạy trên http/https, bỏ qua file://) ---------- */
 App.registerPWA = function () {
   if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
-    navigator.serviceWorker.register('sw.js').catch(function () { /* bỏ qua nếu lỗi, app vẫn chạy */ });
+    // Tự tải lại khi có bản mới (đỡ phải Ctrl+F5 sau khi deploy)
+    let _refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (_refreshing) return; _refreshing = true;
+      if (typeof U !== 'undefined') U.toast('Có bản cập nhật mới — đang tải lại...');
+      setTimeout(function () { location.reload(); }, 400);
+    });
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      // Chủ động kiểm tra cập nhật mỗi lần mở app + định kỳ
+      try { reg.update(); } catch (e) {}
+      setInterval(function () { try { reg.update(); } catch (e) {} }, 60 * 60 * 1000);
+    }).catch(function () { /* bỏ qua nếu lỗi, app vẫn chạy */ });
   }
 };
 

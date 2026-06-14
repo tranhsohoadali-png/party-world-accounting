@@ -165,23 +165,32 @@ M.docListSimple = function (root, kind) {
   const isQuote = kind === 'quote';
   const list = isQuote ? PW.data.quotations : PW.data.salesOrders;
   const card = U.el('div', { class: 'card' });
-  const toolbar = U.el('div', { class: 'toolbar' });
-  const search = U.el('input', { class: 'search', placeholder: 'Tìm...' });
-  toolbar.appendChild(search);
-  toolbar.appendChild(U.el('div', { class: 'spacer' }));
-  toolbar.appendChild(C.btn(isQuote ? '+ Lập báo giá' : '+ Lập đơn đặt hàng',
-    () => isQuote ? M.quoteForm() : M.orderForm(), 'primary'));
-  card.appendChild(toolbar);
   const host = U.el('div');
+  function total(doc) { return doc.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0) - Number(doc.discount || 0); }
+  const fb = M.filterBar({
+    storageKey: isQuote ? 'quotes' : 'orders',
+    onChange: draw,
+    fields: [
+      { type: 'period', key: 'period', label: 'Kỳ', default: 'all', presets: ['today', 'thisWeek', 'thisMonth', 'lastMonth', 'thisQuarter', 'ytd', 'thisYear', 'all', 'custom'] },
+      { type: 'select', key: 'customerId', label: 'Khách hàng', source: 'customers' },
+      { type: 'select', key: 'status', label: 'Trạng thái', options: [{ value: '', label: 'Tất cả' }, { value: 'open', label: 'Chưa lập HĐ' }, { value: 'converted', label: 'Đã lập HĐ' }] },
+      { type: 'amountRange', key: 'amount', label: 'Tổng tiền' },
+      { type: 'search', key: 'q', placeholder: 'Tìm số / khách hàng...' },
+    ],
+    actions: [C.btn(isQuote ? '+ Lập báo giá' : '+ Lập đơn đặt hàng', () => isQuote ? M.quoteForm() : M.orderForm(), 'primary')],
+  });
+  card.appendChild(fb.el);
   card.appendChild(host);
   root.appendChild(card);
 
-  function total(doc) { return doc.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0) - Number(doc.discount || 0); }
   function draw() {
-    const q = search.value.trim().toLowerCase();
-    const rows = list.filter(x => {
-      const c = PW.customer(x.customerId);
-      return !q || x.code.toLowerCase().includes(q) || (c && c.name.toLowerCase().includes(q));
+    const st = fb.getState();
+    const rows = M.applyFilter(list, st, {
+      date: x => x.date,
+      customerId: x => x.customerId,
+      status: x => x.status === 'converted' ? 'converted' : 'open',
+      amount: x => total(x),
+      text: x => { const c = PW.customer(x.customerId); return [x.code, c ? c.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
@@ -206,9 +215,8 @@ M.docListSimple = function (root, kind) {
               }
             } },
         ].filter(Boolean)) },
-    ], { empty: isQuote ? 'Chưa có báo giá' : 'Chưa có đơn đặt hàng' }));
+    ], { empty: isQuote ? 'Chưa có báo giá phù hợp bộ lọc' : 'Chưa có đơn đặt hàng phù hợp bộ lọc' }));
   }
-  search.addEventListener('input', draw);
   draw();
 };
 
