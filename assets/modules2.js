@@ -37,6 +37,7 @@ M.sales = function (root) {
         } },
       { label: '', render: si => C.actions([
           { label: 'Sửa', onClick: () => M.salesForm(si) },
+          { label: 'Sao chép', title: 'Tạo hóa đơn mới từ hóa đơn này', onClick: () => M.docCopy(si, 'sale') },
           { label: '🖨 In', cls: 'primary', title: 'In phiếu xuất kho / hóa đơn / phiếu giao hàng', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
@@ -51,8 +52,24 @@ M.sales = function (root) {
   draw();
 };
 
+/* Sao chép chứng từ -> mở form MỚI đã điền sẵn dòng hàng (số/ngày/đã trả làm mới) */
+M.docCopy = function (src, kind) {
+  const c = JSON.parse(JSON.stringify(src));
+  delete c.id;                                   // không id => form coi là chứng từ mới
+  c.code = PW.nextCode(kind === 'sale' ? 'HD' : 'PN');
+  c.date = U.today();
+  c.dueDate = null;
+  c.paid = 0;
+  c.paidAccountId = null;
+  // Bỏ mọi dấu vết riêng của chứng từ gốc (đối soát sàn, nguồn, đóng gói, thuế...)
+  ['reconciled', 'settledAmount', 'reconciledDate', 'sourceType', 'sourceId', 'sourceCode',
+   'packed', 'packedAt', 'orderStatus', 'trackingCode', 'taxInvoice', 'taxRecordId'].forEach(k => delete c[k]);
+  if (kind === 'sale') M.salesForm(c); else M.purchaseForm(c);
+  U.toast('Đã sao chép — kiểm tra rồi bấm Lưu để tạo chứng từ mới');
+};
+
 M.salesForm = function (si, presetCustomerId) {
-  const isNew = !si;
+  const isNew = !si || !si.id;   // không có id => chứng từ mới (kể cả khi sao chép có sẵn dữ liệu)
   si = si ? JSON.parse(JSON.stringify(si)) : {
     code: PW.nextCode('HD'), date: U.today(),
     customerId: presetCustomerId || (PW.data.customers[0] ? PW.data.customers[0].id : ''),
@@ -107,6 +124,7 @@ M.purchases = function (root) {
         } },
       { label: '', render: pu => C.actions([
           { label: 'Sửa', onClick: () => M.purchaseForm(pu) },
+          { label: 'Sao chép', title: 'Tạo phiếu nhập mới từ phiếu này', onClick: () => M.docCopy(pu, 'purchase') },
           { label: 'In', onClick: () => M.printDoc('purchase', pu) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu nhập ' + pu.code + '?')) {
@@ -122,7 +140,7 @@ M.purchases = function (root) {
 };
 
 M.purchaseForm = function (pu, presetSupplierId) {
-  const isNew = !pu;
+  const isNew = !pu || !pu.id;   // không có id => phiếu mới (kể cả khi sao chép có sẵn dữ liệu)
   pu = pu ? JSON.parse(JSON.stringify(pu)) : {
     code: PW.nextCode('PN'), date: U.today(),
     supplierId: presetSupplierId || (PW.data.suppliers[0] ? PW.data.suppliers[0].id : ''),
