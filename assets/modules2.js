@@ -609,7 +609,12 @@ M.docForm = function (cfg) {
           const p = PW.product(pid);
           if (p && p.kind === 'dichvu') return; // dịch vụ không có tồn kho
           let avail = PW.stockOf(pid);
-          if (!isNew && doc.items) doc.items.forEach(oi => { if (oi.productId === pid) avail += Number(oi.qty); }); // hoàn lại phần của chính HĐ đang sửa
+          // hoàn lại phần của chính HĐ đang sửa (combo -> khai triển thành phần)
+          if (!isNew && doc.items) doc.items.forEach(oi => {
+            if (oi.productId === pid) avail += Number(oi.qty);
+            else { const cp = PW.product(oi.productId); if (cp && cp.kind === 'combo' && cp.components)
+              cp.components.forEach(c => { if (c.productId === pid) avail += Number(c.qty || 0) * Number(oi.qty); }); }
+          });
           if (need[pid] > avail) { over.push('• ' + (p ? p.name : pid) + ': cần ' + U.num(need[pid]) + ', tồn ' + U.num(avail)); }
         });
         if (over.length && !U.confirm('Tồn kho KHÔNG đủ:\n' + over.join('\n') + '\n\nVẫn lưu hóa đơn (tồn kho sẽ âm)?')) return;

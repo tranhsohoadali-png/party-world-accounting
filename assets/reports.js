@@ -137,7 +137,7 @@ M.reportRevenue = function (host, from, to) {
       const p = PW.product(it.productId);
       agg[it.productId].qty += Number(it.qty);
       agg[it.productId].rev += Number(it.qty) * Number(it.price);
-      agg[it.productId].cogs += Number(it.qty) * Number(p ? p.cost : 0);
+      agg[it.productId].cogs += Number(it.qty) * PW.unitCost(p, si.date);
     }));
   const rows = Object.keys(agg).map(pid => ({ p: PW.product(pid), ...agg[pid] })).filter(r => r.p)
     .sort((a, b) => b.rev - a.rev);
@@ -160,7 +160,7 @@ M.reportRevenue = function (host, from, to) {
 
 M.reportRevenueByChannel = function (host, from, to) {
   const agg = {};
-  function cogsOf(si) { return si.items.reduce((s, it) => { const p = PW.product(it.productId); return s + Number(it.qty) * Number(p ? p.cost : 0); }, 0); }
+  function cogsOf(si) { return si.items.reduce((s, it) => { const p = PW.product(it.productId); return s + Number(it.qty) * PW.unitCost(p, si.date); }, 0); }
   PW.data.salesInvoices.filter(si => si.date >= from && si.date <= to).forEach(si => {
     const key = si.channelId || '_none';
     agg[key] = agg[key] || { cnt: 0, rev: 0, fees: 0, cogs: 0 };
@@ -318,7 +318,7 @@ M.reportInOut = function (host, from, to) {
     const tralai = qtyInRange(PW.data.salesReturns, p.id);
     const xuat = qtyInRange(PW.data.salesInvoices, p.id);
     const cuoi = dau + nhap + tralai - xuat;
-    return { p, dau, nhap, tralai, xuat, cuoi, val: cuoi * Number(p.cost || 0) };
+    return { p, dau, nhap, tralai, xuat, cuoi, val: cuoi * PW.unitCost(p, to) };
   });
   const tot = rows.reduce((s, r) => s + r.val, 0);
   host.appendChild(C.table(rows, [

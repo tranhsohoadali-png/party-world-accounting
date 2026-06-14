@@ -460,6 +460,12 @@ M.productForm = function (p) {
       C.btn('Hủy', C.closeModal),
       C.btn('Lưu', () => {
         if (!f.name.value.trim()) return U.toast('Nhập tên hàng hóa', 'error');
+        if (f.kind.value === 'combo') {
+          const comps = components.filter(c => c.productId && Number(c.qty) > 0);
+          if (!comps.length) return U.toast('Combo cần ít nhất 1 thành phần', 'error');
+          const bad = comps.map(c => PW.product(c.productId)).find(m => m && (m.kind === 'combo' || m.kind === 'dichvu'));
+          if (bad) return U.toast('Combo không được chứa ' + (bad.kind === 'combo' ? 'combo khác' : 'dịch vụ') + ': ' + bad.name, 'error');
+        }
         const obj = {
           id: p.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
           kind: f.kind.value,
