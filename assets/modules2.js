@@ -2,6 +2,22 @@
    modules2.js — Bán hàng & Mua hàng (chứng từ nhiều dòng)
    ============================================================ */
 
+/* ---------- Tự lưu nháp form (B3) — chỉ localStorage, KHÔNG vào PW.data ----------
+   Chống mất dữ liệu khi đóng nhầm/refresh. Mỗi loại form 1 key riêng. */
+M.draft = {
+  key: function (mode) { return 'PW_DRAFT_DOC_' + mode; },
+  save: function (mode, obj) { try { localStorage.setItem(this.key(mode), JSON.stringify({ at: Date.now(), data: obj })); } catch (e) {} },
+  load: function (mode) { try { return JSON.parse(localStorage.getItem(this.key(mode)) || 'null'); } catch (e) { return null; } },
+  clear: function (mode) { try { localStorage.removeItem(this.key(mode)); } catch (e) {} },
+  age: function (at) {
+    const m = Math.round((Date.now() - (at || 0)) / 60000);
+    if (m < 1) return 'vừa xong';
+    if (m < 60) return m + ' phút trước';
+    const h = Math.round(m / 60);
+    return h < 24 ? h + ' giờ trước' : Math.round(h / 24) + ' ngày trước';
+  },
+};
+
 /* =====================================================================
    BÁN HÀNG (Hóa đơn bán + công nợ phải thu)
    ===================================================================== */
@@ -71,13 +87,14 @@ M.docCopy = function (src, kind) {
 
 M.salesForm = function (si, presetCustomerId) {
   const isNew = !si || !si.id;   // không có id => chứng từ mới (kể cả khi sao chép có sẵn dữ liệu)
+  const isCopy = !!(si && !si.id);   // sao chép: bỏ qua khôi phục/tự lưu nháp
   si = si ? JSON.parse(JSON.stringify(si)) : {
     code: PW.nextCode('HD'), date: U.today(),
     customerId: presetCustomerId || (PW.data.customers[0] ? PW.data.customers[0].id : ''),
     items: [], discount: 0, paid: 0, paidAccountId: PW.data.cashAccounts[0].id, note: '',
   };
   M.docForm({
-    mode: 'sale', doc: si, isNew,
+    mode: 'sale', doc: si, isNew, skipDraft: isCopy,
     title: isNew ? 'Lập hóa đơn bán hàng' : 'Sửa hóa đơn bán',
     partnerLabel: 'Khách hàng',
     partners: PW.data.customers,
@@ -143,13 +160,14 @@ M.purchases = function (root) {
 
 M.purchaseForm = function (pu, presetSupplierId) {
   const isNew = !pu || !pu.id;   // không có id => phiếu mới (kể cả khi sao chép có sẵn dữ liệu)
+  const isCopy = !!(pu && !pu.id);   // sao chép: bỏ qua khôi phục/tự lưu nháp
   pu = pu ? JSON.parse(JSON.stringify(pu)) : {
     code: PW.nextCode('PN'), date: U.today(),
     supplierId: presetSupplierId || (PW.data.suppliers[0] ? PW.data.suppliers[0].id : ''),
     items: [], discount: 0, paid: 0, paidAccountId: PW.data.cashAccounts[0].id, note: '',
   };
   M.docForm({
-    mode: 'purchase', doc: pu, isNew,
+    mode: 'purchase', doc: pu, isNew, skipDraft: isCopy,
     title: isNew ? 'Lập phiếu nhập mua hàng' : 'Sửa phiếu nhập',
     partnerLabel: 'Nhà cung cấp',
     partners: PW.data.suppliers,
@@ -425,6 +443,43 @@ M.docForm = function (cfg) {
   const isSale = mode === 'sale';
   const unitField = isSale ? 'price' : 'cost'; // tên field giá trong item
 
+  // (B3) Khôi phục bản nháp chưa lưu — chỉ với chứng từ MỚI thật (không phải sao chép)
+  if (isNew && !cfg.skipDraft) {
+    const dr = M.draft.load(mode);
+    const drDirty = dr && dr.data && ((dr.data.items || []).some(it => it.productId) || (dr.data.note && dr.data.note.trim()));
+    if (drDirty) {
+      if (U.confirm('Có bản nhập ' + (isSale ? 'hóa đơn bán' : 'phiếu nhập') + ' chưa lưu (' + M.draft.age(dr.at) + ').\nKhôi phục để nhập tiếp?')) {
+        Object.assign(doc, dr.data);
+        if (dr.data.items && dr.data.items.length) doc.items = dr.data.items;
+      } else { M.draft.clear(mode); }
+    }
+  }
+
+  // (B3) Chụp trạng thái form -> object để lưu nháp (hoisted, chỉ gọi sau khi render)
+  function _draftSnapshot() {
+    return {
+      code: codeI.value, date: dateI.value, dueDate: dueI.value || null,
+      [partnerKey]: partnerI.value,
+      employeeId: empSel ? (empSel.value || null) : undefined,
+      channelId: channelSel ? (channelSel.value || null) : undefined,
+      platformFee: platformFeeI ? (Number(platformFeeI.value) || 0) : undefined,
+      shippingFee: shippingFeeI ? (Number(shippingFeeI.value) || 0) : undefined,
+      vatRate: Number(vatRateI.value) || 0, discount: Number(discountI.value) || 0,
+      paid: Number(paidI.value) || 0, paidAccountId: paidAccI.value, note: noteI.value,
+      items: items.map(it => ({ productId: it.productId, qty: it.qty, [unitField]: it[unitField] })),
+    };
+  }
+  let _draftTimer = null;
+  function scheduleDraft() {
+    if (!isNew || cfg.skipDraft) return;
+    clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(function () {
+      const s = _draftSnapshot();
+      if ((s.items || []).some(it => it.productId) || (s.note && s.note.trim()) || s.discount > 0 || s.paid > 0)
+        M.draft.save(mode, s);
+    }, 800);
+  }
+
   // Header fields
   const codeI = C.input({ value: doc.code });
   const dateI = C.input({ type: 'date', value: doc.date });
@@ -509,7 +564,7 @@ M.docForm = function (cfg) {
       const prodSel = M.productPicker(it.productId, (p) => {
         it.productId = p.id;
         it[unitField] = isSale ? PW.channelPrice(p, curChannel()) : (p[priceKey] || 0);
-        drawItems(); calc();
+        drawItems(); calc(); scheduleDraft();
       }, { isSale: isSale });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; updateLine(); });
@@ -528,7 +583,7 @@ M.docForm = function (cfg) {
         U.el('td', { style: 'width:130px' }, priceI),
         U.el('td', { class: 'num', style: 'width:130px' }, lineTotal),
         U.el('td', { class: 'center', style: 'width:40px' },
-          U.el('button', { class: 'btn sm danger', onclick: () => { items.splice(idx, 1); if (!items.length) items.push({ productId: '', qty: 1, [unitField]: 0 }); drawItems(); calc(); } }, '×')),
+          U.el('button', { class: 'btn sm danger', onclick: () => { items.splice(idx, 1); if (!items.length) items.push({ productId: '', qty: 1, [unitField]: 0 }); drawItems(); calc(); scheduleDraft(); } }, '×')),
       ]);
       itemsBody.appendChild(tr);
     });
@@ -550,7 +605,80 @@ M.docForm = function (cfg) {
   if (platformFeeI) platformFeeI.addEventListener('input', calc);
   if (shippingFeeI) shippingFeeI.addEventListener('input', calc);
 
+  // (B1) Dán nhiều dòng từ Excel/Google Sheets vào bảng hàng
+  function _pasteTabular(text) { return text.indexOf('\t') >= 0 || text.split(/\r?\n/).filter(l => l.trim()).length >= 2; }
+  function _applyPastedRows(rows) {
+    const chosen = rows.filter(r => r.use && r.productId);
+    if (!chosen.length) { U.toast('Chưa chọn dòng hàng nào để thêm', 'error'); return false; }
+    if (items.length === 1 && !items[0].productId) items.length = 0;   // bỏ dòng trống mặc định
+    chosen.forEach(r => {
+      const p = PW.product(r.productId);
+      let price = Number(r.price) || 0;
+      if (!price && p) price = isSale ? PW.channelPrice(p, curChannel()) : (p[priceKey] || 0);
+      items.push({ productId: r.productId, qty: Number(r.qty) || 1, [unitField]: price });
+    });
+    drawItems(); calc(); scheduleDraft();
+    U.toast('Đã thêm ' + chosen.length + ' dòng hàng');
+    return true;
+  }
+  function openPasteModal(text) {
+    if (typeof M._ciParseLine !== 'function') return U.toast('Chưa nạp được bộ đọc dữ liệu', 'error');
+    const lines = (text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const idx = M._ciProductIndex();
+    const cid = isSale ? (partnerI.value || null) : null;
+    const rows = lines.map(l => {
+      const pr = M._ciParseLine(l);
+      if (!pr) return null;
+      const mt = M._ciMatch(pr, idx, cid);
+      return { name: pr.name, productId: mt.productId, status: mt.status, qty: pr.qty, price: pr.price, use: true };
+    }).filter(Boolean);
+    if (!rows.length) return U.toast('Không đọc được dòng hàng nào từ nội dung dán', 'error');
+    const prodOpts = [{ value: '', label: '— Bỏ qua —' }]
+      .concat(PW.data.products.map(p => ({ value: p.id, label: (p.code ? p.code + ' · ' : '') + p.name })));
+    const STATUS = { alias: ['Khớp bí danh', 'green'], code: ['Khớp mã', 'green'], fuzzy: ['Cần xem lại', 'orange'], none: ['Chưa khớp', 'red'] };
+    const tb = U.el('tbody');
+    rows.forEach(r => {
+      const sel = C.select(prodOpts, r.productId); sel.addEventListener('change', () => { r.productId = sel.value; });
+      const qi = U.el('input', { class: 'inp', type: 'number', value: r.qty, min: 0, style: 'width:70px;text-align:right' });
+      qi.addEventListener('input', () => { r.qty = Number(qi.value) || 0; });
+      const pi = U.el('input', { class: 'inp', type: 'number', value: r.price, min: 0, style: 'width:110px;text-align:right' });
+      pi.addEventListener('input', () => { r.price = Number(pi.value) || 0; });
+      const chk = U.el('input', { type: 'checkbox' }); chk.checked = true; chk.addEventListener('change', () => { r.use = chk.checked; });
+      const st = STATUS[r.status] || ['?', 'gray'];
+      tb.appendChild(U.el('tr', null, [
+        U.el('td', { class: 'center' }, chk),
+        U.el('td', { style: 'font-size:12px;color:#6b7785;max-width:170px' }, r.name),
+        U.el('td', null, sel),
+        U.el('td', null, qi),
+        U.el('td', null, pi),
+        U.el('td', { class: 'center', html: '<span class="tag ' + st[1] + '">' + st[0] + '</span>' }),
+      ]));
+    });
+    const table = U.el('table', { class: 'items-tbl' }, [
+      U.el('thead', null, U.el('tr', null, ['', 'Dòng dán', 'Hàng hóa', 'SL', 'Đơn giá', 'Khớp'].map(h => U.el('th', null, h)))),
+      tb,
+    ]);
+    C.miniModal({
+      title: 'Dán ' + rows.length + ' dòng từ Excel — kiểm tra & chọn hàng',
+      body: U.el('div', null, [
+        U.el('p', { class: 'section-sub' }, 'Đã tự khớp hàng hóa. Sửa cột "Hàng hóa" / SL / Đơn giá nếu cần; bỏ tick dòng không muốn thêm. Giá để 0 sẽ tự lấy giá mặc định.'),
+        U.el('div', { class: 'table-wrap' }, table),
+      ]),
+      footer: [C.btn('Hủy', C.closeMini), C.btn('Thêm vào chứng từ', () => { if (_applyPastedRows(rows)) C.closeMini(); }, 'primary')],
+    });
+  }
+  // Bắt Ctrl+V trên bảng hàng: nếu dán nội dung dạng bảng -> mở hộp soát
+  itemsTable.addEventListener('paste', (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    if (text && _pasteTabular(text)) { e.preventDefault(); openPasteModal(text); }
+  });
+
   const addBtn = C.btn('+ Thêm dòng', () => { items.push({ productId: '', qty: 1, [unitField]: 0 }); drawItems(); calc(); }, 'sm');
+  const pasteBtn = C.btn('📋 Dán từ Excel', () => {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(t => openPasteModal(t || '')).catch(() => U.toast('Hãy bấm vào bảng hàng rồi nhấn Ctrl+V để dán', 'error'));
+    } else { U.toast('Hãy bấm vào ô trong bảng hàng rồi nhấn Ctrl+V để dán', 'error'); }
+  }, 'sm');
 
   const partnerField = M.withAdd(partnerI, 'Thêm nhanh ' + partnerLabel, () =>
     M.quickAddPartner(isSale, np => {
@@ -607,16 +735,22 @@ M.docForm = function (cfg) {
     header,
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa'),
     U.el('div', { class: 'table-wrap' }, itemsTable),
-    U.el('div', { class: 'mt8' }, addBtn),
+    U.el('div', { class: 'mt8 pill-row' }, [addBtn, pasteBtn]),
     C.field('Diễn giải', noteI, { full: true }),
     summary,
   ]);
 
   drawItems(); calc();
 
+  // (B3) Tự lưu nháp khi gõ/đổi giá trị trong form (debounce trong scheduleDraft)
+  if (isNew && !cfg.skipDraft) {
+    body.addEventListener('input', scheduleDraft, true);
+    body.addEventListener('change', scheduleDraft, true);
+  }
+
   C.modal({
     title, wide: true, body,
-    footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu chứng từ', () => {
+    footer: [C.btn('Hủy', () => { if (isNew) M.draft.clear(mode); C.closeModal(); }), C.btn('Lưu chứng từ', () => {
       const valid = items.filter(it => it.productId && Number(it.qty) > 0);
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng hợp lệ', 'error');
       if (!partnerI.value) return U.toast('Chọn ' + partnerLabel.toLowerCase(), 'error');
@@ -660,6 +794,7 @@ M.docForm = function (cfg) {
       onSave(obj);
       PW.logActivity(isNew ? 'create' : 'update', isSale ? 'salesInvoice' : 'purchase', obj.code,
         U.money(isSale ? PW.invoiceTotal(obj) : PW.purchaseTotal(obj)) + ' đ');
+      if (isNew) M.draft.clear(mode);   // (B3) xóa nháp sau khi lưu thành công
       PW.save(); C.closeModal(); App.refresh();
       U.toast(isSale ? 'Đã lưu hóa đơn bán' : 'Đã lưu phiếu nhập');
     }, 'primary')],
