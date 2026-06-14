@@ -19,7 +19,7 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog'];
+    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog', 'cashCounts'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -384,6 +384,45 @@ PW.cashOut = function (fromYmd, toYmd) {
   PW.data.payments.forEach(p => { if (inR(p.date)) s += Number(p.amount); });
   PW.data.purchases.forEach(pu => { if (inR(pu.date)) s += Number(pu.paid || 0); });
   return s;
+};
+
+// Số dư 1 tài khoản tiền TÍNH ĐẾN ngày (cắt theo ngày, dùng cho kiểm kê quỹ)
+PW.balanceAsOf = function (accountId, toYmd) {
+  const a = PW.account(accountId);
+  if (!a) return 0;
+  let bal = Number(a.opening || 0);
+  const le = d => (!toYmd || d <= toYmd);
+  PW.data.receipts.forEach(r => { if (r.accountId === accountId && le(r.date)) bal += Number(r.amount || 0); });
+  PW.data.payments.forEach(p => { if (p.accountId === accountId && le(p.date)) bal -= Number(p.amount || 0); });
+  PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accountId && le(si.date)) bal += Number(si.paid || 0); });
+  PW.data.purchases.forEach(pu => { if (pu.paidAccountId === accountId && le(pu.date)) bal -= Number(pu.paid || 0); });
+  return bal;
+};
+
+// Khoản phải THU đến hạn trong khoảng (dự báo dòng tiền vào)
+PW.dueReceivables = function (fromYmd, toYmd) {
+  const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  const out = [];
+  PW.data.salesInvoices.forEach(si => {
+    const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+    if (rem <= 0) return;
+    const due = si.dueDate || si.date;
+    if (inR(due)) out.push({ party: PW.customer(si.customerId), code: si.code, due: due, remaining: rem });
+  });
+  return out.sort((a, b) => a.due < b.due ? -1 : 1);
+};
+
+// Khoản phải TRẢ đến hạn trong khoảng (dự báo dòng tiền ra)
+PW.duePayables = function (fromYmd, toYmd) {
+  const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  const out = [];
+  PW.data.purchases.forEach(pu => {
+    const rem = PW.purchaseTotal(pu) - Number(pu.paid || 0);
+    if (rem <= 0) return;
+    const due = pu.dueDate || pu.date;
+    if (inR(due)) out.push({ party: PW.supplier(pu.supplierId), code: pu.code, due: due, remaining: rem });
+  });
+  return out.sort((a, b) => a.due < b.due ? -1 : 1);
 };
 
 // Công nợ phải thu của 1 khách hàng (dương = khách còn nợ mình)

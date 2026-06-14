@@ -875,65 +875,239 @@ M.printLedger = function (kind, id) {
    TIỀN — Quỹ, Phiếu thu, Phiếu chi
    ===================================================================== */
 M.cash = function (root) {
-  // Thẻ số dư tài khoản
-  const accRow = U.el('div', { class: 'grid c3' });
-  PW.data.cashAccounts.forEach(a => {
-    accRow.appendChild(U.el('div', { class: 'kpi' }, [
-      U.el('div', { style: 'display:flex;justify-content:space-between' }, [
-        U.el('div', { class: 'label' }, (a.type === 'cash' ? '💵 ' : '🏦 ') + a.name),
-      ]),
-      U.el('div', { class: 'value' }, U.money(PW.accountBalance(a.id))),
-      U.el('div', { class: 'sub' }, 'Số dư hiện tại (đ)'),
-    ]));
-  });
-  root.appendChild(accRow);
+  const yearStart = U.today().slice(0, 4) + '-01-01';
+  // ----- KPI: tổng thu / chi từ đầu năm + tồn quỹ hiện tại -----
+  root.appendChild(U.el('div', { class: 'grid c3' }, [
+    M._cashKpi('💰 Tổng thu (từ đầu năm)', PW.cashIn(yearStart, U.today()), 'text-green'),
+    M._cashKpi('💸 Tổng chi (từ đầu năm)', PW.cashOut(yearStart, U.today()), 'text-red'),
+    M._cashKpi('🏦 Tồn quỹ hiện tại', PW.totalCash(), 'text-blue'),
+  ]));
+  // ----- Số dư từng tài khoản tiền -----
+  root.appendChild(U.el('div', { class: 'grid c3', style: 'margin-top:4px' },
+    PW.data.cashAccounts.map(a => M._cashKpi((a.type === 'cash' ? '💵 ' : '🏦 ') + a.name, PW.accountBalance(a.id), '', 'Số dư hiện tại'))));
+  // ----- Tabs -----
+  root.appendChild(C.tabs([
+    { label: '📒 Sổ thu chi', content: M._cashLedgerTab() },
+    { label: '🧮 Kiểm kê quỹ', content: M._cashCountTab() },
+    { label: '📈 Dự báo dòng tiền', content: M._cashForecastTab() },
+  ]));
+};
 
-  // Toolbar
+M._cashKpi = function (label, val, cls, sub) {
+  return U.el('div', { class: 'kpi' }, [
+    U.el('div', { class: 'label' }, label),
+    U.el('div', { class: 'value ' + (cls || '') }, U.money(val)),
+    U.el('div', { class: 'sub' }, sub || 'đồng'),
+  ]);
+};
+M._cashFld = function (label, el) { return U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, label), el]); };
+
+/* ---------- Tab 1: Sổ thu chi (lọc kỳ + loại + tìm) ---------- */
+M._cashLedgerTab = function () {
+  const wrap = U.el('div');
   const card = U.el('div', { class: 'card' });
-  const toolbar = U.el('div', { class: 'toolbar' });
-  toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' }, '📒 Sổ thu chi tiền'));
-  toolbar.appendChild(U.el('div', { class: 'spacer' }));
-  toolbar.appendChild(C.btn('+ Phiếu thu', () => M.receiptForm(), 'primary'));
-  toolbar.appendChild(C.btn('+ Phiếu chi', () => M.paymentForm(), 'orange'));
-  card.appendChild(toolbar);
+  const periodSel = C.select([{ value: 'month', label: 'Tháng này' }, { value: 'quarter', label: 'Quý này' }, { value: 'year', label: 'Năm nay' }, { value: 'all', label: 'Tất cả' }], 'year');
+  const typeSel = C.select([{ value: '', label: 'Tất cả' }, { value: 'thu', label: 'Phiếu thu' }, { value: 'chi', label: 'Phiếu chi' }], '');
+  const search = U.el('input', { class: 'search', placeholder: 'Tìm số phiếu / đối tượng / diễn giải...' });
+  const bar = U.el('div', { class: 'toolbar' });
+  bar.appendChild(M._cashFld('Kỳ', periodSel));
+  bar.appendChild(M._cashFld('Loại', typeSel));
+  bar.appendChild(search);
+  bar.appendChild(U.el('div', { class: 'spacer' }));
+  bar.appendChild(C.btn('+ Phiếu thu', () => M.receiptForm(), 'primary'));
+  bar.appendChild(C.btn('+ Phiếu chi', () => M.paymentForm(), 'orange'));
+  card.appendChild(bar);
   const host = U.el('div');
   card.appendChild(host);
-  root.appendChild(card);
+  wrap.appendChild(card);
 
+  function range() { if (periodSel.value === 'all') return { from: null, to: null }; const p = U.period(periodSel.value); return { from: p.from, to: p.to }; }
   function draw() {
-    const rows = [];
-    PW.data.receipts.forEach(r => rows.push({ kind: 'thu', ...r }));
-    PW.data.payments.forEach(p => rows.push({ kind: 'chi', ...p }));
+    const r = range(); const inR = d => (!r.from || d >= r.from) && (!r.to || d <= r.to);
+    const q = search.value.trim().toLowerCase();
+    let rows = [];
+    PW.data.receipts.forEach(x => rows.push(Object.assign({ kind: 'thu' }, x)));
+    PW.data.payments.forEach(x => rows.push(Object.assign({ kind: 'chi' }, x)));
+    rows = rows.filter(x => inR(x.date) && (!typeSel.value || x.kind === typeSel.value));
+    if (q) rows = rows.filter(x => {
+      const party = x.customerId ? PW.customer(x.customerId) : (x.supplierId ? PW.supplier(x.supplierId) : null);
+      return (x.code || '').toLowerCase().includes(q) || (x.reason || '').toLowerCase().includes(q) || (party && party.name.toLowerCase().includes(q));
+    });
     rows.sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
+    const totThu = rows.filter(x => x.kind === 'thu').reduce((s, x) => s + Number(x.amount || 0), 0);
+    const totChi = rows.filter(x => x.kind === 'chi').reduce((s, x) => s + Number(x.amount || 0), 0);
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
-      { label: 'Ngày', render: r => U.date(r.date) },
-      { label: 'Số phiếu', render: r => U.esc(r.code) },
-      { label: 'Loại', center: true, render: r => r.kind === 'thu'
-          ? '<span class="tag green">Phiếu thu</span>' : '<span class="tag orange">Phiếu chi</span>' },
-      { label: 'Tài khoản', render: r => { const a = PW.account(r.accountId); return a ? U.esc(a.name) : ''; } },
-      { label: 'Đối tượng', render: r => {
-          if (r.customerId) { const c = PW.customer(r.customerId); return c ? U.esc(c.name) : ''; }
-          if (r.supplierId) { const s = PW.supplier(r.supplierId); return s ? U.esc(s.name) : ''; }
-          return '';
-        } },
-      { label: 'Diễn giải', render: r => U.esc(r.reason || '') },
-      { label: 'Thu', num: true, render: r => r.kind === 'thu' ? `<span class="text-green">${U.money(r.amount)}</span>` : '' },
-      { label: 'Chi', num: true, render: r => r.kind === 'chi' ? `<span class="text-red">${U.money(r.amount)}</span>` : '' },
-      { label: '', render: r => C.actions([
-          { label: 'Sửa', onClick: () => r.kind === 'thu' ? M.receiptForm(r) : M.paymentForm(r) },
+      { label: 'Ngày', render: x => U.date(x.date) },
+      { label: 'Số phiếu', render: x => U.esc(x.code) },
+      { label: 'Loại', center: true, render: x => x.kind === 'thu' ? '<span class="tag green">Phiếu thu</span>' : '<span class="tag orange">Phiếu chi</span>' },
+      { label: 'Tài khoản', render: x => { const a = PW.account(x.accountId); return a ? U.esc(a.name) : ''; } },
+      { label: 'Đối tượng', render: x => { if (x.customerId) { const c = PW.customer(x.customerId); return c ? U.esc(c.name) : ''; } if (x.supplierId) { const s = PW.supplier(x.supplierId); return s ? U.esc(s.name) : ''; } return ''; } },
+      { label: 'Diễn giải', render: x => U.esc(x.reason || '') },
+      { label: 'Thu', num: true, render: x => x.kind === 'thu' ? `<span class="text-green">${U.money(x.amount)}</span>` : '' },
+      { label: 'Chi', num: true, render: x => x.kind === 'chi' ? `<span class="text-red">${U.money(x.amount)}</span>` : '' },
+      { label: '', render: x => C.actions([
+          { label: 'Sửa', onClick: () => x.kind === 'thu' ? M.receiptForm(x) : M.paymentForm(x) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
-              if (U.confirm('Xóa phiếu ' + r.code + '?')) {
-                PW.logActivity('delete', r.kind === 'thu' ? 'receipt' : 'payment', r.code, U.money(r.amount) + ' đ');
-                if (r.kind === 'thu') PW.data.receipts = PW.data.receipts.filter(x => x.id !== r.id);
-                else PW.data.payments = PW.data.payments.filter(x => x.id !== r.id);
+              if (U.confirm('Xóa phiếu ' + x.code + '?')) {
+                PW.logActivity('delete', x.kind === 'thu' ? 'receipt' : 'payment', x.code, U.money(x.amount) + ' đ');
+                if (x.kind === 'thu') PW.data.receipts = PW.data.receipts.filter(y => y.id !== x.id);
+                else PW.data.payments = PW.data.payments.filter(y => y.id !== x.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
             } },
         ]) },
-    ], { empty: 'Chưa có phiếu thu/chi' }));
+    ], { empty: 'Không có phiếu thu/chi trong kỳ', footer: [
+      { html: 'TỔNG CỘNG', colspan: 6 }, { html: U.money(totThu), num: true }, { html: U.money(totChi), num: true }, { html: '' },
+    ] }));
+    host.appendChild(U.el('div', { class: 'mt8', style: 'text-align:right;font-weight:700' },
+      'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
+  }
+  [periodSel, typeSel].forEach(e => e.addEventListener('change', draw));
+  search.addEventListener('input', draw);
+  draw();
+  return wrap;
+};
+
+/* ---------- Tab 2: Kiểm kê quỹ ---------- */
+M._cashCountTab = function () {
+  const wrap = U.el('div');
+  const card = U.el('div', { class: 'card' });
+  const bar = U.el('div', { class: 'toolbar' });
+  bar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' }, '🧮 Kiểm kê quỹ tiền mặt'));
+  bar.appendChild(U.el('div', { class: 'spacer' }));
+  bar.appendChild(C.btn('+ Lập biên bản kiểm kê', () => M.cashCountForm(), 'primary'));
+  card.appendChild(bar);
+  card.appendChild(U.el('p', { class: 'section-sub' }, 'So sánh tồn quỹ trên sổ với tiền thực đếm tại một thời điểm; chênh lệch sẽ tự tạo phiếu thu/chi điều chỉnh để khớp sổ.'));
+  const host = U.el('div');
+  card.appendChild(host);
+  wrap.appendChild(card);
+  const rows = (PW.data.cashCounts || []).slice().sort((a, b) => (b.date + (b.id || '')).localeCompare(a.date + (a.id || '')));
+  host.appendChild(C.table(rows, [
+    { label: 'Ngày', render: c => U.date(c.date) },
+    { label: 'Tài khoản', render: c => { const a = PW.account(c.accountId); return a ? U.esc(a.name) : ''; } },
+    { label: 'Tồn sổ', num: true, render: c => U.money(c.bookBalance) },
+    { label: 'Thực đếm', num: true, render: c => U.money(c.actualBalance) },
+    { label: 'Chênh lệch', num: true, render: c => c.diff === 0 ? '<span class="text-muted">0</span>' : (c.diff > 0 ? '<span class="text-green">+' + U.money(c.diff) + '</span>' : '<span class="text-red">' + U.money(c.diff) + '</span>') },
+    { label: 'Xử lý', center: true, render: c => c.adjustmentId ? '<span class="tag orange">Đã điều chỉnh</span>' : '<span class="tag green">Khớp sổ</span>' },
+    { label: '', render: c => C.actions([{ label: 'Xóa', cls: 'danger', onClick: () => {
+        if (U.confirm('Xóa biên bản kiểm kê ngày ' + U.date(c.date) + '? (phiếu điều chỉnh đã tạo vẫn giữ nguyên)')) {
+          PW.data.cashCounts = PW.data.cashCounts.filter(x => x.id !== c.id); PW.save(); App.refresh(); U.toast('Đã xóa biên bản');
+        } } }]) },
+  ], { empty: 'Chưa có biên bản kiểm kê quỹ' }));
+  return wrap;
+};
+
+M.cashCountForm = function () {
+  const dateI = C.input({ type: 'date', value: U.today() });
+  const accInputs = {};
+  const body = U.el('div');
+  body.appendChild(U.el('div', { class: 'form-grid' }, [C.field('Kiểm kê đến ngày', dateI)]));
+  const tblHost = U.el('div', { style: 'margin-top:10px' });
+  body.appendChild(tblHost);
+  function drawTbl() {
+    tblHost.innerHTML = '';
+    const tbl = U.el('table', { class: 'tbl tbl-cards' });
+    tbl.appendChild(U.el('thead', null, U.el('tr', null, ['Tài khoản', 'Tồn sổ', 'Thực đếm'].map((h, i) => U.el('th', { class: i ? 'num' : '' }, h)))));
+    const tb = U.el('tbody');
+    PW.data.cashAccounts.forEach(a => {
+      const book = PW.balanceAsOf(a.id, dateI.value);
+      let rec = accInputs[a.id];
+      if (!rec) { rec = accInputs[a.id] = { input: C.input({ type: 'number', value: book, style: 'width:120px;text-align:right' }), touched: false };
+        rec.input.addEventListener('input', () => { rec.touched = true; }); }
+      rec.book = book;
+      if (!rec.touched) rec.input.value = book;   // chưa sửa -> mặc định = tồn sổ
+      tb.appendChild(U.el('tr', null, [
+        U.el('td', { 'data-label': 'Tài khoản' }, U.esc(a.name)),
+        U.el('td', { class: 'num', 'data-label': 'Tồn sổ' }, U.money(book)),
+        U.el('td', { class: 'num', 'data-label': 'Thực đếm' }, rec.input),
+      ]));
+    });
+    tbl.appendChild(tb);
+    tblHost.appendChild(U.el('div', { class: 'table-wrap' }, tbl));
+  }
+  dateI.addEventListener('change', drawTbl);
+  drawTbl();
+  C.modal({
+    title: 'Lập biên bản kiểm kê quỹ', body,
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Ghi nhận & điều chỉnh', () => {
+      let made = 0;
+      if (!PW.data.cashCounts) PW.data.cashCounts = [];
+      PW.data.cashAccounts.forEach(a => {
+        const book = PW.balanceAsOf(a.id, dateI.value);
+        const actual = Number(accInputs[a.id].input.value) || 0;
+        const diff = actual - book;
+        const cc = { id: PW.uid(), date: dateI.value, accountId: a.id, bookBalance: book, actualBalance: actual, diff: diff, adjustmentId: null };
+        if (Math.abs(diff) >= 1) {
+          if (diff > 0) {
+            const obj = { id: PW.uid(), code: PW.nextCode('PT'), date: dateI.value, accountId: a.id, customerId: null, amount: diff, reason: 'Thừa quỹ kiểm kê - ' + a.name, note: '' };
+            PW.data.receipts.push(obj); cc.adjustmentId = obj.id;
+            PW.logActivity('create', 'receipt', obj.code, U.money(diff) + ' đ — điều chỉnh kiểm kê');
+          } else {
+            const obj = { id: PW.uid(), code: PW.nextCode('PC'), date: dateI.value, accountId: a.id, supplierId: null, amount: -diff, reason: 'Thiếu quỹ kiểm kê - ' + a.name, note: '' };
+            PW.data.payments.push(obj); cc.adjustmentId = obj.id;
+            PW.logActivity('create', 'payment', obj.code, U.money(-diff) + ' đ — điều chỉnh kiểm kê');
+          }
+          made++;
+        }
+        PW.data.cashCounts.push(cc);
+      });
+      PW.save(); C.closeModal(); App.refresh();
+      U.toast(made ? ('Đã kiểm kê & tạo ' + made + ' phiếu điều chỉnh') : 'Đã ghi nhận kiểm kê — khớp sổ, không cần điều chỉnh');
+    }, 'primary')],
+  });
+};
+
+/* ---------- Tab 3: Dự báo dòng tiền ---------- */
+M._cashForecastTab = function () {
+  const wrap = U.el('div');
+  const card = U.el('div', { class: 'card' });
+  card.appendChild(U.el('div', { class: 'card-title' }, '📈 Dự báo dòng tiền'));
+  card.appendChild(U.el('p', { class: 'section-sub' }, 'Dự kiến tiền vào/ra dựa trên công nợ ĐẾN HẠN trong kỳ — để biết quỹ có đủ tiền hay không.'));
+  const p = U.period('month');
+  const fromI = C.input({ type: 'date', value: U.today() });
+  const toI = C.input({ type: 'date', value: p.to });
+  const bar = U.el('div', { class: 'toolbar' });
+  bar.appendChild(M._cashFld('Từ ngày', fromI));
+  bar.appendChild(M._cashFld('Đến ngày', toI));
+  bar.appendChild(M._cashFld(' ', C.btn('Dự báo', () => draw(), 'primary')));
+  card.appendChild(bar);
+  const host = U.el('div');
+  card.appendChild(host);
+  wrap.appendChild(card);
+  function draw() {
+    const from = fromI.value, to = toI.value;
+    const opening = PW.totalCash();
+    const recv = PW.dueReceivables(from, to), pay = PW.duePayables(from, to);
+    const dThu = recv.reduce((s, r) => s + r.remaining, 0);
+    const dChi = pay.reduce((s, r) => s + r.remaining, 0);
+    const closing = opening + dThu - dChi;
+    host.innerHTML = '';
+    host.appendChild(U.el('div', { class: 'grid c4' }, [
+      M._cashKpi('Số dư hiện tại', opening, ''),
+      M._cashKpi('Dự kiến THU', dThu, 'text-green'),
+      M._cashKpi('Dự kiến CHI', dChi, 'text-red'),
+      M._cashKpi('Số dư cuối kỳ dự kiến', closing, closing < 0 ? 'text-red' : 'text-blue'),
+    ]));
+    if (closing < 0) host.appendChild(U.el('div', { class: 'alert-bar', style: 'background:#fdecea;border-color:#f3c2bd;color:#a4362b;margin-top:10px;padding:10px 14px;border-radius:10px' },
+      '⚠ Cảnh báo: số dư cuối kỳ dự kiến ÂM ' + U.money(closing) + ' đ — cần đẩy nhanh thu hồi công nợ hoặc giãn lịch chi.'));
+    host.appendChild(U.el('div', { class: 'card-title', style: 'margin-top:18px' }, '⬇ Khoản phải THU đến hạn (' + recv.length + ')'));
+    host.appendChild(C.table(recv, [
+      { label: 'Đến hạn', render: r => U.date(r.due) },
+      { label: 'Khách hàng', render: r => r.party ? U.esc(r.party.name) : '(không rõ)' },
+      { label: 'Chứng từ', render: r => U.esc(r.code) },
+      { label: 'Còn phải thu', num: true, render: r => '<span class="text-green">' + U.money(r.remaining) + '</span>' },
+    ], { empty: 'Không có khoản phải thu đến hạn trong kỳ' }));
+    host.appendChild(U.el('div', { class: 'card-title', style: 'margin-top:18px' }, '⬆ Khoản phải TRẢ đến hạn (' + pay.length + ')'));
+    host.appendChild(C.table(pay, [
+      { label: 'Đến hạn', render: r => U.date(r.due) },
+      { label: 'Nhà cung cấp', render: r => r.party ? U.esc(r.party.name) : '(không rõ)' },
+      { label: 'Chứng từ', render: r => U.esc(r.code) },
+      { label: 'Còn phải trả', num: true, render: r => '<span class="text-red">' + U.money(r.remaining) + '</span>' },
+    ], { empty: 'Không có khoản phải trả đến hạn trong kỳ' }));
   }
   draw();
+  return wrap;
 };
 
 M.receiptForm = function (r, presetCustomerId) {
