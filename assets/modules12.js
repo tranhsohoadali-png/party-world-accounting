@@ -129,15 +129,15 @@ M.scanStation = function (root) {
     box.appendChild(U.el('div', { class: 'card-title', style: 'margin:0 0 6px' }, '📋 ' + U.esc(si.code) + (ch ? ' · ' + U.esc(ch.name) : '')));
     box.appendChild(U.el('div', { class: 'section-sub' }, 'Khách: ' + U.esc(cust ? cust.name : '—') + ' · ' + U.date(si.date) + ' · Trạng thái: ' + st.label));
 
-    const tbl = U.el('table', { class: 'tbl', style: 'margin-top:8px' });
+    const tbl = U.el('table', { class: 'tbl tbl-cards', style: 'margin-top:8px' });
     tbl.appendChild(U.el('thead', null, U.el('tr', null, ['Hàng hóa', 'SL', 'Tồn'].map((h, i) => U.el('th', { class: i ? 'num' : '' }, h)))));
     const tb = U.el('tbody');
     (si.items || []).forEach(it => {
       const p = PW.product(it.productId);
       tb.appendChild(U.el('tr', null, [
-        U.el('td', null, p ? U.esc(p.code + ' - ' + p.name) : U.esc(it.productId)),
-        U.el('td', { class: 'num' }, U.num(it.qty)),
-        U.el('td', { class: 'num' }, p ? U.num(PW.stockOf(p.id)) : '—'),
+        U.el('td', { 'data-label': 'Hàng hóa' }, p ? U.esc(p.code + ' - ' + p.name) : U.esc(it.productId)),
+        U.el('td', { class: 'num', 'data-label': 'SL' }, U.num(it.qty)),
+        U.el('td', { class: 'num', 'data-label': 'Tồn' }, p ? U.num(PW.stockOf(p.id)) : '—'),
       ]));
     });
     tbl.appendChild(tb); box.appendChild(U.el('div', { class: 'table-wrap' }, tbl));

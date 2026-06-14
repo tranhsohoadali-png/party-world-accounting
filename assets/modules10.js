@@ -122,7 +122,7 @@ M.reconcile = function (root) {
 
     // ----- Bảng -----
     host.innerHTML = '';
-    const tbl = U.el('table', { class: 'tbl' });
+    const tbl = U.el('table', { class: 'tbl tbl-cards' });
     const heads = ['Ngày', 'Số HĐ', 'Khách', 'Trạng thái', 'Doanh thu', 'Thực nhận sổ', 'Tiền sàn thực trả', 'Lệch', 'Đã ĐS', 'HÀNG (kho)'];
     tbl.appendChild(U.el('thead', null, U.el('tr', null,
       heads.map((h, i) => U.el('th', { class: (i >= 4 && i <= 7) ? 'num' : (i === 8 ? 'center' : '') }, h)))));
@@ -160,16 +160,16 @@ M.reconcile = function (root) {
       else if (gs.action === 'lost') goodsKids.push(U.el('div', { style: 'margin-top:4px' }, C.btn('Ghi tổn thất', () => { if (U.confirm('Ghi nhận hàng đơn ' + si.code + ' bị THẤT LẠC (không về kho, ghi tổn thất)?')) { makeReturn(si, true); draw(); } }, 'sm danger')));
 
       tb.appendChild(U.el('tr', { style: !realized ? 'background:rgba(231,111,81,0.07)' : (si.reconciled ? 'background:rgba(124,179,66,0.10)' : '') }, [
-        U.el('td', null, U.date(si.date)),
-        U.el('td', null, U.esc(si.code)),
-        U.el('td', null, cust ? U.esc(cust.name) : ''),
-        U.el('td', null, stSel),
-        U.el('td', { class: 'num' }, U.money(PW.invoiceTotal(si))),
-        U.el('td', { class: 'num' }, realized ? U.el('b', null, U.money(expNet)) : U.el('span', { class: 'text-muted' }, '—')),
-        U.el('td', { class: 'num' }, settledI),
-        U.el('td', { class: 'num' }, diffCell),
-        U.el('td', { class: 'center' }, chk),
-        U.el('td', null, goodsKids),
+        U.el('td', { 'data-label': 'Ngày' }, U.date(si.date)),
+        U.el('td', { 'data-label': 'Số HĐ' }, U.esc(si.code)),
+        U.el('td', { 'data-label': 'Khách' }, cust ? U.esc(cust.name) : ''),
+        U.el('td', { 'data-label': 'Trạng thái' }, stSel),
+        U.el('td', { class: 'num', 'data-label': 'Doanh thu' }, U.money(PW.invoiceTotal(si))),
+        U.el('td', { class: 'num', 'data-label': 'Thực nhận sổ' }, realized ? U.el('b', null, U.money(expNet)) : U.el('span', { class: 'text-muted' }, '—')),
+        U.el('td', { class: 'num', 'data-label': 'Tiền sàn thực trả' }, settledI),
+        U.el('td', { class: 'num', 'data-label': 'Lệch' }, diffCell),
+        U.el('td', { class: 'center', 'data-label': 'Đã ĐS' }, chk),
+        U.el('td', { 'data-label': 'Hàng (kho)' }, goodsKids),
       ]));
     });
     if (!rows.length) {

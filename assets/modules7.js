@@ -129,7 +129,7 @@ M.payrollDetail = function (id) {
 
   const totalCell = U.el('span', { style: 'font-weight:700' });
   const wrap = U.el('div', { class: 'table-wrap' });
-  const tbl = U.el('table', { class: 'tbl payroll-tbl' });
+  const tbl = U.el('table', { class: 'tbl payroll-tbl tbl-cards' });
   const heads = ['NV', 'Lương CB', 'Tổng NC', 'NC có PC', 'Tăng ca (h)',
     'Lương chính', 'Trách nhiệm', 'Phụ cấp', 'Làm thêm', 'Thưởng',
     'Phạt', 'BHXH', 'Ứng', 'ĐT', 'Thực lĩnh', ''];
@@ -169,22 +169,22 @@ M.payrollDetail = function (id) {
       const e = empById(ln.employeeId) || { name: '(đã xóa)', salaryBase: 0 };
       const luongChinh = U.el('span'), tn = U.el('span'), pc = U.el('span'), lamThem = U.el('span'), net = U.el('span', { style: 'font-weight:700' });
       const tr = U.el('tr', null, [
-        U.el('td', null, U.esc(e.name)),
-        U.el('td', { class: 'num' }, U.money(e.salaryBase || 0)),
-        U.el('td', { class: 'num' }, numInput(ln, 'totalDays', 60)),
-        U.el('td', { class: 'num' }, numInput(ln, 'allowDays', 60)),
-        U.el('td', { class: 'num' }, numInput(ln, 'otHours', 55)),
-        U.el('td', { class: 'num' }, luongChinh),
-        U.el('td', { class: 'num' }, tn),
-        U.el('td', { class: 'num' }, pc),
-        U.el('td', { class: 'num' }, lamThem),
-        U.el('td', { class: 'num' }, numInput(ln, 'bonus', 85)),
-        U.el('td', { class: 'num' }, numInput(ln, 'lateFine', 75)),
-        U.el('td', { class: 'num' }, numInput(ln, 'bhxh', 75)),
-        U.el('td', { class: 'num' }, numInput(ln, 'advance', 80)),
-        U.el('td', { class: 'num' }, numInput(ln, 'phoneUse', 70)),
-        U.el('td', { class: 'num' }, net),
-        U.el('td', { class: 'center' }, U.el('button', { class: 'btn sm', onclick: () => M.payslip(p, ln) }, 'Phiếu')),
+        U.el('td', { 'data-label': 'Nhân viên' }, U.esc(e.name)),
+        U.el('td', { class: 'num', 'data-label': 'Lương CB' }, U.money(e.salaryBase || 0)),
+        U.el('td', { class: 'num', 'data-label': 'Tổng ngày công' }, numInput(ln, 'totalDays', 60)),
+        U.el('td', { class: 'num', 'data-label': 'NC có phụ cấp' }, numInput(ln, 'allowDays', 60)),
+        U.el('td', { class: 'num', 'data-label': 'Tăng ca (giờ)' }, numInput(ln, 'otHours', 55)),
+        U.el('td', { class: 'num', 'data-label': 'Lương chính' }, luongChinh),
+        U.el('td', { class: 'num', 'data-label': 'Trách nhiệm' }, tn),
+        U.el('td', { class: 'num', 'data-label': 'Phụ cấp' }, pc),
+        U.el('td', { class: 'num', 'data-label': 'Làm thêm' }, lamThem),
+        U.el('td', { class: 'num', 'data-label': 'Thưởng' }, numInput(ln, 'bonus', 85)),
+        U.el('td', { class: 'num', 'data-label': 'Phạt' }, numInput(ln, 'lateFine', 75)),
+        U.el('td', { class: 'num', 'data-label': 'BHXH' }, numInput(ln, 'bhxh', 75)),
+        U.el('td', { class: 'num', 'data-label': 'Ứng' }, numInput(ln, 'advance', 80)),
+        U.el('td', { class: 'num', 'data-label': 'Điện thoại' }, numInput(ln, 'phoneUse', 70)),
+        U.el('td', { class: 'num', 'data-label': 'Thực lĩnh' }, net),
+        U.el('td', { class: 'center', 'data-label': '' }, U.el('button', { class: 'btn sm', onclick: () => M.payslip(p, ln) }, 'Phiếu')),
       ]);
       tb.appendChild(tr);
       netCells.push({ ln, luongChinh, tn, pc, lamThem, net });

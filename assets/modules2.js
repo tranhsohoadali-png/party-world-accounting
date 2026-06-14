@@ -379,8 +379,11 @@ M.productPicker = function (initialId, onPick, opts) {
   refresh();
 
   function position() { if (!panel) return; const r = btn.getBoundingClientRect();
-    panel.style.left = Math.min(r.left, window.innerWidth - 470) + 'px';
-    panel.style.top = (r.bottom + 2) + 'px'; panel.style.width = Math.max(r.width, 450) + 'px'; }
+    // Trên điện thoại: panel rộng tối đa = vừa màn hình (chừa 16px lề), không tràn ngang
+    const w = Math.min(Math.max(r.width, 450), window.innerWidth - 16);
+    panel.style.width = w + 'px';
+    panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+    panel.style.top = (r.bottom + 2) + 'px'; }
   function close() { if (!panel) return; panel.remove(); panel = null;
     document.removeEventListener('mousedown', onDoc, true); window.removeEventListener('scroll', position, true); window.removeEventListener('resize', position); }
   function onDoc(e) { if (panel && !panel.contains(e.target) && e.target !== btn) close(); }
