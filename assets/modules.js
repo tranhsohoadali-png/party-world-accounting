@@ -635,9 +635,11 @@ M.partners = function (root, kind) {
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
   const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã / điện thoại...' });
+  const debtSel = C.select([{ value: '', label: 'Tất cả công nợ' }, { value: 'owing', label: 'Còn nợ' }, { value: 'clear', label: 'Hết nợ' }], '');
   const bulkBtn = C.btn('🗑 Xóa đã chọn', () => bulkDelete(), 'danger sm');
   bulkBtn.style.display = 'none';
   toolbar.appendChild(search);
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Công nợ'), debtSel]));
   toolbar.appendChild(bulkBtn);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('📊 Xuất Excel', () => doExport(), 'sm'));
@@ -651,8 +653,12 @@ M.partners = function (root, kind) {
 
   function filtered() {
     const q = search.value.trim().toLowerCase();
-    return list.filter(x => !q || (x.name || '').toLowerCase().includes(q)
-      || (x.code || '').toLowerCase().includes(q) || (x.phone || '').includes(q));
+    const ds = debtSel.value;
+    return list.filter(x => {
+      if (q && !((x.name || '').toLowerCase().includes(q) || (x.code || '').toLowerCase().includes(q) || (x.phone || '').includes(q))) return false;
+      if (ds) { const d = debtFn(x.id); if (ds === 'owing' && d <= 0) return false; if (ds === 'clear' && d > 0) return false; }
+      return true;
+    });
   }
   function fmtDebt(d) {
     if (d < 0) return `<span class="text-red">(${U.money(-d)})</span>`;
@@ -757,6 +763,7 @@ M.partners = function (root, kind) {
     updateBulk();
   }
   search.addEventListener('input', () => { page = 1; draw(); });
+  debtSel.addEventListener('change', () => { page = 1; draw(); });
   draw();
 };
 
