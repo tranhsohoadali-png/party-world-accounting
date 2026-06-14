@@ -93,6 +93,7 @@ function pw_allowed_sections(string $role): ?array {
       'salesDiscounts',  // Giảm giá hàng bán
       'products',        // Thêm/sửa hàng hóa (màn Hàng hóa + quick-add trong form)
       'customers',       // Thêm/sửa khách hàng
+      'partnerGroups',   // Thêm nhanh nhóm khách hàng từ form Khách hàng
       'productAliases',  // Học bí danh khi gom đơn ký gửi
       'employees',       // quick-add nhân viên từ form HĐ bán
       'paymentTerms',    // quick-add điều khoản thanh toán từ form HĐ bán

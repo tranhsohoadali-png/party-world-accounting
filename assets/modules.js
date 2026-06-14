@@ -594,15 +594,18 @@ M.partners = function (root, kind) {
     if (!pageRows.length) {
       tb.appendChild(U.el('tr', null, U.el('td', { colspan: 8 }, U.el('div', { class: 'empty' }, 'Chưa có dữ liệu'))));
     }
+    // Nhân viên (chế độ server) KHÔNG được thao tác tiền (thu/chi) -> ẩn nút, tránh 403 khó hiểu
+    const restricted = PW.mode === 'server' && PW.user && PW.user.role === 'nhanvien';
     pageRows.forEach(x => {
       const chk = U.el('input', { type: 'checkbox' });
       chk.checked = selected.has(x.id);
       chk.addEventListener('change', () => { chk.checked ? selected.add(x.id) : selected.delete(x.id); updateBulk(); });
       const acts = isCus
-        ? [{ label: 'Lập hóa đơn', cls: 'primary', onClick: () => M.salesForm(null, x.id) },
-           { label: 'Thu tiền', onClick: () => M.receiptForm(null, x.id) }]
-        : [{ label: 'Lập phiếu nhập', cls: 'primary', onClick: () => M.purchaseForm(null, x.id) },
-           { label: 'Trả tiền', onClick: () => M.paymentForm(null, x.id) }];
+        ? [{ label: 'Lập hóa đơn', cls: 'primary', onClick: () => M.salesForm(null, x.id) }]
+        : [{ label: 'Lập phiếu nhập', cls: 'primary', onClick: () => M.purchaseForm(null, x.id) }];
+      if (!restricted) acts.push(isCus
+        ? { label: 'Thu tiền', onClick: () => M.receiptForm(null, x.id) }
+        : { label: 'Trả tiền', onClick: () => M.paymentForm(null, x.id) });
       acts.push({ label: 'Sổ', onClick: () => M.debtLedger(kind, x.id) });
       acts.push({ label: 'Sửa', onClick: () => M.partnerForm(kind, x) });
       acts.push({ label: 'Xóa', cls: 'danger', onClick: () => { if (U.confirm('Xóa "' + x.name + '"?')) removeOne(x.id); } });
@@ -650,10 +653,12 @@ M.partnerForm = function (kind, x) {
   const tInd = U.el('input', { type: 'radio', name: 'pw-ptype', value: 'individual' });
   (x.type === 'individual' ? tInd : tOrg).checked = true;
   const alsoChk = U.el('input', { type: 'checkbox' }); if (x.alsoOther) alsoChk.checked = true;
+  // Nhân viên (server) không được tạo NCC -> ẩn lựa chọn "cũng là ..." (tránh ghi suppliers -> 403 mất cả lưu)
+  const pfRestricted = PW.mode === 'server' && PW.user && PW.user.role === 'nhanvien';
   const typeRow = U.el('div', { class: 'full', style: 'display:flex;gap:26px;align-items:center;flex-wrap:wrap' }, [
     U.el('label', { class: 'radio' }, [tOrg, ' Tổ chức']),
     U.el('label', { class: 'radio' }, [tInd, ' Cá nhân']),
-    U.el('label', { class: 'radio' }, [alsoChk, ' ' + (isCus ? 'Là nhà cung cấp' : 'Là khách hàng')]),
+    pfRestricted ? null : U.el('label', { class: 'radio' }, [alsoChk, ' ' + (isCus ? 'Là nhà cung cấp' : 'Là khách hàng')]),
   ]);
 
   const f = {

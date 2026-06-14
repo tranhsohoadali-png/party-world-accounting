@@ -475,7 +475,8 @@ M.docForm = function (cfg) {
     clearTimeout(_draftTimer);
     _draftTimer = setTimeout(function () {
       const s = _draftSnapshot();
-      if ((s.items || []).some(it => it.productId) || (s.note && s.note.trim()) || s.discount > 0 || s.paid > 0)
+      // chỉ lưu nháp khi "đáng" (cùng điều kiện với lúc hỏi khôi phục): có dòng hàng hoặc diễn giải
+      if ((s.items || []).some(it => it.productId) || (s.note && s.note.trim()))
         M.draft.save(mode, s);
     }, 800);
   }
@@ -750,7 +751,7 @@ M.docForm = function (cfg) {
 
   C.modal({
     title, wide: true, body,
-    footer: [C.btn('Hủy', () => { if (isNew) M.draft.clear(mode); C.closeModal(); }), C.btn('Lưu chứng từ', () => {
+    footer: [C.btn('Hủy', () => { clearTimeout(_draftTimer); if (isNew) M.draft.clear(mode); C.closeModal(); }), C.btn('Lưu chứng từ', () => {
       const valid = items.filter(it => it.productId && Number(it.qty) > 0);
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng hợp lệ', 'error');
       if (!partnerI.value) return U.toast('Chọn ' + partnerLabel.toLowerCase(), 'error');
@@ -794,6 +795,7 @@ M.docForm = function (cfg) {
       onSave(obj);
       PW.logActivity(isNew ? 'create' : 'update', isSale ? 'salesInvoice' : 'purchase', obj.code,
         U.money(isSale ? PW.invoiceTotal(obj) : PW.purchaseTotal(obj)) + ' đ');
+      clearTimeout(_draftTimer);        // (B3) chặn timer debounce ghi lại nháp sau khi đã lưu
       if (isNew) M.draft.clear(mode);   // (B3) xóa nháp sau khi lưu thành công
       PW.save(); C.closeModal(); App.refresh();
       U.toast(isSale ? 'Đã lưu hóa đơn bán' : 'Đã lưu phiếu nhập');

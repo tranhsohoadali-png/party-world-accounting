@@ -252,11 +252,18 @@ M.activityLogScreen = function (root) {
   card.appendChild(bar);
   const host = U.el('div'); card.appendChild(host); root.appendChild(card);
 
+  const _p2 = n => String(n).padStart(2, '0');
+  // Ngày theo MÚI GIỜ ĐỊA PHƯƠNG (ts lưu dạng ISO/UTC) — để khớp với from/to (cũng là ngày local)
+  function localYmd(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + _p2(d.getMonth() + 1) + '-' + _p2(d.getDate());
+  }
   function filtered() {
     const f = fromI.value, t = toI.value, who = whoSel.value, ty = typeSel.value;
     const kw = q.value.trim().toLowerCase();
     return log.filter(x => {
-      const d = (x.ts || '').slice(0, 10);
+      const d = localYmd(x.ts);
       if (f && d < f) return false;
       if (t && d > t) return false;
       if (who && x.actor !== who) return false;
@@ -268,8 +275,7 @@ M.activityLogScreen = function (root) {
   function fmtTs(ts) {
     if (!ts) return '';
     const d = new Date(ts);
-    const p = n => String(n).padStart(2, '0');
-    return U.date(ts.slice(0, 10)) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    return U.date(localYmd(ts)) + ' ' + _p2(d.getHours()) + ':' + _p2(d.getMinutes());
   }
   function draw() {
     host.innerHTML = '';
