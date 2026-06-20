@@ -576,6 +576,34 @@ M.productForm = function (p, opts) {
   f.name.addEventListener('input', fillGroupDL);
   f.code.addEventListener('input', fillGroupDL);
 
+  // ----- Chọn nhanh KÍCH THƯỚC cho Nhóm hàng + tự nạp NVL cùng kích thước cho thành phẩm -----
+  const sizeChips = U.el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px' });
+  const groupWrap = U.el('div', null, [f.group, sizeChips]);
+  function loadBomForSize(sz) {
+    const nvls = M.nvlForSize(sz).filter(x => x.id !== (p.id || ''));
+    if (!nvls.length) { U.toast('Chưa có NVL nào thuộc kích thước ' + sz + ' — thêm NVL nhóm "Nguyên vật liệu ' + sz + '" trước', 'error'); return; }
+    const existing = bom.filter(b => b.materialId);
+    if (existing.length && !U.confirm('Thay định mức NVL hiện tại bằng ' + nvls.length + ' NVL kích thước ' + sz + '?')) return;
+    bom = nvls.map(x => ({ materialId: x.id, qty: 1 }));
+    bomSection.style.display = '';
+    drawBom(); refreshBomCost();
+    U.toast('Đã nạp ' + nvls.length + ' NVL theo kích thước ' + sz);
+  }
+  function pickSize(sz) {
+    const k = f.kind.value;
+    f.group.value = (k === 'nvl' ? 'Nguyên vật liệu ' : '') + sz;
+    fillGroupDL();
+    if (k === 'thanhpham') loadBomForSize(sz);   // thành phẩm: chọn size -> NVL cùng size nhảy ra ngay
+  }
+  function fillSizeChips() {
+    sizeChips.innerHTML = '';
+    const sizes = M.nvlSizes();
+    if (!sizes.length) return;
+    sizeChips.appendChild(U.el('span', { class: 'text-muted', style: 'font-size:11px;align-self:center;margin-right:2px' },
+      f.kind.value === 'thanhpham' ? 'Chọn kích thước (tự nạp NVL):' : 'Kích thước:'));
+    sizes.forEach(sz => { const c = C.btn(sz, () => pickSize(sz), 'sm'); c.type = 'button'; sizeChips.appendChild(c); });
+  }
+
   // Hiện/ẩn section theo tính chất
   function applyKind() {
     const k = f.kind.value;
@@ -586,6 +614,7 @@ M.productForm = function (p, opts) {
     f.cost.parentElement.style.display = hide ? 'none' : '';
     f.price.parentElement.style.display = hide ? 'none' : '';
     fillGroupDL();
+    fillSizeChips();
   }
   f.kind.addEventListener('change', applyKind);
 
@@ -608,7 +637,7 @@ M.productForm = function (p, opts) {
       C.field('Tính chất', f.kind),
       C.field('Mã hàng', f.code, { required: true }),
       C.field('Tên hàng hóa', f.name, { required: true, full: true }),
-      C.field('Nhóm hàng', f.group),
+      C.field('Nhóm hàng', groupWrap),
       C.field('Đơn vị tính', f.unit),
       C.field('Tồn kho đầu kỳ', f.stock),
       C.field('Tồn tối thiểu (cảnh báo)', f.minStock),

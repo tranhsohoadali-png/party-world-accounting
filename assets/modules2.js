@@ -304,6 +304,23 @@ M.materialSelect = function (excludeId, value) {
   return sel;
 };
 
+// Kích thước của 1 NVL (ưu tiên đọc từ nhóm hàng, rồi tên/mã)
+M.nvlSizeOf = function (p) {
+  return M.detectSize(p.group || '') || M.detectSize((p.code || '') + ' ' + p.name) || '';
+};
+// Danh sách các kích thước CÓ nguyên vật liệu (gộp từ nhóm gắn NVL + sản phẩm NVL)
+M.nvlSizes = function () {
+  const set = new Set();
+  (PW.data.productGroups || []).forEach(g => { if (g.kind === 'nvl') { const s = M.detectSize(g.name); if (s) set.add(s); } });
+  PW.data.products.forEach(p => { if (M.isMaterialKind(p.kind)) { const s = M.nvlSizeOf(p); if (s) set.add(s); } });
+  return [...set].sort((a, b) => String(a).localeCompare(String(b), 'vi', { numeric: true }));
+};
+// Các NVL thuộc 1 kích thước (để tự nạp vào định mức thành phẩm)
+M.nvlForSize = function (size) {
+  const norm = M.detectSize(size) || String(size || '');
+  return PW.data.products.filter(p => M.isMaterialKind(p.kind) && M.nvlSizeOf(p) === norm);
+};
+
 // Bước 1: chọn tính chất hàng hóa
 M.productTypeChooser = function (onPick) {
   const list = U.el('div', { class: 'kind-list' });
