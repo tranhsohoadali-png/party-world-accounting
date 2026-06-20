@@ -488,11 +488,12 @@ M.productForm = function (p, opts) {
   const isNew = !p;
   const quick = !!(opts && opts.onSaved);   // thêm nhanh: mở chồng (lớp 2) + chọn lại
   p = p || { code: PW.nextCode('HH'), name: '', group: '', unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
+  const groupDLId = 'dl-pgroups-' + PW.uid();   // id riêng từng form -> tránh trùng id khi mở chồng (combo -> thêm nhanh)
   const f = {
     kind: C.select((M.PRODUCT_KINDS || [{ kind: 'hanghoa', label: 'Hàng hóa' }]).map(k => ({ value: k.kind, label: k.label })), p.kind || 'hanghoa'),
     code: C.input({ value: p.code }),
     name: C.input({ value: p.name }),
-    group: C.input({ value: p.group || '', list: 'dl-pgroups' }),
+    group: C.input({ value: p.group || '', list: groupDLId }),
     unit: C.input({ value: p.unit, list: 'dl-punits' }),
     cost: C.input({ type: 'number', value: p.cost, min: 0 }),
     price: C.input({ type: 'number', value: p.price, min: 0 }),
@@ -508,8 +509,7 @@ M.productForm = function (p, opts) {
   function drawBom() {
     bomBody.innerHTML = '';
     bom.forEach((b, idx) => {
-      const sel = C.select([{ value: '', label: '-- Chọn NVL --' }].concat(
-        PW.data.products.filter(x => x.id !== (p.id || '')).map(x => ({ value: x.id, label: x.code + ' - ' + x.name }))), b.materialId);
+      const sel = M.materialSelect(p.id || '', b.materialId);   // loại thành phẩm/combo/dịch vụ + gom nhóm theo kích thước
       sel.addEventListener('change', () => { b.materialId = sel.value; drawBom(); refreshBomCost(); });
       const q = U.el('input', { type: 'number', value: b.qty, min: 0, step: 'any', style: 'text-align:right' });
       q.addEventListener('input', () => { b.qty = Number(q.value) || 0; refreshBomCost(); });
@@ -562,6 +562,19 @@ M.productForm = function (p, opts) {
   ]);
   drawCombo();
 
+  // Datalist "Nhóm hàng" lọc theo Tính chất (NVL gợi ý nhóm NVL theo kích thước, không lẫn nhóm thành phẩm)
+  const groupDL = U.el('datalist', { id: groupDLId });
+  function fillGroupDL() {
+    const k = f.kind.value;
+    const names = PW.data.productGroups.filter(g => !g.kind || g.kind === k).map(g => g.name);
+    const sz = M.detectSize((f.code.value || '') + ' ' + f.name.value);
+    if (sz) names.unshift((k === 'nvl' ? 'Nguyên vật liệu ' : '') + sz);   // gợi ý nhóm theo kích thước trong tên
+    groupDL.innerHTML = '';
+    [...new Set(names)].forEach(v => groupDL.appendChild(U.el('option', { value: v })));
+  }
+  f.name.addEventListener('input', fillGroupDL);
+  f.code.addEventListener('input', fillGroupDL);
+
   // Hiện/ẩn section theo tính chất
   function applyKind() {
     const k = f.kind.value;
@@ -571,6 +584,7 @@ M.productForm = function (p, opts) {
     const hide = (k === 'nvl');
     f.cost.parentElement.style.display = hide ? 'none' : '';
     f.price.parentElement.style.display = hide ? 'none' : '';
+    fillGroupDL();
   }
   f.kind.addEventListener('change', applyKind);
 
@@ -600,7 +614,7 @@ M.productForm = function (p, opts) {
       C.field('Giá vốn (đ)', f.cost),
       C.field('Giá bán (đ)', f.price),
     ]),
-    M.datalist('dl-pgroups', PW.data.productGroups.map(g => g.name)),
+    groupDL,
     M.datalist('dl-punits', PW.data.units.map(u => u.name)),
     chSection,
     bomSection,

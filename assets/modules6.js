@@ -20,7 +20,11 @@ M.CATALOGS = {
   },
   'cat-groups': {
     data: 'productGroups', title: 'Nhóm hàng hóa', icon: '🗂️',
-    fields: [{ k: 'name', l: 'Tên nhóm', req: true, full: true }],
+    fields: [
+      { k: 'name', l: 'Tên nhóm', req: true, full: true },
+      { k: 'kind', l: 'Áp dụng cho tính chất', type: 'select',
+        options: [{ value: '', label: 'Tất cả tính chất' }].concat((M.PRODUCT_KINDS || []).map(x => ({ value: x.kind, label: x.label }))) },
+    ],
   },
   'cat-units': {
     data: 'units', title: 'Đơn vị tính', icon: '📏',
@@ -119,7 +123,11 @@ M.simpleCatalog = function (root, id) {
     if (cfg.codePrefix) cols.push({ label: 'Mã', render: r => U.esc(r.code) });
     cfg.fields.forEach(f => cols.push({
       label: f.l, num: f.type === 'number',
-      render: r => f.type === 'number' ? U.num(r[f.k] || 0) : U.esc(r[f.k] || ''),
+      render: r => {
+        if (f.type === 'number') return U.num(r[f.k] || 0);
+        if (f.type === 'select') { const o = (f.options || []).find(o => String(o.value) === String(r[f.k] || '')); return U.esc(o ? o.label : (r[f.k] || '')); }
+        return U.esc(r[f.k] || '');
+      },
     }));
     cols.push({ label: '', render: r => C.actions([
       { label: 'Sửa', onClick: () => M.catalogForm(id, r) },
@@ -145,7 +153,9 @@ M.catalogForm = function (id, item) {
   const rows = [];
   if (codeI) rows.push(C.field('Mã', codeI));
   cfg.fields.forEach(f => {
-    const inp = C.input({ type: f.type || 'text', value: item[f.k] != null ? item[f.k] : '' });
+    const inp = f.type === 'select'
+      ? C.select(f.options || [], item[f.k] != null ? item[f.k] : '')
+      : C.input({ type: f.type || 'text', value: item[f.k] != null ? item[f.k] : '' });
     inputs[f.k] = inp;
     rows.push(C.field(f.l, inp, { required: f.req, full: f.full }));
   });

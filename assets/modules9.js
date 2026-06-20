@@ -49,7 +49,10 @@ M.productionForm = function (po) {
 
   const codeI = C.input({ value: po.code });
   const dateI = C.input({ type: 'date', value: po.date });
-  const prodSel = C.select(PW.data.products.map(p => ({ value: p.id, label: p.code + ' - ' + p.name })), po.productId);
+  // Thành phẩm sản xuất = chỉ thành phẩm (hoặc món có định mức / đang chọn) — không liệt kê NVL
+  const prodSel = C.select(PW.data.products
+    .filter(p => p.kind === 'thanhpham' || (p.bom && p.bom.length) || p.id === po.productId)
+    .map(p => ({ value: p.id, label: p.code + ' - ' + p.name })), po.productId);
   const qtyI = C.input({ type: 'number', value: po.qty, min: 0, style: 'width:120px;text-align:right' });
   const laborI = C.input({ type: 'number', value: po.laborCost, min: 0, style: 'width:150px;text-align:right' });
   const otherI = C.input({ type: 'number', value: po.otherCost, min: 0, style: 'width:150px;text-align:right' });
@@ -74,7 +77,7 @@ M.productionForm = function (po) {
   function drawMats() {
     matBody.innerHTML = '';
     materials.forEach((m, idx) => {
-      const sel = C.select([{ value: '', label: '-- NVL --' }].concat(PW.data.products.map(p => ({ value: p.id, label: p.code + ' - ' + p.name }))), m.productId);
+      const sel = M.materialSelect(prodSel.value || '', m.productId);   // loại thành phẩm/combo/dịch vụ, gom theo kích thước
       sel.addEventListener('change', () => { m.productId = sel.value; drawMats(); calc(); });
       const q = U.el('input', { type: 'number', value: m.qty, min: 0, style: 'text-align:right' });
       q.addEventListener('input', () => { m.qty = Number(q.value) || 0; lt(); });

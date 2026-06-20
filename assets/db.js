@@ -23,6 +23,43 @@ PW._normalize = function () {
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
+
+  // (1 lần) Đảm bảo có sẵn nhóm NVL theo kích thước người dùng yêu cầu
+  if (!PW.data.meta.seededNvlGroups) {
+    ['20x20', '30x30', '37.5'].forEach(sz => {
+      const nm = 'Nguyên vật liệu ' + sz;
+      if (!PW.data.productGroups.some(g => (g.name || '').trim().toLowerCase() === nm.toLowerCase()))
+        PW.data.productGroups.push({ id: PW.uid(), name: nm, kind: 'nvl' });
+    });
+    PW.data.meta.seededNvlGroups = true;
+  }
+
+  // (1 lần) Tách Nhóm hàng khỏi Tính chất: nếu nhóm trống hoặc chỉ lặp lại tên tính chất
+  // -> đặt nhóm theo kích thước phát hiện trong tên (NVL: "Nguyên vật liệu 20x20", TP: "20x20").
+  if (!PW.data.meta.migratedSizeGroups) {
+    const kindLabel = { hanghoa: 'Hàng hóa', dichvu: 'Dịch vụ', nvl: 'Nguyên vật liệu', thanhpham: 'Thành phẩm', ccdc: 'Công cụ dụng cụ', combo: 'Combo' };
+    (PW.data.products || []).forEach(p => {
+      const g = (p.group || '').trim();
+      const echoesKind = !g || g.toLowerCase() === (kindLabel[p.kind] || '').toLowerCase();
+      if (!echoesKind) return;                       // giữ nguyên nhóm tùy chỉnh có ý nghĩa
+      const sz = PW.detectSize((p.code || '') + ' ' + p.name);
+      if (!sz) return;
+      p.group = (p.kind === 'nvl' ? 'Nguyên vật liệu ' : '') + sz;
+    });
+    PW.data.meta.migratedSizeGroups = true;
+  }
+};
+
+// Phát hiện kích thước trong tên/mã hàng: "20x20", "20×20", "37.5", "40x50", "1m52"...
+PW.detectSize = function (s) {
+  s = String(s || '');
+  let m = s.match(/(\d{1,3}(?:[.,]\d+)?)\s*[x×]\s*(\d{1,3}(?:[.,]\d+)?)/i);   // 20x20 / 40×50
+  if (m) return m[1].replace(',', '.') + 'x' + m[2].replace(',', '.');
+  m = s.match(/(\d{1,2})\s*m\s*(\d{1,2})\b/i);                                 // 1m52
+  if (m) return m[1] + 'm' + m[2];
+  m = s.match(/(?:^|[\s_\-])(\d{2,3}[.,]\d+)(?:$|[\s_\-])/);                   // 37.5 đứng riêng
+  if (m) return m[1].replace(',', '.');
+  return '';
 };
 
 /* ---------- Gọi API server ---------- */

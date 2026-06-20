@@ -257,6 +257,52 @@ M.PRODUCT_KINDS = [
   { kind: 'ccdc', label: 'Công cụ dụng cụ', desc: 'Công cụ, dụng cụ dùng trong vận hành', icon: 'settings', group: 'Công cụ dụng cụ', prefix: 'CC' },
   { kind: 'combo', label: 'Combo sản phẩm', desc: 'Nhiều hàng hóa bán theo combo', icon: 'grid', group: 'Combo', prefix: 'CB' },
 ];
+M.PRODUCT_KIND_LABEL = function (k) { const o = (M.PRODUCT_KINDS || []).find(x => x.kind === k); return o ? o.label : k; };
+
+/* ---------- Nguyên vật liệu (định mức / lệnh sản xuất) ----------
+   Tính chất được phép làm NVL = nguyên vật liệu, hàng hóa, công cụ dụng cụ.
+   KHÔNG gồm thành phẩm / combo / dịch vụ (thành phẩm là ĐẦU RA, không phải đầu vào). */
+M.MATERIAL_KINDS = ['nvl', 'hanghoa', 'ccdc'];
+M.isMaterialKind = k => M.MATERIAL_KINDS.indexOf(k || 'hanghoa') >= 0;
+M.detectSize = function (s) { return (typeof PW !== 'undefined' && PW.detectSize) ? PW.detectSize(s) : ''; };
+M.materialProducts = function (excludeId) {
+  return PW.data.products.filter(x => x.id !== (excludeId || '') && M.isMaterialKind(x.kind));
+};
+// Nhãn nhóm để gom <optgroup>: ưu tiên nhóm hàng đã khai, nếu không thì theo kích thước phát hiện
+M.groupLabelFor = function (p) {
+  const g = (p.group || '').trim();
+  if (g) return g;
+  const sz = M.detectSize((p.code || '') + ' ' + p.name);
+  return sz ? 'Kích thước ' + sz : 'Khác';
+};
+// <select> chọn NVL có <optgroup> theo nhóm/kích thước; giữ lại lựa chọn cũ kể cả khi không phải NVL
+M.materialSelect = function (excludeId, value) {
+  const sel = U.el('select', { class: 'inp' });
+  sel.appendChild(U.el('option', { value: '' }, '-- Chọn NVL --'));
+  let mats = M.materialProducts(excludeId);
+  let legacy = null;
+  if (value && !mats.some(p => String(p.id) === String(value))) {
+    const cur = PW.product(value);
+    if (cur) {                                      // dữ liệu cũ: vẫn hiện để không mất lựa chọn
+      if (M.isMaterialKind(cur.kind)) mats = mats.concat([cur]);
+      else legacy = cur;                            // chọn nhầm thành phẩm/combo/dịch vụ -> tách riêng, cảnh báo
+    }
+  }
+  const groups = {};
+  mats.forEach(p => { const g = M.groupLabelFor(p); (groups[g] = groups[g] || []).push(p); });
+  Object.keys(groups).sort((a, b) => String(a).localeCompare(String(b), 'vi')).forEach(g => {
+    const og = U.el('optgroup', { label: g });
+    groups[g].forEach(p => og.appendChild(U.el('option', { value: p.id }, (p.code ? p.code + ' - ' : '') + p.name)));
+    sel.appendChild(og);
+  });
+  if (legacy) {
+    const og = U.el('optgroup', { label: '⚠ Lựa chọn cũ (không phải NVL — nên đổi)' });
+    og.appendChild(U.el('option', { value: legacy.id }, (legacy.code ? legacy.code + ' - ' : '') + legacy.name));
+    sel.appendChild(og);
+  }
+  sel.value = value ? String(value) : '';
+  return sel;
+};
 
 // Bước 1: chọn tính chất hàng hóa
 M.productTypeChooser = function (onPick) {
@@ -281,7 +327,7 @@ M.quickAddProduct = function (isSale, onAdded) {
 M._quickAddProductForm = function (isSale, kindObj, onAdded) {
   const codeP = C.input({ value: PW.nextCode(kindObj.prefix || 'HH'), style: 'width:100%' });
   const nameI = C.input({ style: 'width:100%' });
-  const groupI = C.input({ value: kindObj.group, list: 'dl-qa-groups', style: 'width:100%' });
+  const groupI = C.input({ value: '', list: 'dl-qa-groups', placeholder: 'theo kích thước/chủ đề (không bắt buộc)', style: 'width:100%' });
   const unitI = C.input({ value: kindObj.kind === 'dichvu' ? 'Lần' : 'Cái', style: 'width:100%' });
   const priceI = C.input({ type: 'number', value: 0, style: 'width:100%' });
   const costI = C.input({ type: 'number', value: 0, style: 'width:100%' });
