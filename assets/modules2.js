@@ -40,6 +40,9 @@ M.sales = function (root) {
   card.appendChild(fb.el);
   card.appendChild(host);
   root.appendChild(card);
+  const detailHost = U.el('div');   // bảng "Chi tiết" của hóa đơn đang chọn (kiểu MISA)
+  root.appendChild(detailHost);
+  function showDetail(si) { detailHost.innerHTML = ''; detailHost.appendChild(M.docDetailPanel(si, 'sale')); }
 
   function draw() {
     const st = fb.getState();
@@ -80,13 +83,48 @@ M.sales = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc', footer: [
+    ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc', onRowClick: si => showDetail(si), selectFirst: true, footer: [
       { colspan: 4, html: 'TỔNG (' + rows.length + ' hóa đơn)' },
       { num: true, html: U.money(sHang) }, { num: true, html: U.money(sThue) }, { num: true, html: U.money(sTong) },
       { html: '' }, { html: '' },
     ] }));
+    if (rows.length) showDetail(rows[0]); else detailHost.innerHTML = '';   // chọn sẵn dòng đầu
   }
   draw();
+};
+
+/* Bảng "Chi tiết" hiện dưới danh sách cho dòng đang chọn (master–detail kiểu MISA) */
+M.docDetailPanel = function (doc, kind) {
+  const isSale = kind === 'sale';
+  const rate = Number(doc.vatRate || 0);
+  const party = isSale ? PW.customer(doc.customerId) : PW.supplier(doc.supplierId);
+  const items = (doc.items || []).map((it, i) => {
+    const p = PW.product(it.productId);
+    const price = Number((isSale ? it.price : it.cost) || 0);
+    const tien = Number(it.qty) * price;
+    return { i: i + 1, code: p ? p.code : '', name: p ? p.name : '', unit: p ? p.unit : '', qty: Number(it.qty), price: price, tien: tien, thue: Math.round(tien * rate / 100) };
+  });
+  const totQty = items.reduce((s, x) => s + x.qty, 0);
+  const totTien = items.reduce((s, x) => s + x.tien, 0);
+  const totThue = items.reduce((s, x) => s + x.thue, 0);
+  const table = C.table(items, [
+    { label: '#', center: true, render: x => x.i },
+    { label: 'Mã hàng', render: x => U.esc(x.code) },
+    { label: 'Tên hàng', render: x => U.esc(x.name) },
+    { label: 'ĐVT', center: true, render: x => U.esc(x.unit) },
+    { label: 'Số lượng', num: true, render: x => U.num(x.qty) },
+    { label: 'Đơn giá', num: true, render: x => U.money(x.price) },
+    { label: 'Thành tiền', num: true, render: x => U.money(x.tien) },
+    { label: '% Thuế GTGT', center: true, render: () => rate + '%' },
+    { label: 'Tiền thuế GTGT', num: true, render: x => U.money(x.thue) },
+  ], { empty: 'Không có dòng hàng', footer: [
+    { colspan: 4, html: 'Tổng' },
+    { num: true, html: U.num(totQty) }, { html: '' }, { num: true, html: U.money(totTien) }, { html: '' }, { num: true, html: U.money(totThue) },
+  ] });
+  return U.el('div', { class: 'card', style: 'margin-top:12px' }, [
+    U.el('div', { class: 'card-title', style: 'font-size:14px' }, '📋 Chi tiết: ' + doc.code + (party ? ' — ' + party.name : '')),
+    table,
+  ]);
 };
 
 /* Xem nhanh 1 hóa đơn (chế độ chỉ đọc) — bấm vào Số HĐ ở danh sách */
@@ -213,6 +251,9 @@ M.purchases = function (root) {
   card.appendChild(fb.el);
   card.appendChild(host);
   root.appendChild(card);
+  const detailHost = U.el('div');   // bảng "Chi tiết" của phiếu nhập đang chọn
+  root.appendChild(detailHost);
+  function showDetail(pu) { detailHost.innerHTML = ''; detailHost.appendChild(M.docDetailPanel(pu, 'purchase')); }
 
   function draw() {
     const st = fb.getState();
@@ -251,11 +292,12 @@ M.purchases = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc', footer: [
+    ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc', onRowClick: pu => showDetail(pu), selectFirst: true, footer: [
       { colspan: 4, html: 'TỔNG (' + rows.length + ' phiếu)' },
       { num: true, html: U.money(sHang) }, { num: true, html: U.money(sThue) }, { num: true, html: U.money(sTong) },
       { html: '' }, { html: '' },
     ] }));
+    if (rows.length) showDetail(rows[0]); else detailHost.innerHTML = '';
   }
   draw();
 };

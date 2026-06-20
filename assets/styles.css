@@ -199,6 +199,8 @@ table.tbl th, table.tbl td { padding: 11px 13px; text-align: left; border-bottom
 table.tbl th { background: #f4f7ee; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
 table.tbl tbody tr { transition: background var(--t-fast); }
 table.tbl tbody tr:hover { background: #f5f9ee; }
+table.tbl tbody tr.row-sel, table.tbl tbody tr.row-sel:hover { background: #fff3d6; box-shadow: inset 3px 0 0 var(--teal); }
+body.dark table.tbl tbody tr.row-sel { background: #3a3320; }
 table.tbl td.num, table.tbl th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 table.tbl td.center, table.tbl th.center { text-align: center; }
 .tag { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }

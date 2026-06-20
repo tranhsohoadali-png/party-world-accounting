@@ -104,7 +104,7 @@ C.table = function (rows, columns, opts) {
     tr.appendChild(U.el('td', { colspan: columns.length }, U.el('div', { class: 'empty' }, opts.empty || 'Chưa có dữ liệu')));
     tb.appendChild(tr);
   } else {
-    rows.forEach(row => {
+    rows.forEach((row, ri) => {
       const tr = U.el('tr');
       columns.forEach(c => {
         const td = U.el('td', { class: (c.num ? 'num' : '') + (c.center ? ' center' : ''), 'data-label': (typeof c.label === 'string' ? c.label : '') });
@@ -114,6 +114,16 @@ C.table = function (rows, columns, opts) {
         else td.appendChild(v);
         tr.appendChild(td);
       });
+      if (opts.onRowClick) {
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', e => {
+          if (e.target.closest('button,a,input,select,label,textarea')) return;   // không chọn dòng khi bấm nút/link/ô
+          [...tb.children].forEach(x => x.classList.remove('row-sel'));
+          tr.classList.add('row-sel');
+          opts.onRowClick(row, tr, ri);
+        });
+        if (opts.selectFirst && ri === 0) tr.classList.add('row-sel');
+      }
       tb.appendChild(tr);
     });
   }
