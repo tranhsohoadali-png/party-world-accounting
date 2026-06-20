@@ -4,7 +4,7 @@
    rớt mạng thì lấy bản đã cache → app vẫn mở được khi offline.
    KHÔNG đụng tới /api/ (luôn đi thẳng mạng — giữ nguyên CSRF/đăng nhập/lưu).
    ============================================================ */
-const CACHE = 'dali-pwa-v20260620j';
+const CACHE = 'dali-pwa-v20260620k';
 
 self.addEventListener('install', () => {
   self.skipWaiting();   // kích hoạt SW mới ngay

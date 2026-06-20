@@ -215,7 +215,7 @@ M.purchaseReturns = function (root) {
       { label: 'Số phiếu', render: r => U.esc(r.code) },
       { label: 'Nhà cung cấp', render: r => { const s = PW.supplier(r.supplierId); return s ? U.esc(s.name) : ''; } },
       { label: 'Số mặt hàng', center: true, render: r => r.items.length },
-      { label: 'Giá trị trả lại', num: true, render: r => `<span class="text-red">${U.money(PW.purchaseReturnTotal(r))}</span>` },
+      { label: 'Giá trị trả lại', num: true, render: r => `<span class="text-red">${U.money(PW.purchaseReturnGrand(r))}</span>` },
       { label: 'Lý do', render: r => U.esc(r.note || '') },
       { label: '', render: r => C.actions([
           { label: 'In', onClick: () => M.printPurchaseDoc('return', r) },
@@ -243,6 +243,12 @@ M.purchaseReturnForm = function (pr) {
   const codeI = C.input({ value: pr.code });
   const dateI = C.input({ type: 'date', value: pr.date });
   const supI = C.select(PW.data.suppliers.map(s => ({ value: s.id, label: s.name })), pr.supplierId);
+  // Gắn phiếu nhập gốc -> kế thừa thuế GTGT để trừ công nợ đúng (gồm thuế)
+  const puOpts = sid => [{ value: '', label: '-- Không gắn phiếu nhập --' }].concat(
+    PW.data.purchases.filter(p => p.supplierId === sid).sort((a, b) => a.date < b.date ? 1 : -1)
+      .map(p => ({ value: p.id, label: p.code + ' · ' + U.date(p.date) + ' · ' + U.money(PW.purchaseGrand(p)) + 'đ' })));
+  const puSel = C.select(puOpts(pr.supplierId), pr.purchaseId || '');
+  supI.addEventListener('change', () => M.rebuildSelect(puSel, puOpts(supI.value), ''));
   const noteI = C.input({ value: pr.note || '' });
   const grand = U.el('span', { style: 'font-weight:700' });
   const editor = M.itemsEditor(pr.items.map(it => Object.assign({}, it)), {
@@ -255,7 +261,8 @@ M.purchaseReturnForm = function (pr) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số phiếu', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Trả lại nhà cung cấp', M.partnerAdd(supI, false), { required: true, full: true }),
+      C.field('Trả lại nhà cung cấp', M.partnerAdd(supI, false), { required: true }),
+      C.field('Từ phiếu nhập gốc (để tính đúng thuế)', puSel),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Hàng hóa trả lại nhà cung cấp'),
     editor.wrap,
@@ -271,7 +278,7 @@ M.purchaseReturnForm = function (pr) {
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng', 'error');
       if (!supI.value) return U.toast('Chọn nhà cung cấp', 'error');
       const obj = { id: pr.id || PW.uid(), code: codeI.value, date: dateI.value,
-        supplierId: supI.value, items: valid, note: noteI.value };
+        supplierId: supI.value, purchaseId: puSel.value || null, items: valid, note: noteI.value };
       if (isNew) PW.data.purchaseReturns.push(obj);
       else { const i = PW.data.purchaseReturns.findIndex(x => x.id === obj.id); PW.data.purchaseReturns[i] = obj; }
       PW.logActivity(isNew ? 'create' : 'update', 'purchaseReturn', obj.code, '');
@@ -329,11 +336,17 @@ M.purchaseDiscountForm = function (g) {
     amount: C.input({ type: 'number', value: g.amount, min: 0 }),
     reason: C.input({ value: g.reason || '' }),
   };
+  const puOpts = sid => [{ value: '', label: '-- Không gắn phiếu nhập --' }].concat(
+    PW.data.purchases.filter(p => p.supplierId === sid).sort((a, b) => a.date < b.date ? 1 : -1)
+      .map(p => ({ value: p.id, label: p.code + ' · ' + U.date(p.date) + ' · ' + U.money(PW.purchaseGrand(p)) + 'đ' })));
+  f.pu = C.select(puOpts(g.supplierId), g.purchaseId || '');
+  f.sup.addEventListener('change', () => M.rebuildSelect(f.pu, puOpts(f.sup.value), ''));
   const body = U.el('div', { class: 'form-grid' }, [
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
-    C.field('Nhà cung cấp', M.partnerAdd(f.sup, false), { required: true, full: true }),
-    C.field('Số tiền giảm (đ)', f.amount, { required: true }),
+    C.field('Nhà cung cấp', M.partnerAdd(f.sup, false), { required: true }),
+    C.field('Từ phiếu nhập gốc (để tính đúng thuế)', f.pu),
+    C.field('Số tiền giảm TRƯỚC thuế (đ)', f.amount, { required: true }),
     C.field('Lý do giảm giá', f.reason, { full: true }),
   ]);
   C.modal({
@@ -342,7 +355,7 @@ M.purchaseDiscountForm = function (g) {
       const amt = Number(f.amount.value) || 0;
       if (amt <= 0) return U.toast('Nhập số tiền giảm', 'error');
       const obj = { id: g.id || PW.uid(), code: f.code.value, date: f.date.value,
-        supplierId: f.sup.value, amount: amt, reason: f.reason.value };
+        supplierId: f.sup.value, purchaseId: f.pu.value || null, amount: amt, reason: f.reason.value };
       if (isNew) PW.data.purchaseDiscounts.push(obj);
       else Object.assign(g, obj);
       PW.logActivity(isNew ? 'create' : 'update', 'purchaseDiscount', obj.code, U.money(amt) + ' đ');

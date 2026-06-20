@@ -359,7 +359,7 @@ M.returns = function (root) {
       { label: 'Khách hàng', render: r => { const c = PW.customer(r.customerId); return c ? U.esc(c.name) : ''; } },
       { label: 'HĐ gốc', center: true, render: r => { const si = r.invoiceId && PW.data.salesInvoices.find(x => x.id === r.invoiceId); return si ? '<span class="tag gray">' + U.esc(si.code) + '</span>' : ''; } },
       { label: 'Số mặt hàng', center: true, render: r => r.items.length },
-      { label: 'Giá trị trả lại', num: true, render: r => `<span class="text-red">${U.money(PW.returnTotal(r))}</span>` },
+      { label: 'Giá trị trả lại', num: true, render: r => `<span class="text-red">${U.money(PW.returnGrand(r))}</span>` },
       { label: 'Lý do', render: r => U.esc(r.note || '') },
       { label: '', render: r => C.actions([
           { label: 'In', onClick: () => M.printSalesDoc('return', r) },
@@ -491,7 +491,7 @@ M.discountForm = function (g) {
     C.field('Ngày', f.date, { required: true }),
     C.field('Khách hàng', M.partnerAdd(f.cust, true), { required: true }),
     C.field('Từ hóa đơn gốc (để đối chiếu)', f.inv),
-    C.field('Số tiền giảm (đ)', f.amount, { required: true }),
+    C.field('Số tiền giảm TRƯỚC thuế (đ)', f.amount, { required: true }),
     C.field('Lý do giảm giá', f.reason, { full: true }),
   ]);
   C.modal({

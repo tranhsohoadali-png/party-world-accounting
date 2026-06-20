@@ -399,6 +399,14 @@ PW.purchaseReturnGrand = function (pr) {
   const rate = pu ? Number(pu.vatRate || 0) : Number(pr.vatRate || 0);
   return base + Math.round(base * rate / 100);
 };
+// Giảm giá: số tiền nhập là TRƯỚC thuế; trừ công nợ thì GỒM thuế (kế thừa từ HĐ/PN gốc nếu có gắn)
+PW.discountGrand = function (g) {
+  const amt = Number(g.amount || 0);
+  const src = (g.invoiceId && (PW.data.salesInvoices.find(x => x.id === g.invoiceId) || PW.data.purchases.find(x => x.id === g.invoiceId)))
+    || (g.purchaseId && PW.data.purchases.find(x => x.id === g.purchaseId));
+  const rate = src ? Number(src.vatRate || 0) : Number(g.vatRate || 0);
+  return amt + Math.round(amt * rate / 100);
+};
 
 // Số dư tài khoản tiền
 PW.accountBalance = function (accountId) {
@@ -500,9 +508,9 @@ PW.customerDebt = function (customerId) {
   PW.data.salesReturns.forEach(sr => {
     if (sr.customerId === customerId) debt -= PW.returnGrand(sr);
   });
-  // Giảm giá hàng bán -> giảm công nợ phải thu
+  // Giảm giá hàng bán -> giảm công nợ phải thu (gồm thuế)
   PW.data.salesDiscounts.forEach(g => {
-    if (g.customerId === customerId) debt -= Number(g.amount);
+    if (g.customerId === customerId) debt -= PW.discountGrand(g);
   });
   return debt;
 };
@@ -524,9 +532,9 @@ PW.supplierDebt = function (supplierId) {
   PW.data.purchaseReturns.forEach(pr => {
     if (pr.supplierId === supplierId) debt -= PW.purchaseReturnGrand(pr);
   });
-  // Giảm giá hàng mua -> giảm công nợ phải trả
+  // Giảm giá hàng mua -> giảm công nợ phải trả (gồm thuế)
   PW.data.purchaseDiscounts.forEach(g => {
-    if (g.supplierId === supplierId) debt -= Number(g.amount);
+    if (g.supplierId === supplierId) debt -= PW.discountGrand(g);
   });
   return debt;
 };

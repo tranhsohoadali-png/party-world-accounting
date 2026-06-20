@@ -1124,16 +1124,16 @@ M.debtLedgerData = function (kind, id) {
     PW.data.salesReturns.filter(sr => sr.customerId === id).forEach(sr =>
       rows.push({ date: sr.date, code: sr.code, desc: 'Trả lại hàng bán', tang: 0, giam: PW.returnGrand(sr) }));
     PW.data.salesDiscounts.filter(g => g.customerId === id).forEach(g =>
-      rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng bán' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: Number(g.amount) }));
+      rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng bán' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   } else {
     PW.data.purchases.filter(pu => pu.supplierId === id).forEach(pu =>
       rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0) }));
     PW.data.payments.filter(p => p.supplierId === id).forEach(p =>
       rows.push({ date: p.date, code: p.code, desc: p.reason || 'Trả tiền', tang: 0, giam: Number(p.amount) }));
     PW.data.purchaseReturns.filter(pr => pr.supplierId === id).forEach(pr =>
-      rows.push({ date: pr.date, code: pr.code, desc: 'Trả lại hàng mua', tang: 0, giam: PW.purchaseReturnTotal(pr) }));
+      rows.push({ date: pr.date, code: pr.code, desc: 'Trả lại hàng mua', tang: 0, giam: PW.purchaseReturnGrand(pr) }));
     PW.data.purchaseDiscounts.filter(g => g.supplierId === id).forEach(g =>
-      rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng mua' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: Number(g.amount) }));
+      rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng mua' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   }
   rows.sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code));
   let bal = opening;
