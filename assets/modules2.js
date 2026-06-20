@@ -487,6 +487,7 @@ M.productPicker = function (initialId, onPick, opts) {
   function open() {
     if (panel) { close(); return; }
     const search = U.el('input', { class: 'inp', placeholder: 'Gõ mã / tên hàng để tìm...' });
+    if (opts.search) search.value = opts.search;   // mở sẵn theo mã đã nhận diện -> lọc ngay
     const onlyChk = U.el('input', { type: 'checkbox' });
     const list = U.el('div', { class: 'pp-list' });
     const head = U.el('div', { class: 'pp-head' }, [
@@ -529,7 +530,7 @@ M.productPicker = function (initialId, onPick, opts) {
     document.addEventListener('mousedown', onDoc, true);
     window.addEventListener('scroll', position, true);
     window.addEventListener('resize', position);
-    render(); search.focus();
+    render(); search.focus(); search.select();   // bôi sẵn mã -> gõ tiếp là thay
   }
   btn.addEventListener('click', open);
   wrap.appendChild(btn);

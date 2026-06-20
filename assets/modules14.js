@@ -537,8 +537,6 @@ M.consignImport = function (root) {
     const bad = state.rows.filter(r => !r.manual && r.status === 'none').length;
     sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
-    const prodOpts = [{ value: '', label: '-- Chọn hàng --' }]
-      .concat(PW.data.products.map(p => ({ value: p.id, label: (p.code ? p.code + ' - ' : '') + p.name })));
     host.appendChild(C.table(state.rows, [
       { label: '#', width: '36px', render: r => String(state.rows.indexOf(r) + 1) },
       { label: 'Dòng gốc', render: r => U.esc(r.raw) },
@@ -546,12 +544,12 @@ M.consignImport = function (root) {
           (r.codeKey ? '<b>' + U.esc(r.codeKey) + '</b>' : '<span class="text-muted">—</span>') +
           (r.sizeKey ? ' · ' + U.esc(r.sizeKey.toLowerCase()) : '') },
       { label: 'Hàng hóa khớp', render: r => {
-          const sel = C.select(prodOpts, r.productId);
-          sel.addEventListener('change', () => {
-            r.productId = sel.value; r.manual = true;
+          // Bộ chọn TÌM KIẾM (gõ mã/tên), mở sẵn theo mã đã nhận diện -> thao tác nhanh
+          const sel = M.productPicker(r.productId, (p) => {
+            r.productId = p.id; r.manual = true;
             if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.value, chSel.value); }
             draw();
-          });
+          }, { isSale: true, search: r.codeKey || '' });
           // Nút "+" thêm nhanh sản phẩm mới (điền sẵn tên/mã/kích thước từ dòng) rồi tự chọn vào dòng
           const withAdd = M.withAdd(sel, 'Thêm nhanh sản phẩm này', () => {
             M.productForm(null, {
