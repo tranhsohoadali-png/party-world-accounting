@@ -488,6 +488,7 @@ M.productForm = function (p, opts) {
   const isNew = !p;
   const quick = !!(opts && opts.onSaved);   // thêm nhanh: mở chồng (lớp 2) + chọn lại
   p = p || { code: PW.nextCode('HH'), name: '', group: '', unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
+  if (isNew && opts && opts.prefill) p = Object.assign(p, opts.prefill);   // điền sẵn khi thêm nhanh từ nơi khác
   const groupDLId = 'dl-pgroups-' + PW.uid();   // id riêng từng form -> tránh trùng id khi mở chồng (combo -> thêm nhanh)
   const f = {
     kind: C.select((M.PRODUCT_KINDS || [{ kind: 'hanghoa', label: 'Hàng hóa' }]).map(k => ({ value: k.kind, label: k.label })), p.kind || 'hanghoa'),

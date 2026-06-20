@@ -509,8 +509,24 @@ M.consignImport = function (root) {
             if (r.productId && !r.priceTouched) { r.price = M._ciPrice(r.productId, chSel.value); }
             draw();
           });
+          // Nút "+" thêm nhanh sản phẩm mới (điền sẵn tên/mã/kích thước từ dòng) rồi tự chọn vào dòng
+          const withAdd = M.withAdd(sel, 'Thêm nhanh sản phẩm này', () => {
+            M.productForm(null, {
+              prefill: {
+                name: r.name || '',
+                kind: 'thanhpham',
+                group: r.sizeKey ? r.sizeKey.toLowerCase() : '',
+                code: r.codeKey ? (r.codeKey + (r.sizeKey ? ' ' + r.sizeKey : '')).toUpperCase() : PW.nextCode('TP'),
+              },
+              onSaved: (obj) => {
+                r.productId = obj.id; r.manual = true;
+                if (!r.priceTouched) r.price = M._ciPrice(obj.id, chSel.value);
+                draw();
+              },
+            });
+          });
           const wrap = U.el('div');
-          wrap.appendChild(sel);
+          wrap.appendChild(withAdd);
           if (r.productId) {
             wrap.appendChild(U.el('div', { class: 'text-muted', style: 'font-size:11px;margin-top:2px' },
               'Tồn kho: ' + U.num(PW.stockOf(r.productId))));
