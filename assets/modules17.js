@@ -79,6 +79,9 @@ M._ensurePdfLibs = async function () {
   if (!window.html2canvas) await M._loadScript('assets/vendor/html2canvas.min.js');
   if (!(window.jspdf && window.jspdf.jsPDF)) await M._loadScript('assets/vendor/jspdf.umd.min.js');
 };
+M._ensureXlsxLib = async function () {
+  if (!window.XLSX) await M._loadScript('assets/vendor/xlsx.full.min.js');
+};
 M._download = function (blob, name) {
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 };
@@ -278,10 +281,9 @@ M.warehouseIssueNote = function (si, size, action, opts) {
   M.printHTML('Phiếu xuất kho ' + si.code, inner, size, action, opts);
 };
 
-/* ---------- Xuất EXCEL 1 chứng từ -> CSV (Excel mở thẳng, KHÔNG cảnh báo định dạng) ---------- */
-M._invoiceCsvBlob = function (si) {
+/* ---------- Xuất EXCEL 1 chứng từ -> file .xlsx THẬT (SheetJS) — đúng tiếng Việt, đúng cột, không cảnh báo ---------- */
+M._invoiceAoa = function (si) {
   const cus = PW.customer(si.customerId);
-  const q = v => { v = (v == null ? '' : String(v)); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   const rows = [];
   rows.push(['HÓA ĐƠN ' + si.code, cus ? cus.name : '', U.date(si.date)]);
   rows.push([]);
@@ -291,12 +293,28 @@ M._invoiceCsvBlob = function (si) {
   rows.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
   if (PW.invoiceVat(si)) rows.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
   rows.push(['', '', '', '', '', 'TỔNG THANH TOÁN', PW.invoiceGrand(si)]);
-  const csv = 'sep=,\r\n' + rows.map(r => r.map(q).join(',')).join('\r\n');   // sep=, để Excel mọi locale dùng dấu phẩy
-  return new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  return rows;
 };
-M.exportDocExcel = function (si, fname) {
-  M._download(M._invoiceCsvBlob(si), (fname || 'HoaDon-' + si.code) + '.csv');
-  U.toast('Đã xuất Excel (CSV): ' + (fname || si.code));
+// Trả về { blob, ext }. Ưu tiên .xlsx (SheetJS); nếu lib lỗi -> CSV (BOM, KHÔNG dùng sep= để Excel đọc đúng UTF-8).
+M._invoiceExcelBlob = async function (si) {
+  try {
+    await M._ensureXlsxLib();
+    const ws = window.XLSX.utils.aoa_to_sheet(M._invoiceAoa(si));
+    ws['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 42 }, { wch: 8 }, { wch: 6 }, { wch: 13 }, { wch: 14 }];
+    const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'HoaDon');
+    const arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return { blob: new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), ext: 'xlsx' };
+  } catch (e) {
+    const q = v => { v = (v == null ? '' : String(v)); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const csv = M._invoiceAoa(si).map(r => r.map(q).join(',')).join('\r\n');
+    return { blob: new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), ext: 'csv' };
+  }
+};
+M.exportDocExcel = async function (si, fname) {
+  U.toast('Đang tạo Excel...');
+  const { blob, ext } = await M._invoiceExcelBlob(si);
+  M._download(blob, (fname || 'HoaDon-' + si.code) + '.' + ext);
+  U.toast('Đã xuất Excel: ' + (fname || si.code));
 };
 
 /* ---------- Gửi chứng từ qua Zalo ----------
@@ -323,13 +341,15 @@ M.sendZalo = function (si, builderFn, size, fmt) {
       U.toast('Đã tải tệp + copy nội dung — đính kèm vào Zalo để gửi cho khách');
     }
   }
-  function fallbackExcel() {
-    const xb = M._invoiceCsvBlob(si); let f = null; try { f = new File([xb], 'HoaDon-' + si.code + '.csv', { type: 'text/csv' }); } catch (e) {}
-    shareFile(f);
+  function sendExcel() {
+    M._invoiceExcelBlob(si).then(({ blob, ext }) => {
+      let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.' + ext, { type: blob.type }); } catch (e) {}
+      shareFile(f);
+    });
   }
-  if (fmt === 'excel' || !builderFn) return fallbackExcel();   // gửi Excel (CSV)
+  if (fmt === 'excel' || !builderFn) return sendExcel();   // gửi Excel (.xlsx)
   builderFn(si, size || 'A4', 'pdf-blob', { then: (blob) => {   // gửi PDF
-    if (!blob) return fallbackExcel();
+    if (!blob) return sendExcel();
     let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.pdf', { type: 'application/pdf' }); } catch (e) {}
     shareFile(f);
   } });
