@@ -283,16 +283,40 @@ M.warehouseIssueNote = function (si, size, action, opts) {
 
 /* ---------- Xuất EXCEL 1 chứng từ -> file .xlsx THẬT (SheetJS) — đúng tiếng Việt, đúng cột, không cảnh báo ---------- */
 M._invoiceAoa = function (si) {
+  const c = M.company();
   const cus = PW.customer(si.customerId);
+  const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
+  const ch = PW.channel && PW.channel(si.channelId);
+  const grand = PW.invoiceGrand(si);
   const rows = [];
-  rows.push(['HÓA ĐƠN ' + si.code, cus ? cus.name : '', U.date(si.date)]);
+  // Đầu: thông tin doanh nghiệp
+  rows.push([c.name || 'DALI']);
+  if (c.address) rows.push([c.address]);
+  if (c.phone || c.mst) rows.push([(c.phone ? 'ĐT: ' + c.phone : '') + (c.phone && c.mst ? '   ' : '') + (c.mst ? 'MST: ' + c.mst : '')]);
   rows.push([]);
+  rows.push(['HÓA ĐƠN BÁN HÀNG']);
+  rows.push(['Số chứng từ:', si.code, '', 'Ngày:', U.date(si.date)]);
+  // Khối NGƯỜI MUA (đầy đủ như bản in)
+  rows.push(['Khách hàng:', cus ? cus.name : '']);
+  rows.push(['Địa chỉ:', cus ? (cus.address || '') : '']);
+  rows.push(['Điện thoại:', cus ? (cus.phone || '') : '', '', 'Mã số thuế:', cus ? (cus.taxCode || '') : '']);
+  if (ch) rows.push(['Kênh bán:', ch.name]);
+  if (emp) rows.push(['Nhân viên bán:', emp.name]);
+  if (si.note) rows.push(['Diễn giải:', si.note]);
+  if (si.dueDate) rows.push(['Hạn thanh toán:', U.date(si.dueDate)]);
+  rows.push([]);
+  // Bảng hàng hóa
   rows.push(['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền']);
   si.items.forEach((it, i) => { const p = PW.product(it.productId); rows.push([i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]); });
+  rows.push(['', '', 'Cộng', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', PW.invoiceTotal(si)]);
   rows.push([]);
+  // Tổng
   rows.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
-  if (PW.invoiceVat(si)) rows.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
-  rows.push(['', '', '', '', '', 'TỔNG THANH TOÁN', PW.invoiceGrand(si)]);
+  if (PW.invoiceVat(si)) rows.push(['', '', '', '', '', 'Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', PW.invoiceVat(si)]);
+  rows.push(['', '', '', '', '', 'TỔNG THANH TOÁN', grand]);
+  rows.push(['', '', '', '', '', 'Đã thu', Number(si.paid || 0)]);
+  rows.push(['', '', '', '', '', 'Còn nợ', grand - Number(si.paid || 0)]);
+  rows.push(['Số tiền bằng chữ:', U.readMoneyVN(grand)]);
   return rows;
 };
 // Trả về { blob, ext }. Ưu tiên .xlsx (SheetJS); nếu lib lỗi -> CSV (BOM, KHÔNG dùng sep= để Excel đọc đúng UTF-8).
