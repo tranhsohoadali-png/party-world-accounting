@@ -486,7 +486,24 @@ M.consignImport = function (root) {
   revCard.appendChild(sumDiv);
   revCard.appendChild(host);
   const createBtn = C.btn('✅ Tạo chứng từ & học bí danh', () => doCreate(), 'primary');
-  revCard.appendChild(U.el('div', { class: 'pill-row mt16' }, [createBtn]));
+  // Tạo NHANH thành phẩm cho mọi dòng chưa khớp (đỡ phải mở modal từng dòng)
+  const bulkBtn = C.btn('⚡ Tạo SP cho dòng chưa khớp', () => {
+    const todo = state.rows.filter(r => !r.productId && (r.codeKey || (r.name || '').trim()));
+    if (!todo.length) { U.toast('Không có dòng nào cần tạo', 'error'); return; }
+    if (!U.confirm('Tạo nhanh ' + todo.length + ' thành phẩm mới từ các dòng chưa khớp?')) return;
+    todo.forEach(r => {
+      const obj = { id: PW.uid(), kind: 'thanhpham',
+        code: r.codeKey ? (r.codeKey + (r.sizeKey ? ' ' + r.sizeKey : '')).toUpperCase() : PW.nextCode('TP'),
+        name: (r.name || '').trim() || r.codeKey, group: r.sizeKey ? r.sizeKey.toLowerCase() : '',
+        unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
+      PW.data.products.push(obj);
+      r.productId = obj.id; r.manual = true;
+      if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue ? cusSel.ppValue() : cusSel.value, chSel.value);
+    });
+    PW.save(); state.idx = M._ciProductIndex(); draw();
+    U.toast('Đã tạo ' + todo.length + ' thành phẩm và gán vào các dòng');
+  }, 'sm');
+  revCard.appendChild(U.el('div', { class: 'pill-row mt16' }, [createBtn, bulkBtn]));
 
   const STATUS_TAG = {
     alias: '<span class="tag green">Đã khớp</span>',
