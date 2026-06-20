@@ -444,6 +444,7 @@ M.consignImport = function (root) {
   const vatSel = C.select([
     { value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' },
   ], 0);
+  const noteI = C.input({ placeholder: 'Diễn giải chứng từ (vd: ADC Linh Đàm, đợt ký gửi T6...)' });
   const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
   fg.appendChild(C.field('Nhà sách (khách hàng)', cusRow, { required: true }));
@@ -451,6 +452,7 @@ M.consignImport = function (root) {
   fg.appendChild(C.field('Ngày', dateI));
   fg.appendChild(C.field('Kênh bán', chSel));
   fg.appendChild(C.field('Thuế GTGT (%)', vatSel));
+  fg.appendChild(C.field('Diễn giải', noteI, { full: true }));
   docCard.appendChild(fg);
   docCard.appendChild(detectLine);
 
@@ -617,18 +619,19 @@ M.consignImport = function (root) {
 
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
     let code;
+    const note = noteI.value.trim() || 'Gom đơn ký gửi tự động';
     if (typeSel.value === 'order') {
       code = PW.nextCode('DH');
       PW.data.salesOrders.push({
         id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
-        items: items, discount: 0, status: 'open', note: 'Gom đơn ký gửi tự động',
+        items: items, discount: 0, status: 'open', note: note,
       });
     } else {
       code = PW.nextCode('HD');
       PW.data.salesInvoices.push({
         id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
         channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0, items: items, discount: 0,
-        paid: 0, paidAccountId: null, note: 'Gom đơn ký gửi tự động',
+        paid: 0, paidAccountId: null, note: note,
       });
     }
     PW.save();

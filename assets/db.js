@@ -183,11 +183,25 @@ PW.logActivity = function (action, entity, name, detail) {
   } catch (e) { /* không được làm vỡ luồng lưu chính */ }
 };
 
+// Số lớn nhất đang dùng của 1 tiền tố (quét MỌI bảng có .code = prefix+số) -> chống trùng kể cả khi counter lệch
+PW._maxCodeNum = function (prefix) {
+  let max = 0;
+  const re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '0*(\\d+)$');
+  Object.keys(PW.data).forEach(k => {
+    const arr = PW.data[k];
+    if (!Array.isArray(arr)) return;
+    arr.forEach(x => { if (x && typeof x.code === 'string') { const m = x.code.match(re); if (m) { const n = +m[1]; if (n > max) max = n; } } });
+  });
+  return max;
+};
 PW.nextCode = function (prefix) {
   const c = PW.data.meta.counters;
-  c[prefix] = (c[prefix] || 0) + 1;
+  let n = (c[prefix] || 0) + 1;
+  const mx = PW._maxCodeNum(prefix);   // nếu đã có mã >= n (counter lệch) -> nhảy qua max để KHÔNG trùng
+  if (mx >= n) n = mx + 1;
+  c[prefix] = n;
   PW.save();
-  return prefix + String(c[prefix]).padStart(5, '0');
+  return prefix + String(n).padStart(5, '0');
 };
 
 /* ---------- Truy vấn nhanh ---------- */

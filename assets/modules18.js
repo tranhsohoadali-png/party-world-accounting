@@ -53,11 +53,13 @@ M.purchaseScan = function (root) {
   const supRow = U.el('div', { style: 'display:flex;gap:6px;align-items:stretch' }, [supSel, addSupBtn]);
   const dateI = C.input({ type: 'date', value: U.today() });
   const vatSel = C.select([{ value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }], 0);
+  const noteI = C.input({ placeholder: 'Diễn giải phiếu nhập (vd: nhập NVL đợt..., số hóa đơn NCC...)' });
   const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
   fg.appendChild(C.field('Nhà cung cấp', supRow, { required: true }));
   fg.appendChild(C.field('Ngày nhập', dateI));
   fg.appendChild(C.field('Thuế GTGT (%)', vatSel));
+  fg.appendChild(C.field('Diễn giải', noteI, { full: true }));
   docCard.appendChild(fg);
   docCard.appendChild(detectLine);
 
@@ -191,7 +193,7 @@ M.purchaseScan = function (root) {
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), cost: Number(r.price) || 0 }));
     const code = PW.nextCode('PN');
     const pu = { id: PW.uid(), code: code, date: dateI.value, supplierId: supSel.ppValue(),
-      vatRate: Number(vatSel.value) || 0, items: items, discount: 0, paid: 0, paidAccountId: null, note: 'Quét hóa đơn mua (AI)' };
+      vatRate: Number(vatSel.value) || 0, items: items, discount: 0, paid: 0, paidAccountId: null, note: noteI.value.trim() || 'Quét hóa đơn mua (AI)' };
     PW.data.purchases.push(pu);
     PW.logActivity('create', 'purchase', code, U.money(PW.purchaseGrand(pu)) + ' đ (quét AI)');
     PW.save();
