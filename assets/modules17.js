@@ -56,7 +56,7 @@ M._printCSS = function (size) {
 M.printHTML = function (title, innerHtml, size, action, opts) {
   size = size || M.company().printSize || 'A4';
   const css = M._printCSS(size);
-  if (action === 'pdf' || action === 'pdf-blob') return M.exportDocPdf(title, innerHtml, size, css, action === 'pdf-blob' ? (opts && opts.then) : null);
+  if (action === 'pdf' || action === 'pdf-blob') return M.exportDocPdf(title, innerHtml, size, css, action === 'pdf-blob' ? (opts && opts.then) : null, opts && opts.fname);
   const html = '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>' + U.esc(title) + '</title><style>'
     + css + '</style></head><body>' + innerHtml
     + '<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>';
@@ -75,11 +75,28 @@ M._loadScript = function (src) {
   });
 };
 M._ensurePdfLibs = async function () {
-  if (!window.html2canvas) await M._loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js');
-  if (!(window.jspdf && window.jspdf.jsPDF)) await M._loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+  // Tự host trong assets/vendor (không phụ thuộc CDN -> chạy cả khi mạng bị chặn / offline)
+  if (!window.html2canvas) await M._loadScript('assets/vendor/html2canvas.min.js');
+  if (!(window.jspdf && window.jspdf.jsPDF)) await M._loadScript('assets/vendor/jspdf.umd.min.js');
 };
-// Tạo file PDF thật từ HTML chứng từ (ảnh hóa -> giữ đúng tiếng Việt & bố cục). onBlob: nếu có -> trả Blob (để gửi Zalo) thay vì tải.
-M.exportDocPdf = async function (title, innerHtml, size, css, onBlob) {
+M._download = function (blob, name) {
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+};
+// Hỏi tên file trước khi lưu
+M.askFileName = function (defaultName, ext, cb) {
+  const inp = C.input({ value: defaultName, style: 'width:100%' });
+  C.modal({
+    title: 'Đặt tên file (.' + ext + ')',
+    body: U.el('div', null, [C.field('Tên file', inp, { full: true })]),
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu', () => {
+      const nm = ((inp.value || defaultName).trim().replace(/[\\/:*?"<>|]+/g, '-')) || defaultName;
+      C.closeModal(); cb(nm);
+    }, 'primary')],
+  });
+  setTimeout(() => { inp.focus(); inp.select(); }, 50);
+};
+// Tạo file PDF thật từ HTML chứng từ (ảnh hóa -> giữ đúng tiếng Việt & bố cục). onBlob: nếu có -> trả Blob (để gửi Zalo) thay vì tải. fname: tên file tải về.
+M.exportDocPdf = async function (title, innerHtml, size, css, onBlob, fname) {
   U.toast('Đang tạo PDF...');
   let wrap;
   try {
@@ -104,8 +121,8 @@ M.exportDocPdf = async function (title, innerHtml, size, css, onBlob) {
     document.body.removeChild(wrap); wrap = null;
     const blob = pdf.output('blob');
     if (onBlob) { onBlob(blob, title); return blob; }
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = title + '.pdf'; a.click(); URL.revokeObjectURL(url);
-    U.toast('Đã xuất PDF: ' + title);
+    M._download(blob, (fname || title) + '.pdf');
+    U.toast('Đã xuất PDF: ' + (fname || title));
     return blob;
   } catch (e) {
     if (wrap && wrap.parentNode) document.body.removeChild(wrap);
@@ -261,24 +278,25 @@ M.warehouseIssueNote = function (si, size, action, opts) {
   M.printHTML('Phiếu xuất kho ' + si.code, inner, size, action, opts);
 };
 
-/* ---------- Xuất EXCEL 1 chứng từ (file .xls thật) ---------- */
-M._invoiceXlsBlob = function (si) {
+/* ---------- Xuất EXCEL 1 chứng từ -> CSV (Excel mở thẳng, KHÔNG cảnh báo định dạng) ---------- */
+M._invoiceCsvBlob = function (si) {
   const cus = PW.customer(si.customerId);
-  const headers = ['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'];
-  const rs = si.items.map((it, i) => { const p = PW.product(it.productId); return [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]; });
-  rs.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
-  if (PW.invoiceVat(si)) rs.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
-  rs.push(['', '', '', '', '', 'TỔNG THANH TOÁN', PW.invoiceGrand(si)]);
-  let h = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">';
-  h += '<tr><td colspan="7" style="font-weight:bold">HÓA ĐƠN ' + U.esc(si.code) + ' — ' + U.esc(cus ? cus.name : '') + ' — ' + U.date(si.date) + '</td></tr>';
-  h += '<tr>' + headers.map(x => '<th>' + U.esc(x) + '</th>').join('') + '</tr>';
-  rs.forEach(r => { h += '<tr>' + r.map(cl => typeof cl === 'number' ? '<td>' + cl + '</td>' : '<td>' + U.esc(cl == null ? '' : cl) + '</td>').join('') + '</tr>'; });
-  return new Blob(['﻿' + h + '</table></body></html>'], { type: 'application/vnd.ms-excel' });
+  const q = v => { v = (v == null ? '' : String(v)); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [];
+  rows.push(['HÓA ĐƠN ' + si.code, cus ? cus.name : '', U.date(si.date)]);
+  rows.push([]);
+  rows.push(['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền']);
+  si.items.forEach((it, i) => { const p = PW.product(it.productId); rows.push([i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]); });
+  rows.push([]);
+  rows.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
+  if (PW.invoiceVat(si)) rows.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
+  rows.push(['', '', '', '', '', 'TỔNG THANH TOÁN', PW.invoiceGrand(si)]);
+  const csv = 'sep=,\r\n' + rows.map(r => r.map(q).join(',')).join('\r\n');   // sep=, để Excel mọi locale dùng dấu phẩy
+  return new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
 };
-M.exportDocExcel = function (si) {
-  const blob = M._invoiceXlsBlob(si);
-  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'HoaDon-' + si.code + '.xls'; a.click(); URL.revokeObjectURL(url);
-  U.toast('Đã xuất Excel: ' + si.code);
+M.exportDocExcel = function (si, fname) {
+  M._download(M._invoiceCsvBlob(si), (fname || 'HoaDon-' + si.code) + '.csv');
+  U.toast('Đã xuất Excel (CSV): ' + (fname || si.code));
 };
 
 /* ---------- Gửi chứng từ qua Zalo ----------
@@ -306,7 +324,7 @@ M.sendZalo = function (si, builderFn, size) {
     }
   }
   function fallbackExcel() {
-    const xb = M._invoiceXlsBlob(si); let f = null; try { f = new File([xb], 'HoaDon-' + si.code + '.xls', { type: 'application/vnd.ms-excel' }); } catch (e) {}
+    const xb = M._invoiceCsvBlob(si); let f = null; try { f = new File([xb], 'HoaDon-' + si.code + '.csv', { type: 'text/csv' }); } catch (e) {}
     shareFile(f);
   }
   if (builderFn) {
@@ -338,15 +356,15 @@ M.printMenu = function (si) {
       U.el('p', { class: 'section-sub', style: 'margin:12px 0 6px;font-weight:600' }, 'In / Xuất file:'),
       U.el('div', { class: 'pill-row' }, [
         C.btn('🖨 In', () => { const fn = fnOf(); C.closeModal(); fn(si, sizeSel.value); }, 'primary'),
-        C.btn('📄 Xuất PDF', () => { fnOf()(si, sizeSel.value, 'pdf'); }),
-        C.btn('📊 Xuất Excel', () => { M.exportDocExcel(si); }),
+        C.btn('📄 Xuất PDF', () => { const fn = fnOf(), sz = sizeSel.value; M.askFileName('HoaDon-' + si.code, 'pdf', nm => fn(si, sz, 'pdf', { fname: nm })); }),
+        C.btn('📊 Xuất Excel', () => { M.askFileName('HoaDon-' + si.code, 'csv', nm => M.exportDocExcel(si, nm)); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách:'),
       U.el('div', { class: 'pill-row' }, [
         C.btn('💬 Gửi qua Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value); }, 'primary'),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
-        'Xuất PDF/Excel tạo file tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF); máy tính tự tải PDF + copy nội dung + mở Zalo để đính kèm. (Tạo PDF cần có mạng lần đầu.)'),
+        'Xuất PDF/Excel: đặt tên file rồi tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF); máy tính tự tải PDF + copy nội dung + mở Zalo để đính kèm.'),
     ]),
   });
 };
