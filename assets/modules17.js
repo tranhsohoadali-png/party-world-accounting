@@ -91,11 +91,14 @@ M.printInvoice = function (si, size) {
     + '<div class="party"><b>Khách hàng:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
     + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + ' &nbsp; <b>Địa chỉ:</b> ' + U.esc(cus ? cus.address : '')
     + (cus && cus.taxCode ? '<br><b>MST:</b> ' + U.esc(cus.taxCode) : '') + '</div>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody></table>'
-    + '<div class="tot">Cộng tiền hàng: ' + U.money(sub) + ' đ</div>'
-    + (Number(si.vatRate) ? '<div class="tot">Thuế GTGT (' + si.vatRate + '%): ' + U.money(vat) + ' đ</div>' : '')
-    + '<div class="tot big">TỔNG THANH TOÁN: ' + U.money(grand) + ' đ</div>'
-    + '<div class="tot">Đã thu: ' + U.money(si.paid || 0) + ' đ &nbsp;·&nbsp; Còn lại: <b>' + U.money(grand - (si.paid || 0)) + ' đ</b></div>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
+    + '<tfoot>'
+    + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + (Number(si.vatRate) ? '<tr><td colspan="5" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
+    + '<tr><td colspan="5" class="r" style="font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
+    + '<tr><td colspan="5" class="r">Đã thu</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
+    + '<tr><td colspan="5" class="r"><b>Còn lại</b></td><td class="r"><b>' + U.money(grand - (si.paid || 0)) + '</b></td></tr>'
+    + '</tfoot></table>'
     + (si.note ? '<div class="note">Ghi chú: ' + U.esc(si.note) + '</div>' : '')
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
     + (M.company().note ? '<div class="foot">' + U.esc(M.company().note) + '</div>' : '');
@@ -118,8 +121,13 @@ M.deliveryNote = function (si, size) {
     + '<div class="party"><b>Người nhận:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
     + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + '<br>'
     + '<b>Địa chỉ giao:</b> ' + U.esc(cus ? cus.address : '') + '</div>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody></table>'
-    + '<div class="tot">Tổng giá trị hàng: ' + U.money(grand) + ' đ &nbsp;·&nbsp; Đã thanh toán: ' + U.money(si.paid || 0) + ' đ</div>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
+    + '<tfoot>'
+    + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + (Number(si.vatRate) ? '<tr><td colspan="5" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
+    + '<tr><td colspan="5" class="r" style="font-weight:800;color:#5a8e2e">TỔNG GIÁ TRỊ</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
+    + '<tr><td colspan="5" class="r">Đã thanh toán</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
+    + '</tfoot></table>'
     + (cod > 0
         ? '<div class="cod"><b>TIỀN THU HỘ (COD): ' + U.money(cod) + ' đ</b> — thu của người nhận khi giao.</div>'
         : '<div class="cod" style="border-color:#27ae60;background:#e6f7ee"><b>ĐÃ THANH TOÁN ĐỦ</b> — không thu hộ.</div>')

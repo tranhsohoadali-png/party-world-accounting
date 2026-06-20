@@ -380,10 +380,12 @@ M.printPurchaseDoc = function (kind, doc) {
       <div><b>Điện thoại:</b> ${U.esc(sup ? sup.phone : '')} &nbsp; <b>Địa chỉ:</b> ${U.esc(sup ? sup.address : '')}</div>
       ${doc.note ? `<div><b>Diễn giải:</b> ${U.esc(doc.note)}</div>` : ''}</div>
     <table><thead><tr><th>STT</th><th>Tên hàng hóa</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div class="tot">Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
-    ${disc ? `<div class="tot">Giảm giá: ${U.money(disc)} đ</div>` : ''}
-    <div class="tot">TỔNG CỘNG: <b>${U.money(total)} đ</b></div>
+    <tbody>${rows}</tbody>
+    <tfoot>
+      <tr><td colspan="5" style="text-align:right">Cộng tiền hàng</td><td style="text-align:right"><b>${U.money(sub)}</b></td></tr>
+      ${disc ? `<tr><td colspan="5" style="text-align:right">Giảm giá</td><td style="text-align:right">${U.money(disc)}</td></tr>` : ''}
+      <tr><td colspan="5" style="text-align:right;font-weight:800;color:#1ea7a0">TỔNG CỘNG</td><td style="text-align:right;font-weight:800;color:#1ea7a0">${U.money(total)}</td></tr>
+    </tfoot></table>
     <div class="sign"><div>Nhà cung cấp<br/><i>(Ký, ghi rõ họ tên)</i></div><div>DALI<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
     <script>window.onload=function(){window.print();}</script></body></html>`;
   const w = window.open('', '_blank');
