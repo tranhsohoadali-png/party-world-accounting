@@ -59,7 +59,7 @@ M._ciHeaderMap = function (cells) {
     if (!n) return;
     if (map.name == null && /(ten hang|ten san pham|ten sp|hang hoa|mat hang|dien giai|noi dung|san pham|^ten)/.test(n)) map.name = i;
     else if (map.qty == null && /(so luong dat|so luong|sl dat|^sl|qty|number)/.test(n)) map.qty = i;
-    else if (map.price == null && /(don gia|gia ban|thanh tien|unit price|^gia)/.test(n)) map.price = i;
+    else if (map.price == null && /(don gia|gia ban|gia nhap|gia von|unit price|^gia$)/.test(n)) map.price = i;   // KHÔNG nhận 'thành tiền' (=SL×đơn giá)
     else if (map.code == null && /(ma vach|barcode|ma hang|ma sp|sku|^ma)/.test(n)) map.code = i;
   });
   return map;   // hợp lệ khi có name + (qty hoặc price) -> người gọi tự kiểm
@@ -561,6 +561,7 @@ M.consignImport = function (root) {
               },
               onSaved: (obj) => {
                 r.productId = obj.id; r.manual = true;
+                state.idx = M._ciProductIndex();   // nạp lại chỉ mục -> dòng khác khớp được hàng vừa tạo
                 if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.value, chSel.value);
                 draw();
               },

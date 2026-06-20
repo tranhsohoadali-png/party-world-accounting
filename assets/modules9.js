@@ -49,10 +49,10 @@ M.productionForm = function (po) {
 
   const codeI = C.input({ value: po.code });
   const dateI = C.input({ type: 'date', value: po.date });
-  // Thành phẩm sản xuất = chỉ thành phẩm (hoặc món có định mức / đang chọn) — không liệt kê NVL
-  const prodSel = C.select(PW.data.products
-    .filter(p => p.kind === 'thanhpham' || (p.bom && p.bom.length) || p.id === po.productId)
-    .map(p => ({ value: p.id, label: p.code + ' - ' + p.name })), po.productId);
+  // Thành phẩm sản xuất = bộ chọn CÓ TÌM KIẾM, chỉ thành phẩm (hoặc món có định mức / đang chọn)
+  const onProd = () => { const p = PW.product(prodSel.ppValue()); if (p && p.bom && p.bom.length) fillFromBom(); else { drawMats(); calc(); } };
+  const prodSel = M.productPicker(po.productId, onProd, { isSale: false,
+    filter: p => p.kind === 'thanhpham' || (p.bom && p.bom.length) || p.id === po.productId });
   const qtyI = C.input({ type: 'number', value: po.qty, min: 0, style: 'width:120px;text-align:right' });
   const laborI = C.input({ type: 'number', value: po.laborCost, min: 0, style: 'width:150px;text-align:right' });
   const otherI = C.input({ type: 'number', value: po.otherCost, min: 0, style: 'width:150px;text-align:right' });
@@ -77,7 +77,7 @@ M.productionForm = function (po) {
   function drawMats() {
     matBody.innerHTML = '';
     materials.forEach((m, idx) => {
-      const sel = M.materialSelect(prodSel.value || '', m.productId);   // loại thành phẩm/combo/dịch vụ, gom theo kích thước
+      const sel = M.materialSelect(prodSel.ppValue() || '', m.productId);   // loại thành phẩm/combo/dịch vụ, gom theo kích thước
       sel.addEventListener('change', () => { m.productId = sel.value; drawMats(); calc(); });
       const q = U.el('input', { type: 'number', value: m.qty, min: 0, style: 'text-align:right' });
       q.addEventListener('input', () => { m.qty = Number(q.value) || 0; lt(); });
@@ -95,15 +95,14 @@ M.productionForm = function (po) {
     });
   }
   function fillFromBom() {
-    const p = PW.product(prodSel.value);
+    const p = PW.product(prodSel.ppValue());
     const q = Number(qtyI.value) || 0;
     if (!p || !p.bom || !p.bom.length) { U.toast('Thành phẩm này chưa có định mức NVL. Vào Hàng hóa để khai báo.', 'error'); return; }
     materials = p.bom.map(b => ({ productId: b.materialId, qty: Number(b.qty) * q }));
     drawMats(); calc();
   }
-  // tự nạp theo định mức khi đổi thành phẩm / số lượng
-  prodSel.addEventListener('change', () => { const p = PW.product(prodSel.value); if (p && p.bom && p.bom.length) fillFromBom(); });
-  qtyI.addEventListener('input', () => { const p = PW.product(prodSel.value); if (p && p.bom && p.bom.length) fillFromBom(); else calc(); });
+  // tự nạp theo định mức khi đổi số lượng (đổi thành phẩm -> onProd ở trên xử lý)
+  qtyI.addEventListener('input', () => { const p = PW.product(prodSel.ppValue()); if (p && p.bom && p.bom.length) fillFromBom(); else calc(); });
   laborI.addEventListener('input', calc);
   otherI.addEventListener('input', calc);
 
@@ -145,11 +144,11 @@ M.productionForm = function (po) {
     title: isNew ? 'Lập lệnh sản xuất' : 'Sửa lệnh sản xuất', wide: true, body,
     footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu', () => {
       const valid = materials.filter(m => m.productId && Number(m.qty) > 0);
-      if (!prodSel.value) return U.toast('Chọn thành phẩm', 'error');
+      if (!prodSel.ppValue()) return U.toast('Chọn thành phẩm', 'error');
       if (!(Number(qtyI.value) > 0)) return U.toast('Nhập số lượng sản xuất', 'error');
       const obj = {
         id: po.id || PW.uid(), code: codeI.value, date: dateI.value,
-        productId: prodSel.value, qty: Number(qtyI.value),
+        productId: prodSel.ppValue(), qty: Number(qtyI.value),
         materials: valid.map(m => ({ productId: m.productId, qty: Number(m.qty) })),
         laborCost: Number(laborI.value) || 0, otherCost: Number(otherI.value) || 0,
         note: noteI.value, updateCost: updateChk.checked,

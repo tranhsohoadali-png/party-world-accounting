@@ -511,6 +511,7 @@ M.productPicker = function (initialId, onPick, opts) {
       const q = norm(search.value); const only = onlyChk.checked;
       list.innerHTML = ''; firstP = null;
       const rows = PW.data.products.filter(p => {
+        if (opts.filter && !opts.filter(p)) return false;   // lọc loại hàng (vd chỉ thành phẩm)
         if (only && PW.stockOf(p.id) <= 0) return false;
         return !q || norm((p.code || '') + ' ' + p.name).indexOf(q) >= 0;
       }).slice(0, 300);
