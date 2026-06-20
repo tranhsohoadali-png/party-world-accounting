@@ -320,6 +320,12 @@ M.nvlForSize = function (size) {
   const norm = M.detectSize(size) || String(size || '');
   return PW.data.products.filter(p => M.isMaterialKind(p.kind) && M.nvlSizeOf(p) === norm);
 };
+// NVL "dùng chung" (vd Cavas) — thuộc nhóm được đánh dấu common -> thêm vào ĐM ở mọi kích thước
+M.commonNvl = function () {
+  const names = (PW.data.productGroups || []).filter(g => g.common).map(g => (g.name || '').trim().toLowerCase());
+  if (!names.length) return [];
+  return PW.data.products.filter(p => M.isMaterialKind(p.kind) && names.indexOf((p.group || '').trim().toLowerCase()) >= 0);
+};
 
 // Trình soạn ĐỊNH MỨC NVL dùng chung -> { el, get() }. Mỗi dòng = 1 NVL + số lượng.
 M.bomEditor = function (initial) {

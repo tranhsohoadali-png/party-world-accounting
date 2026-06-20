@@ -586,6 +586,10 @@ M.productForm = function (p, opts) {
     if (grp) rows = grp.bom.map(b => ({ materialId: b.materialId, qty: Number(b.qty) || 1 }))
                           .filter(b => PW.product(b.materialId) && b.materialId !== (p.id || ''));
     else rows = M.nvlForSize(sz).filter(x => x.id !== (p.id || '')).map(x => ({ materialId: x.id, qty: 1 }));
+    // Thêm NVL DÙNG CHUNG (vd Cavas) cho mọi kích thước — chống thiếu định mức
+    (M.commonNvl() || []).forEach(cp => {
+      if (cp.id !== (p.id || '') && !rows.some(b => b.materialId === cp.id)) rows.push({ materialId: cp.id, qty: 1 });
+    });
     if (!rows.length) { U.toast('Chưa có định mức/NVL cho kích thước ' + sz + ' — khai ở Danh mục → Nhóm hàng, hoặc thêm NVL nhóm "Nguyên vật liệu ' + sz + '"', 'error'); return; }
     const existing = bom.filter(b => b.materialId);
     const srcTxt = grp ? 'định mức nhóm "' + grp.name + '"' : 'kích thước ' + sz;

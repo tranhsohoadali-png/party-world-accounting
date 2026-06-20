@@ -24,6 +24,7 @@ M.CATALOGS = {
       { k: 'name', l: 'Tên nhóm', req: true, full: true },
       { k: 'kind', l: 'Áp dụng cho tính chất', type: 'select',
         options: [{ value: '', label: 'Tất cả tính chất' }].concat((M.PRODUCT_KINDS || []).map(x => ({ value: x.kind, label: x.label }))) },
+      { k: 'common', l: 'NVL dùng chung cho mọi kích thước (vd Cavas) — tự thêm vào định mức khi chọn size', type: 'check', full: true },
       { k: 'bom', l: 'Định mức NVL của nhóm (thành phẩm chọn nhóm này sẽ tự nạp)', type: 'bom', full: true },
     ],
   },
@@ -126,6 +127,7 @@ M.simpleCatalog = function (root, id) {
       label: f.l, num: f.type === 'number',
       render: r => {
         if (f.type === 'number') return U.num(r[f.k] || 0);
+        if (f.type === 'check') return r[f.k] ? '✓' : '';
         if (f.type === 'bom') return (r[f.k] || []).length ? ((r[f.k] || []).length + ' NVL') : '<span class="text-muted">—</span>';
         if (f.type === 'select') { const o = (f.options || []).find(o => String(o.value) === String(r[f.k] || '')); return U.esc(o ? o.label : (r[f.k] || '')); }
         return U.esc(r[f.k] || '');
@@ -161,6 +163,12 @@ M.catalogForm = function (id, item) {
       rows.push(C.field(f.l, ed.el, { full: true }));
       return;
     }
+    if (f.type === 'check') {
+      const chk = U.el('input', { type: 'checkbox' }); if (item[f.k]) chk.checked = true;
+      inputs[f.k] = chk;
+      rows.push(U.el('div', { class: 'field' + (f.full ? ' full' : '') }, U.el('label', { class: 'radio' }, [chk, ' ' + f.l])));
+      return;
+    }
     const inp = f.type === 'select'
       ? C.select(f.options || [], item[f.k] != null ? item[f.k] : '')
       : C.input({ type: f.type || 'text', value: item[f.k] != null ? item[f.k] : '' });
@@ -176,6 +184,7 @@ M.catalogForm = function (id, item) {
       let ok = true;
       cfg.fields.forEach(f => {
         if (f.type === 'bom') { obj[f.k] = inputs[f.k].get(); return; }
+        if (f.type === 'check') { obj[f.k] = inputs[f.k].checked; return; }
         const v = inputs[f.k].value;
         if (f.req && !String(v).trim()) ok = false;
         obj[f.k] = f.type === 'number' ? (Number(v) || 0) : v.trim();
