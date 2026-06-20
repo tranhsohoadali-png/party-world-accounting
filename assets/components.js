@@ -7,7 +7,7 @@ const C = {};
 C.modal = function ({ title, body, footer, wide }) {
   C.closeModal();
   const back = U.el('div', { class: 'modal-back', id: 'pw-modal' });
-  back.addEventListener('mousedown', e => { if (e.target === back) C.closeModal(); });
+  // KHÔNG đóng khi lỡ bấm ra nền — tránh mất chỉnh sửa. Đóng bằng nút × hoặc Hủy.
   const modal = U.el('div', { class: 'modal' + (wide ? ' wide' : '') });
   const head = U.el('div', { class: 'm-head' }, [
     U.el('h3', null, title),
@@ -36,7 +36,7 @@ C.closeModal = function () {
 C.miniModal = function ({ title, body, footer, wide }) {
   C.closeMini();
   const back = U.el('div', { class: 'modal-back', id: 'pw-modal2', style: 'z-index:140' });
-  back.addEventListener('mousedown', e => { if (e.target === back) C.closeMini(); });
+  // KHÔNG đóng khi lỡ bấm ra nền — tránh mất chỉnh sửa. Đóng bằng nút × hoặc Hủy.
   const modal = U.el('div', { class: 'modal' + (wide ? ' wide' : '') });
   const head = U.el('div', { class: 'm-head' }, [
     U.el('h3', null, title),
