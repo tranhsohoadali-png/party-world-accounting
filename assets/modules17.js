@@ -18,16 +18,15 @@ M.company = function () {
 M._logoUrl = function () { try { return new URL('assets/logo-dali.png', location.href).href; } catch (e) { return ''; } };
 
 // Bọc nội dung -> trang in hoàn chỉnh + tự bật hộp thoại in
-M.printHTML = function (title, innerHtml, size) {
-  size = size || M.company().printSize || 'A4';
+// CSS dùng chung cho IN và XUẤT PDF (để file PDF trông y như bản in)
+M._printCSS = function (size) {
   const page = {
     'A4': '@page{size:A4;margin:13mm}',
     'A5': '@page{size:A5;margin:9mm}',
     '80': '@page{size:80mm auto;margin:3mm}',
   }[size] || '@page{size:A4;margin:13mm}';
   const narrow = size === '80';
-  const html = '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>' + U.esc(title) + '</title><style>'
-    + page
+  return page
     + '*{box-sizing:border-box}'
     + 'body{font-family:\'Segoe UI\',Roboto,Arial,sans-serif;color:#1f2a16;margin:0;'
     + (narrow ? 'width:74mm;font-size:12px}' : 'font-size:13.5px}')
@@ -42,7 +41,7 @@ M.printHTML = function (title, innerHtml, size) {
     + 'table.it{width:100%;border-collapse:collapse;margin-top:8px}'
     + 'table.it th,table.it td{border:1px solid #b9c4a8;padding:' + (narrow ? '4px 5px' : '7px 9px') + ';font-size:' + (narrow ? '11' : '12.5') + 'px}'
     + 'table.it th{background:#eef6e1;text-align:left}'
-    + 'table.it tfoot{display:table-row-group}'   // tổng chỉ hiện 1 lần ở CUỐI, không lặp mỗi trang
+    + 'table.it tfoot{display:table-row-group}'
     + 'table.it tfoot tr{break-inside:avoid}'
     + '.r{text-align:right}.c{text-align:center}'
     + '.tot{text-align:right;margin-top:6px}.tot.big{font-size:' + (narrow ? '14' : '16') + 'px;font-weight:800;color:#5a8e2e}'
@@ -50,12 +49,69 @@ M.printHTML = function (title, innerHtml, size) {
     + '.note{margin-top:10px;font-style:italic;color:#555}'
     + '.sign{display:flex;justify-content:space-around;margin-top:' + (narrow ? '24' : '46') + 'px;text-align:center;font-size:12.5px}'
     + '.sign i{color:#777;font-weight:400}'
-    + '.foot{text-align:center;color:#777;margin-top:16px;font-size:11.5px}'
-    + '</style></head><body>' + innerHtml
+    + '.foot{text-align:center;color:#777;margin-top:16px;font-size:11.5px}';
+};
+
+// action: 'print' (mặc định) | 'pdf' (xuất file PDF) | 'pdf-blob' (trả Blob qua opts.then)
+M.printHTML = function (title, innerHtml, size, action, opts) {
+  size = size || M.company().printSize || 'A4';
+  const css = M._printCSS(size);
+  if (action === 'pdf' || action === 'pdf-blob') return M.exportDocPdf(title, innerHtml, size, css, action === 'pdf-blob' ? (opts && opts.then) : null);
+  const html = '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>' + U.esc(title) + '</title><style>'
+    + css + '</style></head><body>' + innerHtml
     + '<script>window.onload=function(){setTimeout(function(){window.print()},120)}<\/script></body></html>';
   const w = window.open('', '_blank');
   if (!w) { U.toast('Trình duyệt chặn cửa sổ in — hãy cho phép pop-up rồi thử lại.', 'error'); return; }
   w.document.write(html); w.document.close();
+};
+
+// Lazy-load thư viện tạo PDF (chỉ tải khi cần, có mạng)
+M._loadScript = function (src) {
+  return new Promise((res, rej) => {
+    if ([].slice.call(document.scripts).some(s => s.src === src)) return res();
+    const s = document.createElement('script'); s.src = src; s.async = true;
+    s.onload = res; s.onerror = function () { rej(new Error('Không tải được ' + src)); };
+    document.head.appendChild(s);
+  });
+};
+M._ensurePdfLibs = async function () {
+  if (!window.html2canvas) await M._loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js');
+  if (!(window.jspdf && window.jspdf.jsPDF)) await M._loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+};
+// Tạo file PDF thật từ HTML chứng từ (ảnh hóa -> giữ đúng tiếng Việt & bố cục). onBlob: nếu có -> trả Blob (để gửi Zalo) thay vì tải.
+M.exportDocPdf = async function (title, innerHtml, size, css, onBlob) {
+  U.toast('Đang tạo PDF...');
+  let wrap;
+  try {
+    await M._ensurePdfLibs();
+    const wmm = size === '80' ? 74 : (size === 'A5' ? 148 : 210);
+    const pxW = Math.round(wmm * 3.78);   // mm -> px (96dpi)
+    wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-99999px;top:0;width:' + pxW + 'px;background:#fff;padding:' + (size === '80' ? 8 : 24) + 'px';
+    wrap.innerHTML = '<style>' + css.replace(/@page\{[^}]*\}/, '') + '</style><div>' + innerHtml + '</div>';
+    document.body.appendChild(wrap);
+    const canvas = await window.html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#fff', windowWidth: pxW });
+    const img = canvas.toDataURL('image/jpeg', 0.82);   // JPEG -> file nhỏ gọn (gửi Zalo nhẹ)
+    const jsPDF = window.jspdf.jsPDF;
+    const pdf = new jsPDF({ unit: 'mm', format: size === 'A5' ? 'a5' : (size === '80' ? [80, Math.max(120, canvas.height * 74 / canvas.width + 10)] : 'a4'), orientation: 'p' });
+    const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
+    const margin = size === '80' ? 3 : 8;
+    const imgW = pageW - margin * 2, imgH = canvas.height * imgW / canvas.width;
+    let hLeft = imgH, pos = margin;
+    pdf.addImage(img, 'JPEG', margin, pos, imgW, imgH);
+    hLeft -= (pageH - margin * 2);
+    while (hLeft > 0) { pdf.addPage(); pos = margin - (imgH - hLeft); pdf.addImage(img, 'JPEG', margin, pos, imgW, imgH); hLeft -= (pageH - margin * 2); }
+    document.body.removeChild(wrap); wrap = null;
+    const blob = pdf.output('blob');
+    if (onBlob) { onBlob(blob, title); return blob; }
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = title + '.pdf'; a.click(); URL.revokeObjectURL(url);
+    U.toast('Đã xuất PDF: ' + title);
+    return blob;
+  } catch (e) {
+    if (wrap && wrap.parentNode) document.body.removeChild(wrap);
+    U.toast('Không tạo được PDF (cần mạng) — mở hộp thoại in để "Lưu thành PDF"', 'error');
+    M.printHTML(title, innerHtml, size);   // fallback: in -> Lưu PDF
+  }
 };
 
 M._companyHeader = function () {
@@ -81,7 +137,7 @@ M._itemRows = function (doc, showPrice) {
 };
 
 /* ---------- Hóa đơn bán (bản đẹp, có VAT + công ty) ---------- */
-M.printInvoice = function (si, size) {
+M.printInvoice = function (si, size, action, opts) {
   const c = M.company();
   const cus = PW.customer(si.customerId);
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
@@ -115,11 +171,11 @@ M.printInvoice = function (si, size) {
     + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
     + (M.company().note ? '<div class="foot">' + U.esc(M.company().note) + '</div>' : '');
-  M.printHTML('Hóa đơn ' + si.code, inner, size);
+  M.printHTML('Hóa đơn ' + si.code, inner, size, action, opts);
 };
 
 /* ---------- PHIẾU GIAO HÀNG (chứng từ giao hàng + thu hộ COD) ---------- */
-M.deliveryNote = function (si, size) {
+M.deliveryNote = function (si, size, action, opts) {
   const cus = PW.customer(si.customerId);
   const sub = PW.invoiceTotal(si);
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
@@ -147,11 +203,11 @@ M.deliveryNote = function (si, size) {
     + (si.note ? '<div class="note">Ghi chú: ' + U.esc(si.note) + '</div>' : '')
     + '<div class="sign"><div>Người giao hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người nhận hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
     + (M.company().note ? '<div class="foot">' + U.esc(M.company().note) + '</div>' : '');
-  M.printHTML('Phiếu giao hàng ' + si.code, inner, size);
+  M.printHTML('Phiếu giao hàng ' + si.code, inner, size, action, opts);
 };
 
 /* ---------- PHIẾU XUẤT KHO BÁN HÀNG (mẫu chuẩn VN / MISA) ---------- */
-M.warehouseIssueNote = function (si, size) {
+M.warehouseIssueNote = function (si, size, action, opts) {
   const c = M.company();
   const cus = PW.customer(si.customerId);
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
@@ -202,74 +258,95 @@ M.warehouseIssueNote = function (si, size) {
     + '<div style="margin-top:4px;font-size:13px">Số chứng từ gốc kèm theo: .....</div>'
     + '<div class="r" style="margin-top:14px;font-style:italic">Ngày ..... tháng ..... năm ........</div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, họ tên)</i></div><div>Kế toán trưởng<br><i>(Ký, họ tên)</i></div><div>Giám đốc<br><i>(Ký, họ tên, đóng dấu)</i></div></div>';
-  M.printHTML('Phiếu xuất kho ' + si.code, inner, size);
+  M.printHTML('Phiếu xuất kho ' + si.code, inner, size, action, opts);
 };
 
-/* ---------- Gửi hóa đơn qua Zalo ----------
-   Điện thoại: dùng Web Share API -> chọn Zalo trong khay chia sẻ (kèm tệp Excel + nội dung).
-   Máy tính: tải tệp + copy nội dung + mở Zalo web để dán. (Gửi tệp PDF tự động cho từng KH cần Zalo OA.) */
-M.sendZalo = function (si) {
-  const c = M.company();
+/* ---------- Xuất EXCEL 1 chứng từ (file .xls thật) ---------- */
+M._invoiceXlsBlob = function (si) {
   const cus = PW.customer(si.customerId);
+  const headers = ['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'];
+  const rs = si.items.map((it, i) => { const p = PW.product(it.productId); return [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]; });
+  rs.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
+  if (PW.invoiceVat(si)) rs.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
+  rs.push(['', '', '', '', '', 'TỔNG THANH TOÁN', PW.invoiceGrand(si)]);
+  let h = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">';
+  h += '<tr><td colspan="7" style="font-weight:bold">HÓA ĐƠN ' + U.esc(si.code) + ' — ' + U.esc(cus ? cus.name : '') + ' — ' + U.date(si.date) + '</td></tr>';
+  h += '<tr>' + headers.map(x => '<th>' + U.esc(x) + '</th>').join('') + '</tr>';
+  rs.forEach(r => { h += '<tr>' + r.map(cl => typeof cl === 'number' ? '<td>' + cl + '</td>' : '<td>' + U.esc(cl == null ? '' : cl) + '</td>').join('') + '</tr>'; });
+  return new Blob(['﻿' + h + '</table></body></html>'], { type: 'application/vnd.ms-excel' });
+};
+M.exportDocExcel = function (si) {
+  const blob = M._invoiceXlsBlob(si);
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'HoaDon-' + si.code + '.xls'; a.click(); URL.revokeObjectURL(url);
+  U.toast('Đã xuất Excel: ' + si.code);
+};
+
+/* ---------- Gửi chứng từ qua Zalo ----------
+   Ưu tiên đính kèm FILE PDF (builderFn tạo PDF). Điện thoại: Web Share -> chọn Zalo.
+   Máy tính: tải tệp + copy nội dung + mở Zalo để đính kèm. (Gửi PDF tự động tới từng KH cần Zalo OA.) */
+M.sendZalo = function (si, builderFn, size) {
+  const c = M.company(), cus = PW.customer(si.customerId);
   const grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
   const lines = si.items.map(it => { const p = PW.product(it.productId); return '• ' + (p ? p.name : '') + '  x' + U.num(it.qty) + ' = ' + U.money(Number(it.qty) * Number(it.price || 0)) + 'đ'; }).join('\n');
   const text = (c.name || 'DALI') + ' — HÓA ĐƠN ' + si.code + '\n'
     + 'Ngày: ' + U.date(si.date) + (cus ? '\nKhách: ' + cus.name : '') + '\n' + lines + '\n'
-    + 'TỔNG THANH TOÁN: ' + U.money(grand) + ' đ'
-    + (paid < grand ? '\nCòn nợ: ' + U.money(grand - paid) + ' đ' : ' (đã thanh toán)');
+    + 'TỔNG THANH TOÁN: ' + U.money(grand) + ' đ' + (paid < grand ? '\nCòn nợ: ' + U.money(grand - paid) + ' đ' : ' (đã thanh toán)');
 
-  function xlsBlob() {
-    const headers = ['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'];
-    const rs = si.items.map((it, i) => { const p = PW.product(it.productId); return [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]; });
-    rs.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
-    if (PW.invoiceVat(si)) rs.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
-    rs.push(['', '', '', '', '', 'TỔNG THANH TOÁN', grand]);
-    let h = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">';
-    h += '<tr><td colspan="7" style="font-weight:bold">HÓA ĐƠN ' + U.esc(si.code) + ' — ' + U.esc(cus ? cus.name : '') + '</td></tr>';
-    h += '<tr>' + headers.map(x => '<th>' + U.esc(x) + '</th>').join('') + '</tr>';
-    rs.forEach(r => { h += '<tr>' + r.map(cl => typeof cl === 'number' ? '<td>' + cl + '</td>' : '<td>' + U.esc(cl == null ? '' : cl) + '</td>').join('') + '</tr>'; });
-    return new Blob(['﻿' + h + '</table></body></html>'], { type: 'application/vnd.ms-excel' });
+  function shareFile(file) {
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
+    } else if (navigator.share) {
+      navigator.share({ title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
+      if (file) { const u = URL.createObjectURL(file); const a = document.createElement('a'); a.href = u; a.download = file.name; a.click(); URL.revokeObjectURL(u); }
+    } else {
+      if (file) { const u = URL.createObjectURL(file); const a = document.createElement('a'); a.href = u; a.download = file.name; a.click(); URL.revokeObjectURL(u); }
+      try { if (navigator.clipboard) navigator.clipboard.writeText(text); } catch (e) {}
+      window.open('https://chat.zalo.me/', '_blank');
+      U.toast('Đã tải tệp + copy nội dung — đính kèm vào Zalo để gửi cho khách');
+    }
   }
-  const blob = xlsBlob();
-  let file = null;
-  try { file = new File([blob], 'HoaDon-' + si.code + '.xls', { type: 'application/vnd.ms-excel' }); } catch (e) {}
-
-  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-    navigator.share({ files: [file], title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
-  } else if (navigator.share) {
-    navigator.share({ title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
-  } else {
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'HoaDon-' + si.code + '.xls'; a.click(); URL.revokeObjectURL(url);
-    try { if (navigator.clipboard) navigator.clipboard.writeText(text); } catch (e) {}
-    window.open('https://chat.zalo.me/', '_blank');
-    U.toast('Đã tải tệp + copy nội dung — dán/kéo vào Zalo để gửi');
+  function fallbackExcel() {
+    const xb = M._invoiceXlsBlob(si); let f = null; try { f = new File([xb], 'HoaDon-' + si.code + '.xls', { type: 'application/vnd.ms-excel' }); } catch (e) {}
+    shareFile(f);
   }
+  if (builderFn) {
+    builderFn(si, size || 'A4', 'pdf-blob', { then: (blob) => {
+      if (!blob) return fallbackExcel();
+      let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.pdf', { type: 'application/pdf' }); } catch (e) {}
+      shareFile(f);
+    } });
+  } else { fallbackExcel(); }
 };
 
-/* ---------- Menu in: chọn loại chứng từ + khổ giấy ---------- */
+/* ---------- Menu In / Xuất khẩu / Gửi Zalo (như MISA) ---------- */
 M.printMenu = function (si) {
+  const typeSel = C.select([
+    { value: 'warehouse', label: 'Phiếu xuất kho bán hàng' },
+    { value: 'invoice', label: 'Hóa đơn bán hàng' },
+    { value: 'delivery', label: 'Phiếu giao hàng' },
+  ], 'warehouse');
   const sizeSel = C.select([
     { value: 'A4', label: 'Khổ A4 (giấy thường)' },
     { value: 'A5', label: 'Khổ A5 (nửa trang)' },
-    { value: '80', label: 'Khổ 80mm (máy in nhiệt / bill)' },
+    { value: '80', label: 'Khổ 80mm (máy in nhiệt)' },
   ], M.company().printSize || 'A4');
-  const doc = (fn) => () => { const s = sizeSel.value; C.closeModal(); fn(si, s); };
+  const fnOf = () => ({ warehouse: M.warehouseIssueNote, invoice: M.printInvoice, delivery: M.deliveryNote }[typeSel.value] || M.warehouseIssueNote);
   C.modal({
-    title: 'In chứng từ — ' + si.code,
+    title: 'In / Xuất / Gửi — ' + si.code,
     body: U.el('div', null, [
-      C.field('Khổ giấy', sizeSel),
-      U.el('p', { class: 'section-sub', style: 'margin:10px 0 6px' }, 'Chọn loại chứng từ để in:'),
+      U.el('div', { class: 'form-grid' }, [C.field('Loại chứng từ', typeSel), C.field('Khổ giấy', sizeSel)]),
+      U.el('p', { class: 'section-sub', style: 'margin:12px 0 6px;font-weight:600' }, 'In / Xuất file:'),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('🧾 Phiếu xuất kho bán hàng', doc(M.warehouseIssueNote), 'primary'),
-        C.btn('📄 Hóa đơn bán hàng', doc(M.printInvoice)),
-        C.btn('🚚 Phiếu giao hàng', doc(M.deliveryNote)),
+        C.btn('🖨 In', () => { const fn = fnOf(); C.closeModal(); fn(si, sizeSel.value); }, 'primary'),
+        C.btn('📄 Xuất PDF', () => { fnOf()(si, sizeSel.value, 'pdf'); }),
+        C.btn('📊 Xuất Excel', () => { M.exportDocExcel(si); }),
       ]),
-      U.el('p', { class: 'section-sub', style: 'margin:12px 0 6px' }, 'Hoặc gửi cho khách:'),
+      U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách:'),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('💬 Gửi qua Zalo', () => { C.closeModal(); M.sendZalo(si); }, 'primary'),
+        C.btn('💬 Gửi qua Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value); }, 'primary'),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
-        'Trên điện thoại: chọn Zalo trong khay chia sẻ (kèm tệp Excel + nội dung). Trên máy tính: tự tải tệp + copy nội dung + mở Zalo để dán.'),
+        'Xuất PDF/Excel tạo file tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF); máy tính tự tải PDF + copy nội dung + mở Zalo để đính kèm. (Tạo PDF cần có mạng lần đầu.)'),
     ]),
   });
 };
