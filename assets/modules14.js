@@ -309,33 +309,33 @@ M._ciProductIndex = function () {
 };
 
 // Khớp 1 dòng đã tách -> { productId, status: 'alias'|'code'|'fuzzy'|'none' }
-// NGUYÊN TẮC: MÃ là định danh chắc chắn. Dòng có mã -> chỉ khớp sản phẩm CÙNG MÃ; mã khác = CHƯA KHỚP (không đoán bừa).
+// NGUYÊN TẮC: MÃ + KÍCH THƯỚC là định danh. Dòng có mã/size -> chỉ khớp SP CÙNG mã VÀ CÙNG size;
+// khác mã hoặc khác size = CHƯA KHỚP (KHÔNG tự chọn nhầm size, vd dòng 30x30 không gắn vào SP 20x20).
 M._ciMatch = function (parsed, idx, customerId) {
   const aliasKey = parsed.aliasKey || M._ciNorm(parsed.name);
   const ent = {}; idx.all.forEach(e => { ent[e.p.id] = e; });
   const sizeOk = id => !parsed.sizeKey || !(ent[id] || {}).sizeKey || ent[id].sizeKey === parsed.sizeKey;
-  const codeOk = id => !parsed.codeKey || !(ent[id] || {}).codeKey || ent[id].codeKey === parsed.codeKey;  // dòng có mã -> SP phải cùng mã
+  const codeOk = id => !parsed.codeKey || !(ent[id] || {}).codeKey || ent[id].codeKey === parsed.codeKey;
 
-  // 1) Bí danh đã học — CHỈ nhận nếu không lệch mã (chặn bí danh học sai từ trước, vd K143 -> K456)
+  // 1) Bí danh đã học — CHỈ nhận nếu khớp cả MÃ và KÍCH THƯỚC
   const aliases = PW.data.productAliases || [];
   let al = aliases.find(a => a.customerId === customerId && a.alias === aliasKey) ||
            aliases.find(a => a.alias === aliasKey);
-  if (al && ent[al.productId] && codeOk(al.productId)) {
-    return { productId: al.productId, status: sizeOk(al.productId) ? 'alias' : 'fuzzy' };
+  if (al && ent[al.productId] && codeOk(al.productId) && sizeOk(al.productId)) {
+    return { productId: al.productId, status: 'alias' };
   }
 
-  // 2-3) Khớp theo MÃ
+  // 2-3) Khớp theo MÃ + KÍCH THƯỚC
   if (parsed.codeKey) {
     const hit = idx.full[parsed.codeKey + '|' + parsed.sizeKey];
     if (hit && hit.length) return { productId: hit[0].p.id, status: 'code' };
     const byCode = idx.code[parsed.codeKey];
-    if (byCode && byCode.length === 1) return { productId: byCode[0].p.id, status: sizeOk(byCode[0].p.id) ? 'code' : 'fuzzy' };
-    if (byCode && byCode.length > 1) {
-      const bySize = byCode.filter(e => e.sizeKey === parsed.sizeKey);
+    if (byCode && byCode.length) {
+      const bySize = byCode.filter(e => sizeOk(e.p.id));   // chỉ SP đúng kích thước (hoặc SP không ghi size)
       if (bySize.length === 1) return { productId: bySize[0].p.id, status: 'code' };
-      return { productId: byCode[0].p.id, status: 'fuzzy' };
+      if (bySize.length > 1) return { productId: bySize[0].p.id, status: 'fuzzy' };
     }
-    return { productId: '', status: 'none' };   // có mã nhưng KHÔNG có SP cùng mã -> CHƯA KHỚP (tránh khớp nhầm sang mã khác)
+    return { productId: '', status: 'none' };   // có mã nhưng không có SP đúng mã+size -> CHƯA KHỚP
   }
 
   // 4) Khớp mờ theo tên — CHỈ khi dòng KHÔNG có mã rõ ràng
