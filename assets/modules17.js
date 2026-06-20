@@ -82,17 +82,29 @@ M._itemRows = function (doc, showPrice) {
 
 /* ---------- Hóa đơn bán (bản đẹp, có VAT + công ty) ---------- */
 M.printInvoice = function (si, size) {
+  const c = M.company();
   const cus = PW.customer(si.customerId);
+  const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
   const sub = PW.invoiceTotal(si);
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
   const grand = sub + vat;
+  const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
+  const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const head = '<th class="c" style="width:34px">STT</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">HÓA ĐƠN BÁN HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date) + '</div>'
-    + '<div class="party"><b>Khách hàng:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
-    + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + ' &nbsp; <b>Địa chỉ:</b> ' + U.esc(cus ? cus.address : '')
-    + (cus && cus.taxCode ? '<br><b>MST:</b> ' + U.esc(cus.taxCode) : '') + '</div>'
+    + '<table style="width:100%"><tr>'
+    + '<td style="vertical-align:top;line-height:1.9;font-size:13px">'
+    + 'Người mua:<br>Tên khách hàng: <b>' + U.esc(cus ? cus.name : '') + '</b><br>'
+    + 'Địa chỉ: ' + U.esc(cus ? (cus.address || '') : '') + '<br>'
+    + 'Điện thoại: ' + U.esc(cus ? (cus.phone || '') : '') + '<br>'
+    + 'Mã số thuế: ' + U.esc(cus ? (cus.taxCode || '') : '') + '<br>'
+    + 'Diễn giải: ' + U.esc(si.note || '') + '<br>'
+    + 'Nhân viên bán hàng: ' + U.esc(emp ? emp.name : '') + '</td>'
+    + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
+    + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
+    + '</tr></table>'
     + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
     + '<tfoot>'
     + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
@@ -101,7 +113,7 @@ M.printInvoice = function (si, size) {
     + '<tr><td colspan="5" class="r">Đã thu</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
     + '<tr><td colspan="5" class="r"><b>Còn lại</b></td><td class="r"><b>' + U.money(grand - (si.paid || 0)) + '</b></td></tr>'
     + '</tfoot></table>'
-    + (si.note ? '<div class="note">Ghi chú: ' + U.esc(si.note) + '</div>' : '')
+    + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
     + (M.company().note ? '<div class="foot">' + U.esc(M.company().note) + '</div>' : '');
   M.printHTML('Hóa đơn ' + si.code, inner, size);

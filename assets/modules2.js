@@ -54,7 +54,7 @@ M.sales = function (root) {
     host.innerHTML = '';
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: si => U.date(si.date) },
-      { label: 'Số HĐ', render: si => U.esc(si.code) },
+      { label: 'Số HĐ', render: si => U.el('a', { href: '#', style: 'font-weight:700;color:var(--teal-d);text-decoration:underline', title: 'Xem chi tiết hóa đơn', onclick: e => { e.preventDefault(); M.invoiceView(si); } }, si.code) },
       { label: 'Khách hàng', render: si => { const c = PW.customer(si.customerId); return c ? U.esc(c.name) : ''; } },
       { label: 'Số mặt hàng', center: true, render: si => si.items.length },
       { label: 'Tổng tiền', num: true, render: si => U.money(PW.invoiceGrand(si)) },
@@ -78,6 +78,41 @@ M.sales = function (root) {
     ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc' }));
   }
   draw();
+};
+
+/* Xem nhanh 1 hóa đơn (chế độ chỉ đọc) — bấm vào Số HĐ ở danh sách */
+M.invoiceView = function (si) {
+  const cus = PW.customer(si.customerId);
+  const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
+  const ch = PW.channel && PW.channel(si.channelId);
+  const sub = PW.invoiceTotal(si), vat = PW.invoiceVat(si), grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
+  const rowsHtml = si.items.map((it, i) => {
+    const p = PW.product(it.productId); const price = Number(it.price || 0);
+    return `<tr><td class="c">${i + 1}</td><td>${U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '')}</td><td class="c">${U.esc(p ? p.unit : '')}</td><td class="r">${U.num(it.qty)}</td><td class="r">${U.money(price)}</td><td class="r">${U.money(Number(it.qty) * price)}</td></tr>`;
+  }).join('');
+  const body = U.el('div', { html:
+    `<div style="line-height:1.9;font-size:14px">
+      <div><b>Số HĐ:</b> ${U.esc(si.code)} &nbsp;·&nbsp; <b>Ngày:</b> ${U.date(si.date)}${ch ? ' &nbsp;·&nbsp; <b>Kênh:</b> ' + U.esc(ch.name) : ''}${si.dueDate ? ' &nbsp;·&nbsp; <b>Hạn TT:</b> ' + U.date(si.dueDate) : ''}</div>
+      <div><b>Khách hàng:</b> ${U.esc(cus ? cus.name : '')}</div>
+      <div><b>Địa chỉ:</b> ${U.esc(cus ? (cus.address || '') : '')} &nbsp; <b>Điện thoại:</b> ${U.esc(cus ? (cus.phone || '') : '')}${cus && cus.taxCode ? ' &nbsp; <b>MST:</b> ' + U.esc(cus.taxCode) : ''}</div>
+      ${emp ? `<div><b>Nhân viên bán:</b> ${U.esc(emp.name)}</div>` : ''}
+      ${si.note ? `<div><b>Diễn giải:</b> ${U.esc(si.note)}</div>` : ''}
+    </div>
+    <table class="items-tbl" style="margin-top:10px;width:100%;border-collapse:collapse">
+      <thead><tr><th>STT</th><th>Tên hàng</th><th>ĐVT</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;font-size:14px">
+      <div>Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
+      ${vat ? `<div>Thuế GTGT: ${U.money(vat)} đ</div>` : ''}
+      <div style="font-size:16px;font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN: ${U.money(grand)} đ</div>
+      <div>Đã thu: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${grand - paid > 0 ? 'text-red' : 'text-green'}">${U.money(grand - paid)} đ</b></div>
+    </div>` });
+  C.modal({
+    title: 'Hóa đơn ' + si.code, wide: true, body,
+    footer: [C.btn('Đóng', C.closeModal),
+      C.btn('Sửa', () => { C.closeModal(); M.salesForm(si); }),
+      C.btn('🖨 In', () => M.printMenu(si), 'primary')],
+  });
 };
 
 /* Sao chép chứng từ -> mở form MỚI đã điền sẵn dòng hàng (số/ngày/đã trả làm mới) */
@@ -910,10 +945,10 @@ M.docForm = function (cfg) {
   const body = U.el('div', null, [
     refBar,
     header,
+    C.field('Diễn giải', noteI, { full: true }),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa'),
     U.el('div', { class: 'table-wrap' }, itemsTable),
     U.el('div', { class: 'mt8 pill-row' }, [addBtn, pasteBtn]),
-    C.field('Diễn giải', noteI, { full: true }),
     summary,
   ]);
 
