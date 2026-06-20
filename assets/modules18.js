@@ -86,7 +86,8 @@ M.purchaseScan = function (root) {
   revCard.appendChild(U.el('div', { class: 'pill-row mt16' }, [createBtn]));
 
   const STATUS_TAG = {
-    alias: '<span class="tag green">Bí danh ✓</span>', code: '<span class="tag green">Mã hàng ✓</span>',
+    alias: '<span class="tag green">Đã khớp</span>', code: '<span class="tag green">Đã khớp</span>',
+    manual: '<span class="tag green">Đã chọn</span>',
     fuzzy: '<span class="tag orange">Cần xem lại</span>', none: '<span class="tag red">Chưa khớp</span>',
   };
   function costHint(pid) { return (PW.avgPurchaseCost ? PW.avgPurchaseCost(pid) : 0) || (PW.product(pid) || {}).cost || 0; }
@@ -99,12 +100,17 @@ M.purchaseScan = function (root) {
       if (segs[0] && /^ncc$/i.test(segs[0].replace(/\s/g, ''))) { suggestSupplier(segs[1] || '', segs[2] || ''); return; }
       if (l.trim()) itemLines.push(l);
     });
+    // Tiêu đề cột (lấy đúng Tên/SL/Đơn giá, bỏ STT & mã vạch)
+    let colMap = null;
+    if (itemLines.length) { const hc = M._ciSplitCells(itemLines[0].trim()); if (hc) { const hm = M._ciHeaderMap(hc); if (hm.name != null && (hm.qty != null || hm.price != null)) colMap = hm; } }
+    const dataLines = colMap ? itemLines.slice(1) : itemLines;
     state.rows = [];
-    itemLines.forEach(l => {
-      const parsed = M._ciParseLine(l); if (!parsed) return;
+    dataLines.forEach(l => {
+      const parsed = M._ciParseLine(l, colMap); if (!parsed) return;
       const m = M._ciMatch(parsed, state.idx, supSel.value || null);
       const row = Object.assign(parsed, m);
-      if (row.productId && !row.price) row.price = costHint(row.productId);
+      if (row.price > 0) row.priceTouched = true;                 // giá nhập từ file -> giữ
+      else if (row.productId) row.price = costHint(row.productId);
       state.rows.push(row);
     });
     draw();
@@ -124,25 +130,33 @@ M.purchaseScan = function (root) {
     const ok = state.rows.filter(r => r.status === 'alias' || r.status === 'code' || r.manual).length;
     const warn = state.rows.filter(r => r.status === 'fuzzy' && !r.manual).length;
     const bad = state.rows.filter(r => r.status === 'none' && !r.manual).length;
-    sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — khớp chắc <b class="text-green">' + ok +
+    sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
-    const prodOpts = [{ value: '', label: '-- Chọn hàng / NVL --' }]
-      .concat(PW.data.products.map(p => ({ value: p.id, label: (p.code ? p.code + ' - ' : '') + p.name })));
     host.appendChild(C.table(state.rows, [
       { label: '#', width: '34px', render: r => String(state.rows.indexOf(r) + 1) },
       { label: 'Dòng gốc', render: r => U.esc(r.raw) },
       { label: 'Hàng hóa / NVL khớp', render: r => {
-          const sel = C.select(prodOpts, r.productId);
-          sel.addEventListener('change', () => { r.productId = sel.value; r.manual = true; if (r.productId && !r.priceTouched) r.price = costHint(r.productId); draw(); });
-          const newBtn = C.btn('+ Tạo mới', () => M.quickAddProduct(false, np => { r.productId = np.id; r.manual = true; state.idx = M._ciProductIndex(); draw(); }), 'sm');
-          newBtn.title = 'Tạo hàng hóa / nguyên vật liệu mới';
+          // Bộ chọn TÌM KIẾM (gõ mã/tên), mở sẵn theo mã đã nhận diện -> đỡ cuộn
+          const sel = M.productPicker(r.productId, (p) => { r.productId = p.id; r.manual = true; if (!r.priceTouched) r.price = costHint(p.id); draw(); },
+            { isSale: false, search: r.codeKey || '' });
+          const newBtn = C.btn('+ Tạo mới', () => {
+            M.productForm(null, {
+              prefill: {
+                name: r.name || '', kind: 'nvl',
+                group: r.sizeKey ? r.sizeKey.toLowerCase() : '',
+                code: r.codeKey ? (r.codeKey + (r.sizeKey ? ' ' + r.sizeKey : '')).toUpperCase() : PW.nextCode('VT'),
+              },
+              onSaved: (np) => { r.productId = np.id; r.manual = true; state.idx = M._ciProductIndex(); if (!r.priceTouched) r.price = costHint(np.id); draw(); },
+            });
+          }, 'sm');
+          newBtn.title = 'Tạo hàng hóa / nguyên vật liệu mới (điền sẵn từ dòng)';
           const wrap = U.el('div', null, [sel, U.el('div', { class: 'pill-row', style: 'margin-top:4px' }, [newBtn])]);
           if (r.productId) wrap.appendChild(U.el('div', { class: 'text-muted', style: 'font-size:11px;margin-top:2px' }, 'Tồn hiện tại: ' + U.num(PW.stockOf(r.productId))));
           return wrap;
         } },
       { label: 'SL', num: true, width: '78px', render: r => { const i = C.input({ type: 'number', value: r.qty, min: 1, style: 'width:68px;text-align:right' }); i.addEventListener('input', () => { r.qty = Number(i.value) || 1; }); return i; } },
       { label: 'Đơn giá nhập', num: true, width: '120px', render: r => { const i = C.input({ type: 'number', value: r.price, min: 0, style: 'width:110px;text-align:right' }); i.addEventListener('input', () => { r.price = Number(i.value) || 0; r.priceTouched = true; }); return i; } },
-      { label: 'Trạng thái', center: true, render: r => STATUS_TAG[r.manual ? 'alias' : r.status] || '' },
+      { label: 'Trạng thái', center: true, render: r => STATUS_TAG[r.manual ? 'manual' : r.status] || '' },
       { label: '', width: '40px', render: r => C.actions([{ label: '✕', title: 'Bỏ dòng', onClick: () => { state.rows.splice(state.rows.indexOf(r), 1); draw(); } }]) },
     ], { empty: 'Chưa có dòng nào' }));
   }
