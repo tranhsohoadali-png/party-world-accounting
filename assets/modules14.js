@@ -398,7 +398,7 @@ M.consignImport = function (root) {
     [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
       .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name }))), '');
   cusSel.style.flex = '1';
-  cusSel.addEventListener('change', () => { if (state.rows.length) rematch(); });
+  cusSel.addEventListener('change', () => { if (state.rows.length) rematch(); });   // đổi nhà sách -> cập nhật giá gần nhất của KH đó
   function rebuildCus(selectId) {
     cusSel.innerHTML = '';
     [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
@@ -446,6 +446,7 @@ M.consignImport = function (root) {
     [{ value: '', label: '-- Kênh bán --' }]
       .concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))),
     (PW.data.channels.find(c => /ky gui|ki gui|nha sach/.test(M._ciNorm(c.name))) || { id: '' }).id);
+  chSel.addEventListener('change', () => { if (state.rows.length) rematch(); });   // đổi kênh -> cập nhật giá fallback
   const vatSel = C.select([
     { value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' },
   ], 0);
@@ -507,7 +508,8 @@ M.consignImport = function (root) {
       if (!parsed) return;
       const m = M._ciMatch(parsed, state.idx, cusSel.value || null);
       const row = Object.assign(parsed, m);
-      if (row.productId && !row.price) row.price = M._ciPrice(row.productId, chSel.value); // giá mặc định theo kênh
+      if (row.price > 0) row.priceTouched = true;   // file có sẵn đơn giá -> giữ nguyên, không tự đè
+      else if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.value, chSel.value);  // giá gần nhất của KH
       state.rows.push(row);
     });
     draw();
@@ -517,7 +519,8 @@ M.consignImport = function (root) {
     state.rows.forEach(r => {
       const m = M._ciMatch(r, state.idx, cusSel.value || null);
       r.productId = m.productId; r.status = m.status;
-      if (r.productId && !r.price) r.price = M._ciPrice(r.productId, chSel.value);
+      // đổi nhà sách/kênh -> cập nhật lại đơn giá gần nhất theo KH (trừ dòng đã sửa tay / có giá từ file)
+      if (r.productId && !r.priceTouched) r.price = M._ciAutoPrice(r.productId, cusSel.value, chSel.value);
     });
     draw();
   }
@@ -542,7 +545,7 @@ M.consignImport = function (root) {
           const sel = C.select(prodOpts, r.productId);
           sel.addEventListener('change', () => {
             r.productId = sel.value; r.manual = true;
-            if (r.productId && !r.priceTouched) { r.price = M._ciPrice(r.productId, chSel.value); }
+            if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.value, chSel.value); }
             draw();
           });
           // Nút "+" thêm nhanh sản phẩm mới (điền sẵn tên/mã/kích thước từ dòng) rồi tự chọn vào dòng
@@ -556,7 +559,7 @@ M.consignImport = function (root) {
               },
               onSaved: (obj) => {
                 r.productId = obj.id; r.manual = true;
-                if (!r.priceTouched) r.price = M._ciPrice(obj.id, chSel.value);
+                if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.value, chSel.value);
                 draw();
               },
             });
@@ -638,6 +641,27 @@ M._ciPrice = function (productId, channelId) {
   if (!p) return 0;
   if (channelId && PW.channelPrice) return PW.channelPrice(p, channelId);
   return Number(p.price) || 0;
+};
+// Đơn giá GẦN NHẤT đã bán mặt hàng này CHO CHÍNH khách hàng này (theo hóa đơn/đơn hàng gần nhất)
+M._ciLastPrice = function (productId, customerId) {
+  if (!productId || !customerId) return 0;
+  let best = null;
+  const scan = list => (list || []).forEach(d => {
+    if (d.customerId !== customerId) return;
+    (d.items || []).forEach(it => {
+      if (it.productId === productId && Number(it.price) > 0) {
+        const dt = (d.date || '') + (d.code || '');
+        if (!best || dt >= best.dt) best = { dt: dt, price: Number(it.price) };
+      }
+    });
+  });
+  scan(PW.data.salesInvoices);
+  scan(PW.data.salesOrders);
+  return best ? best.price : 0;
+};
+// Đơn giá tự điền: ưu tiên giá gần nhất của KHÁCH HÀNG này, nếu chưa từng bán -> giá theo kênh/giá bán
+M._ciAutoPrice = function (productId, customerId, channelId) {
+  return M._ciLastPrice(productId, customerId) || M._ciPrice(productId, channelId);
 };
 
 /* ---------- AI đọc ảnh / PDF (Claude qua api/ai-ocr.php) ---------- */
