@@ -545,6 +545,65 @@ M.productPicker = function (initialId, onPick, opts) {
   return wrap;
 };
 
+/* ---------- Bộ chọn KHÁCH HÀNG / NCC / NHÂN VIÊN có tìm kiếm (gõ tên/mã/SĐT) ----------
+   opts: { kind:'customer'|'supplier'|'employee', leadLabel, search }. onPick(partner). wrap.ppValue()/ppSet(id). */
+M.partnerPicker = function (initialId, onPick, opts) {
+  opts = opts || {};
+  const kind = opts.kind || 'customer';
+  const listOf = () => kind === 'supplier' ? (PW.data.suppliers || []) : (kind === 'employee' ? (PW.data.employees || []) : (PW.data.customers || []));
+  const norm = s => (M._ciNorm ? M._ciNorm(s) : String(s || '').toLowerCase());
+  const wrap = U.el('div', { class: 'pp-wrap' });
+  const btn = U.el('button', { type: 'button', class: 'inp pp-btn' });
+  let selId = initialId || '', panel = null, firstP = null;
+  const find = id => listOf().find(x => x.id === id);
+  function lbl() { const p = find(selId); return p ? ((p.code ? p.code + ' - ' : '') + p.name) : (opts.leadLabel || '-- Chọn --'); }
+  function refresh() { btn.textContent = lbl(); btn.classList.toggle('pp-empty', !selId); }
+  refresh();
+  function position() { if (!panel) return; const r = btn.getBoundingClientRect();
+    const w = Math.min(Math.max(r.width, 420), window.innerWidth - 16);
+    panel.style.width = w + 'px'; panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px'; panel.style.top = (r.bottom + 2) + 'px'; }
+  function close() { if (!panel) return; panel.remove(); panel = null;
+    document.removeEventListener('mousedown', onDoc, true); window.removeEventListener('scroll', position, true); window.removeEventListener('resize', position); }
+  function onDoc(e) { if (panel && !panel.contains(e.target) && e.target !== btn) close(); }
+  function open() {
+    if (panel) { close(); return; }
+    const search = U.el('input', { class: 'inp', placeholder: 'Gõ tên / mã / SĐT...' });
+    if (opts.search) search.value = opts.search;
+    const list = U.el('div', { class: 'pp-list' });
+    const top = U.el('div', { class: 'pp-top' }, [search]);
+    const addBtn = U.el('button', { type: 'button' }, '+ Thêm mới');
+    addBtn.addEventListener('click', () => { close(); M.quickAddPartner(kind !== 'supplier', np => { selId = np.id; refresh(); onPick(np); }); });
+    const foot = U.el('div', { class: 'pp-foot' }, addBtn);
+    panel = U.el('div', { class: 'pp-panel' }, [top, list, foot]);
+    document.body.appendChild(panel); position();
+    function render() {
+      const q = norm(search.value); list.innerHTML = ''; firstP = null;
+      const rows = listOf().filter(p => !q || norm((p.code || '') + ' ' + p.name + ' ' + (p.phone || '')).indexOf(q) >= 0).slice(0, 300);
+      if (!rows.length) { list.appendChild(U.el('div', { class: 'pp-empty-row' }, 'Không tìm thấy — bấm "+ Thêm mới" bên dưới')); return; }
+      firstP = rows[0];
+      rows.forEach((p, i) => {
+        const row = U.el('div', { class: 'pp-row' + (i === 0 ? ' pp-active' : ''), style: 'display:flex;gap:10px;align-items:center' }, [
+          U.el('span', { class: 'pp-code', style: 'flex:0 0 auto;min-width:60px' }, p.code || ''),
+          U.el('span', { class: 'pp-name', style: 'flex:1', title: p.name }, p.name),
+          U.el('span', { class: 'text-muted', style: 'flex:0 0 auto' }, p.phone || ''),
+        ]);
+        row.addEventListener('mousedown', e => { e.preventDefault(); selId = p.id; refresh(); close(); onPick(p); });
+        list.appendChild(row);
+      });
+    }
+    search.addEventListener('input', render);
+    search.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); btn.focus(); } else if (e.key === 'Enter') { e.preventDefault(); if (firstP) { selId = firstP.id; refresh(); close(); onPick(firstP); } } });
+    document.addEventListener('mousedown', onDoc, true);
+    window.addEventListener('scroll', position, true); window.addEventListener('resize', position);
+    render(); search.focus(); search.select();
+  }
+  btn.addEventListener('click', open);
+  wrap.appendChild(btn);
+  wrap.ppValue = () => selId;
+  wrap.ppSet = (id) => { selId = id || ''; refresh(); };
+  return wrap;
+};
+
 M.docForm = function (cfg) {
   const { mode, doc, isNew, title, partnerLabel, partners, partnerKey, priceKey, onSave } = cfg;
   const isSale = mode === 'sale';

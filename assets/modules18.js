@@ -43,15 +43,11 @@ M.purchaseScan = function (root) {
   /* --- Thẻ 2: thông tin phiếu nhập --- */
   const docCard = U.el('div', { class: 'card' });
   docCard.appendChild(U.el('div', { class: 'card-title' }, '🧾 Phiếu nhập sẽ tạo'));
-  const supSel = C.select([{ value: '', label: '-- Chọn nhà cung cấp --' }]
-    .concat(PW.data.suppliers.map(s => ({ value: s.id, label: s.name }))), '');
+  // Bộ chọn NCC CÓ TÌM KIẾM (gõ tên/SĐT) thay <select> cuộn dài
+  const supSel = M.partnerPicker('', () => { if (state.rows.length) rematch(); },
+    { kind: 'supplier', leadLabel: '-- Chọn nhà cung cấp --' });
   supSel.style.flex = '1';
-  supSel.addEventListener('change', () => { if (state.rows.length) rematch(); });
-  function rebuildSup(selId) {
-    supSel.innerHTML = '';
-    [{ value: '', label: '-- Chọn nhà cung cấp --' }].concat(PW.data.suppliers.map(s => ({ value: s.id, label: s.name })))
-      .forEach(o => { const op = U.el('option', { value: o.value }, o.label); if (String(o.value) === String(selId || '')) op.selected = true; supSel.appendChild(op); });
-  }
+  function rebuildSup(selId) { supSel.ppSet(selId); }
   const addSupBtn = C.btn('+', () => M.quickAddPartner(false, np => { rebuildSup(np.id); if (state.rows.length) rematch(); }), 'sm');
   addSupBtn.title = 'Thêm nhanh nhà cung cấp';
   const supRow = U.el('div', { style: 'display:flex;gap:6px;align-items:stretch' }, [supSel, addSupBtn]);
@@ -124,7 +120,7 @@ M.purchaseScan = function (root) {
     state.rows = [];
     dataLines.forEach(l => {
       const parsed = M._ciParseLine(l, colMap); if (!parsed) return;
-      const m = M._ciMatch(parsed, state.idx, supSel.value || null);
+      const m = M._ciMatch(parsed, state.idx, supSel.ppValue() || null);
       const row = Object.assign(parsed, m);
       if (row.price > 0) row.priceTouched = true;                 // giá nhập từ file -> giữ
       else if (row.productId) row.price = costHint(row.productId);
@@ -135,7 +131,7 @@ M.purchaseScan = function (root) {
   function rematch() {
     state.rows.forEach(r => {
       if (r.manual) return;
-      const m = M._ciMatch(r, state.idx, supSel.value || null);
+      const m = M._ciMatch(r, state.idx, supSel.ppValue() || null);
       r.productId = m.productId; r.status = m.status;
       if (r.productId && !r.priceTouched && !r.price) r.price = costHint(r.productId);
     });
@@ -178,7 +174,7 @@ M.purchaseScan = function (root) {
     ], { empty: 'Chưa có dòng nào' }));
   }
   function doCreate() {
-    if (!supSel.value) { U.toast('Chọn nhà cung cấp trước', 'error'); return; }
+    if (!supSel.ppValue()) { U.toast('Chọn nhà cung cấp trước', 'error'); return; }
     const valid = state.rows.filter(r => r.productId && r.qty > 0);
     if (!valid.length) { U.toast('Chưa có dòng nào khớp hàng hóa', 'error'); return; }
     const unmatched = state.rows.length - valid.length;
@@ -188,13 +184,13 @@ M.purchaseScan = function (root) {
     valid.forEach(r => {
       const aliasKey = r.aliasKey || M._ciNorm(r.name);
       if (!aliasKey || aliasKey.length < 3) return;
-      const ex = (PW.data.productAliases || []).find(a => a.customerId === supSel.value && a.alias === aliasKey);
+      const ex = (PW.data.productAliases || []).find(a => a.customerId === supSel.ppValue() && a.alias === aliasKey);
       if (ex) { ex.productId = r.productId; return; }
-      PW.data.productAliases.push({ id: PW.uid(), customerId: supSel.value, supplierId: supSel.value, alias: aliasKey, productId: r.productId });
+      PW.data.productAliases.push({ id: PW.uid(), customerId: supSel.ppValue(), supplierId: supSel.ppValue(), alias: aliasKey, productId: r.productId });
     });
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), cost: Number(r.price) || 0 }));
     const code = PW.nextCode('PN');
-    const pu = { id: PW.uid(), code: code, date: dateI.value, supplierId: supSel.value,
+    const pu = { id: PW.uid(), code: code, date: dateI.value, supplierId: supSel.ppValue(),
       vatRate: Number(vatSel.value) || 0, items: items, discount: 0, paid: 0, paidAccountId: null, note: 'Quét hóa đơn mua (AI)' };
     PW.data.purchases.push(pu);
     PW.logActivity('create', 'purchase', code, U.money(PW.purchaseTotal(pu)) + ' đ (quét AI)');

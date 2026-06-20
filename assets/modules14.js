@@ -398,21 +398,11 @@ M.consignImport = function (root) {
   /* --- Thẻ 2: thông tin chứng từ --- */
   const docCard = U.el('div', { class: 'card' });
   docCard.appendChild(U.el('div', { class: 'card-title' }, '🧾 Chứng từ sẽ tạo'));
-  const cusSel = C.select(
-    [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
-      .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name }))), '');
+  // Bộ chọn nhà sách/KH CÓ TÌM KIẾM (gõ tên/SĐT) thay cho <select> cuộn dài
+  const cusSel = M.partnerPicker('', () => { if (state.rows.length) rematch(); },
+    { kind: 'customer', leadLabel: '-- Chọn nhà sách / khách hàng --' });
   cusSel.style.flex = '1';
-  cusSel.addEventListener('change', () => { if (state.rows.length) rematch(); });   // đổi nhà sách -> cập nhật giá gần nhất của KH đó
-  function rebuildCus(selectId) {
-    cusSel.innerHTML = '';
-    [{ value: '', label: '-- Chọn nhà sách / khách hàng --' }]
-      .concat(PW.data.customers.map(c => ({ value: c.id, label: c.name })))
-      .forEach(o => {
-        const opt = U.el('option', { value: o.value }, o.label);
-        if (String(o.value) === String(selectId || '')) opt.selected = true;
-        cusSel.appendChild(opt);
-      });
-  }
+  function rebuildCus(selectId) { cusSel.ppSet(selectId); }   // picker đọc danh sách động -> chỉ cần đặt lựa chọn
   // Nút + : thêm nhanh nhà sách/khách hàng mới ngay tại chỗ (không rời màn hình)
   const addCusBtn = C.btn('+', () => {
     const nameI = C.input({ placeholder: 'Tên nhà sách / khách hàng *', style: 'width:100%' });
@@ -468,7 +458,7 @@ M.consignImport = function (root) {
   function applyDetect(text) {
     const det = M._ciDetectMeta(text);
     const got = [];
-    if (det.customerId) { cusSel.value = det.customerId; got.push('nhà sách: ' + det.customerName); }
+    if (det.customerId) { cusSel.ppSet(det.customerId); got.push('nhà sách: ' + det.customerName); }
     if (det.date) { dateI.value = det.date; got.push('ngày: ' + U.date(det.date)); }
     if (det.channelId) { chSel.value = det.channelId; got.push('kênh: ' + det.channelName); }
     if (det.vatRate != null) { vatSel.value = det.vatRate; got.push('VAT: ' + det.vatRate + '%'); }
@@ -498,7 +488,7 @@ M.consignImport = function (root) {
         unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
       PW.data.products.push(obj);
       r.productId = obj.id; r.manual = true;
-      if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue ? cusSel.ppValue() : cusSel.value, chSel.value);
+      if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value);
     });
     PW.save(); state.idx = M._ciProductIndex(); draw();
     U.toast('Đã tạo ' + todo.length + ' thành phẩm và gán vào các dòng');
@@ -527,10 +517,10 @@ M.consignImport = function (root) {
     dataLines.forEach(l => {
       const parsed = M._ciParseLine(l, colMap);
       if (!parsed) return;
-      const m = M._ciMatch(parsed, state.idx, cusSel.value || null);
+      const m = M._ciMatch(parsed, state.idx, cusSel.ppValue() || null);
       const row = Object.assign(parsed, m);
       if (row.price > 0) row.priceTouched = true;   // file có sẵn đơn giá -> giữ nguyên, không tự đè
-      else if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.value, chSel.value);  // giá gần nhất của KH
+      else if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.ppValue(), chSel.value);  // giá gần nhất của KH
       state.rows.push(row);
     });
     draw();
@@ -538,10 +528,10 @@ M.consignImport = function (root) {
 
   function rematch() {
     state.rows.forEach(r => {
-      const m = M._ciMatch(r, state.idx, cusSel.value || null);
+      const m = M._ciMatch(r, state.idx, cusSel.ppValue() || null);
       r.productId = m.productId; r.status = m.status;
       // đổi nhà sách/kênh -> cập nhật lại đơn giá gần nhất theo KH (trừ dòng đã sửa tay / có giá từ file)
-      if (r.productId && !r.priceTouched) r.price = M._ciAutoPrice(r.productId, cusSel.value, chSel.value);
+      if (r.productId && !r.priceTouched) r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value);
     });
     draw();
   }
@@ -564,7 +554,7 @@ M.consignImport = function (root) {
           // Bộ chọn TÌM KIẾM (gõ mã/tên), mở sẵn theo mã đã nhận diện -> thao tác nhanh
           const sel = M.productPicker(r.productId, (p) => {
             r.productId = p.id; r.manual = true;
-            if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.value, chSel.value); }
+            if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value); }
             draw();
           }, { isSale: true, search: r.codeKey || '' });
           // Nút "+" thêm nhanh sản phẩm mới (điền sẵn tên/mã/kích thước từ dòng) rồi tự chọn vào dòng
@@ -579,7 +569,7 @@ M.consignImport = function (root) {
               onSaved: (obj) => {
                 r.productId = obj.id; r.manual = true;
                 state.idx = M._ciProductIndex();   // nạp lại chỉ mục -> dòng khác khớp được hàng vừa tạo
-                if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.value, chSel.value);
+                if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value);
                 draw();
               },
             });
@@ -610,7 +600,7 @@ M.consignImport = function (root) {
   }
 
   function doCreate() {
-    if (!cusSel.value) { U.toast('Chọn nhà sách / khách hàng trước', 'error'); return; }
+    if (!cusSel.ppValue()) { U.toast('Chọn nhà sách / khách hàng trước', 'error'); return; }
     const valid = state.rows.filter(r => r.productId && r.qty > 0);
     if (!valid.length) { U.toast('Chưa có dòng nào khớp hàng hóa', 'error'); return; }
     const unmatched = state.rows.length - valid.length;
@@ -620,9 +610,9 @@ M.consignImport = function (root) {
     valid.forEach(r => {
       const aliasKey = r.aliasKey || M._ciNorm(r.name);
       if (!aliasKey || aliasKey.length < 3) return;
-      const exists = (PW.data.productAliases || []).find(a => a.customerId === cusSel.value && a.alias === aliasKey);
+      const exists = (PW.data.productAliases || []).find(a => a.customerId === cusSel.ppValue() && a.alias === aliasKey);
       if (exists) { exists.productId = r.productId; return; }
-      PW.data.productAliases.push({ id: PW.uid(), customerId: cusSel.value, alias: aliasKey, productId: r.productId });
+      PW.data.productAliases.push({ id: PW.uid(), customerId: cusSel.ppValue(), alias: aliasKey, productId: r.productId });
     });
 
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
@@ -630,13 +620,13 @@ M.consignImport = function (root) {
     if (typeSel.value === 'order') {
       code = PW.nextCode('DH');
       PW.data.salesOrders.push({
-        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.value,
+        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
         items: items, discount: 0, status: 'open', note: 'Gom đơn ký gửi tự động',
       });
     } else {
       code = PW.nextCode('HD');
       PW.data.salesInvoices.push({
-        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.value,
+        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
         channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0, items: items, discount: 0,
         paid: 0, paidAccountId: null, note: 'Gom đơn ký gửi tự động',
       });
