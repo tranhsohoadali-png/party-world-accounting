@@ -134,6 +134,185 @@ M.exportDocPdf = async function (title, innerHtml, size, css, onBlob, fname) {
   }
 };
 
+/* ============================================================
+   PDF NATIVE (chữ thật, nét căng như MISA) — jsPDF + autotable + font Việt
+   Chỉ tải font/plugin khi xuất PDF (lazy). Khổ A4/A5; 80mm vẫn dùng ảnh.
+   ============================================================ */
+M._ensurePdfNative = async function () {
+  if (!(window.jspdf && window.jspdf.jsPDF)) await M._loadScript('assets/vendor/jspdf.umd.min.js');
+  if (!window.jspdf.jsPDF.API.autoTable) await M._loadScript('assets/vendor/jspdf.plugin.autotable.min.js');
+  if (!window.PW_VN_FONT) await M._loadScript('assets/vendor/pw-vn-font.js');
+};
+M._PDF_CFG = {
+  invoice: { title: 'HÓA ĐƠN BÁN HÀNG', fname: 'Hóa đơn ', showCode: false, party: 'buyer', acct: true, totalLabel: 'TỔNG THANH TOÁN', vatAlways: false, signs: ['Người mua hàng', 'Người bán hàng'] },
+  warehouse: { title: 'PHIẾU XUẤT KHO BÁN HÀNG', fname: 'Phiếu xuất kho ', showCode: true, party: 'buyer', acct: true, totalLabel: 'TỔNG TIỀN THANH TOÁN', vatAlways: true, signs: ['Người mua hàng', 'Kế toán trưởng', 'Giám đốc'] },
+  delivery: { title: 'PHIẾU GIAO HÀNG', fname: 'Phiếu giao hàng ', showCode: false, party: 'receiver', acct: false, totalLabel: 'TỔNG GIÁ TRỊ', vatAlways: false, signs: ['Người giao hàng', 'Người nhận hàng'] },
+};
+M.docPdfNative = async function (si, type, size, action, opts) {
+  U.toast('Đang tạo PDF...');
+  const CFG = M._PDF_CFG[type] || M._PDF_CFG.invoice;
+  try {
+    await M._ensurePdfNative();
+    const jsPDF = window.jspdf.jsPDF;
+    const doc = new jsPDF({ unit: 'mm', format: size === 'A5' ? 'a5' : 'a4', orientation: 'p' });
+    const F = window.PW_VN_FONT;
+    doc.addFileToVFS('VN-Regular.ttf', F.regular); doc.addFont('VN-Regular.ttf', 'VN', 'normal');
+    doc.addFileToVFS('VN-Bold.ttf', F.bold); doc.addFont('VN-Bold.ttf', 'VN', 'bold');
+    doc.setFont('VN', 'normal');
+
+    const c = M.company(), cus = PW.customer(si.customerId);
+    const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
+    const ch = PW.channel && PW.channel(si.channelId);
+    const sub = PW.invoiceTotal(si), vat = Math.round(sub * Number(si.vatRate || 0) / 100), grand = sub + vat;
+    const paid = Number(si.paid || 0), cod = grand - paid;
+    const accD = c.accDebit || '131', accC = c.accCredit || '5111';
+    const GREEN = [90, 142, 46], A5 = size === 'A5';
+    const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+    const M0 = A5 ? 9 : 13, right = pageW - M0, lh = A5 ? 5 : 5.6;
+    let y = M0;
+
+    // ---- Header công ty ----
+    doc.setFont('VN', 'bold'); doc.setTextColor(GREEN[0], GREEN[1], GREEN[2]); doc.setFontSize(A5 ? 12 : 14);
+    doc.text((c.name || 'DALI').toUpperCase(), M0, y); y += A5 ? 5 : 6;
+    doc.setFont('VN', 'normal'); doc.setTextColor(60, 60, 60); doc.setFontSize(A5 ? 8 : 9.5);
+    if (c.address) { doc.text('Địa chỉ: ' + c.address, M0, y); y += 4.5; }
+    const cl = []; if (c.phone) cl.push('ĐT: ' + c.phone); if (c.mst) cl.push('MST: ' + c.mst);
+    if (cl.length) { doc.text(cl.join('     ·     '), M0, y); y += 4.5; }
+    doc.setDrawColor(GREEN[0], GREEN[1], GREEN[2]); doc.setLineWidth(0.5); doc.line(M0, y, right, y); y += A5 ? 6 : 8;
+
+    // ---- Tiêu đề ----
+    doc.setFont('VN', 'bold'); doc.setTextColor(25, 25, 25); doc.setFontSize(A5 ? 15 : 19);
+    doc.text(CFG.title, pageW / 2, y, { align: 'center' }); y += A5 ? 6 : 7;
+    doc.setFont('VN', 'normal'); doc.setFontSize(A5 ? 9 : 10.5); doc.setTextColor(80, 80, 80);
+    const parts = (si.date || U.today()).split('-'), yy = parts[0], mm = parts[1], dd = parts[2];
+    if (type === 'warehouse') {
+      doc.text('Ngày ' + dd + ' tháng ' + mm + ' năm ' + yy, pageW / 2, y, { align: 'center' }); y += 5.5;
+      doc.setFont('VN', 'bold'); doc.setTextColor(25, 25, 25); doc.text('Số: ' + si.code, pageW / 2, y, { align: 'center' }); y += 7.5;
+    } else {
+      let s2 = 'Số: ' + si.code + '       Ngày ' + U.date(si.date);
+      if (type === 'delivery' && ch) s2 += '       Kênh: ' + ch.name;
+      if (type === 'delivery' && si.trackingCode) s2 += '       Mã VĐ: ' + si.trackingCode;
+      doc.text(s2, pageW / 2, y, { align: 'center' }); y += 7.5;
+    }
+
+    // ---- Khối đối tác (trái) + tài khoản (phải) ----
+    doc.setFontSize(A5 ? 8.5 : 10);
+    const yParty = y;
+    if (CFG.acct) {
+      const rx = right - 40; let ry = y; doc.setTextColor(40, 40, 40); doc.setFont('VN', 'normal');
+      [['Nợ: ', accD], ['Có: ', accC], ['Loại tiền: ', 'VND']].forEach(kv => { doc.text(kv[0] + kv[1], rx, ry); ry += lh; });
+    }
+    const leftW = (CFG.acct ? (pageW - 2 * M0 - 46) : (pageW - 2 * M0));
+    const lines = [];
+    if (CFG.party === 'receiver') {
+      lines.push(['Người nhận: ', cus ? cus.name : '', true]);
+      lines.push(['Điện thoại: ', cus ? (cus.phone || '') : '', false]);
+      lines.push(['Địa chỉ giao: ', cus ? (cus.address || '') : '', false]);
+      if (si.note) lines.push(['Diễn giải: ', si.note, false]);
+    } else {
+      lines.push(['Tên khách hàng: ', cus ? cus.name : '', true]);
+      lines.push(['Địa chỉ: ', cus ? (cus.address || '') : '', false]);
+      lines.push(['Điện thoại: ', cus ? (cus.phone || '') : '', false]);
+      lines.push(['Mã số thuế: ', cus ? (cus.taxCode || '') : '', false]);
+      if (si.note) lines.push(['Diễn giải: ', si.note, false]);
+      if (emp) lines.push(['Nhân viên bán hàng: ', emp.name, false]);
+    }
+    lines.forEach(ln => {
+      doc.setFont('VN', 'normal'); doc.setTextColor(40, 40, 40);
+      const labelW = doc.getTextWidth(ln[0]); doc.text(ln[0], M0, y);
+      doc.setFont('VN', ln[2] ? 'bold' : 'normal'); doc.setTextColor(20, 20, 20);
+      const wrapped = doc.splitTextToSize(String(ln[1] || ''), Math.max(20, leftW - labelW));
+      doc.text(wrapped, M0 + labelW, y); y += lh * wrapped.length;
+    });
+    y = Math.max(y, yParty + lh * 3) + 3;
+
+    // ---- Bảng hàng hóa (autotable) ----
+    const sc = CFG.showCode;
+    const head = sc ? [['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'Số lượng', 'Đơn giá', 'Thành tiền']]
+      : [['STT', 'Tên hàng hóa', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền']];
+    const body = si.items.map((it, i) => {
+      const p = PW.product(it.productId), price = Number(it.price != null ? it.price : it.cost || 0), lt = Number(it.qty) * price;
+      return sc ? [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', U.num(it.qty), U.money(price), U.money(lt)]
+        : [i + 1, p ? ((p.code ? p.code + ' - ' : '') + p.name) : '', p ? p.unit : '', U.num(it.qty), U.money(price), U.money(lt)];
+    });
+    const totalQty = si.items.reduce((s, it) => s + Number(it.qty || 0), 0);
+    const span = sc ? 4 : 3;
+    const totSpan = (sc ? 7 : 6) - 1;
+    const foot = [];
+    foot.push([{ content: 'Cộng', colSpan: span, styles: { halign: 'right', fontStyle: 'bold' } },
+      { content: U.num(totalQty), styles: { halign: 'right', fontStyle: 'bold' } }, '',
+      { content: U.money(sub), styles: { halign: 'right', fontStyle: 'bold' } }]);
+    const totRow = (label, val, big) => foot.push([
+      { content: label, colSpan: totSpan, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } },
+      { content: val, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } }]);
+    totRow('Cộng tiền hàng', U.money(sub));
+    if (CFG.vatAlways || Number(si.vatRate)) totRow('Tiền thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', U.money(vat));
+    totRow(CFG.totalLabel, U.money(grand), true);
+    if (type === 'delivery') totRow('Đã thanh toán', U.money(paid));
+
+    doc.autoTable({
+      startY: y, head: head, body: body, foot: foot, theme: 'grid', showFoot: 'lastPage',
+      styles: { font: 'VN', fontSize: A5 ? 8 : 9.5, cellPadding: A5 ? 1.3 : 1.9, lineColor: [185, 196, 168], lineWidth: 0.1, textColor: [30, 30, 30], overflow: 'linebreak', valign: 'middle' },
+      headStyles: { font: 'VN', fontStyle: 'bold', fillColor: [238, 246, 225], textColor: [40, 60, 20], halign: 'center', lineColor: [185, 196, 168] },
+      footStyles: { font: 'VN', fillColor: [255, 255, 255], textColor: [55, 55, 55], lineColor: [185, 196, 168] },
+      bodyStyles: { lineColor: [185, 196, 168] },
+      columnStyles: sc
+        ? { 0: { halign: 'center', cellWidth: 9 }, 3: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } }
+        : { 0: { halign: 'center', cellWidth: 9 }, 2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      margin: { left: M0, right: M0, top: M0, bottom: M0 },
+    });
+    y = doc.lastAutoTable.finalY + 6;
+    const need = h => { if (y + h > pageH - M0) { doc.addPage(); y = M0; } };
+
+    // ---- Số tiền bằng chữ ----
+    need(8); doc.setFont('VN', 'normal'); doc.setFontSize(A5 ? 8.5 : 10); doc.setTextColor(30, 30, 30);
+    const bw = doc.splitTextToSize('Số tiền viết bằng chữ: ' + U.readMoneyVN(grand), pageW - 2 * M0);
+    doc.text(bw, M0, y); y += bw.length * lh;
+
+    // ---- COD (phiếu giao) ----
+    if (type === 'delivery') {
+      need(13); y += 2; const bh = 9;
+      if (cod > 0) { doc.setFillColor(255, 246, 229); doc.setDrawColor(224, 146, 42); }
+      else { doc.setFillColor(230, 247, 238); doc.setDrawColor(39, 174, 96); }
+      doc.setLineWidth(0.4); doc.roundedRect(M0, y, pageW - 2 * M0, bh, 1.5, 1.5, 'FD');
+      doc.setFont('VN', 'bold'); doc.setTextColor(30, 30, 30); doc.setFontSize(A5 ? 9 : 11);
+      doc.text(cod > 0 ? ('TIỀN THU HỘ (COD): ' + U.money(cod) + ' đ — thu của người nhận khi giao.') : 'ĐÃ THANH TOÁN ĐỦ — không thu hộ.', M0 + 3, y + bh / 2 + 1.5);
+      y += bh + 4;
+    }
+
+    // ---- Phiếu xuất kho: dòng phụ ----
+    if (type === 'warehouse') {
+      need(10); doc.setFont('VN', 'normal'); doc.setFontSize(A5 ? 8.5 : 9.5); doc.setTextColor(40, 40, 40);
+      doc.text('Số chứng từ gốc kèm theo: .....', M0, y); y += 5;
+      doc.text('Ngày ..... tháng ..... năm ........', right, y, { align: 'right' }); y += 4;
+    }
+
+    // ---- Chữ ký ----
+    need(24); y += A5 ? 6 : 11; doc.setFontSize(A5 ? 8.5 : 10);
+    const segW = (pageW - 2 * M0) / CFG.signs.length;
+    CFG.signs.forEach((s, i) => {
+      const cx = M0 + segW * i + segW / 2;
+      doc.setFont('VN', 'bold'); doc.setTextColor(30, 30, 30); doc.text(s, cx, y, { align: 'center' });
+      doc.setFont('VN', 'normal'); doc.setTextColor(120, 120, 120); doc.setFontSize(A5 ? 7.5 : 8.5);
+      doc.text('(Ký, ghi rõ họ tên)', cx, y + 4.5, { align: 'center' });
+      doc.setFontSize(A5 ? 8.5 : 10);
+    });
+    if (c.note) { doc.setFont('VN', 'normal'); doc.setTextColor(120, 120, 120); doc.setFontSize(A5 ? 7.5 : 9); doc.text(c.note, pageW / 2, pageH - M0 / 2 - 1, { align: 'center' }); }
+
+    const blob = doc.output('blob');
+    if (action === 'pdf-blob') { if (opts && opts.then) opts.then(blob, CFG.fname + si.code); return blob; }
+    M._download(blob, ((opts && opts.fname) || (CFG.fname + si.code)) + '.pdf');
+    U.toast('Đã xuất PDF: ' + ((opts && opts.fname) || si.code));
+    return blob;
+  } catch (e) {
+    console.error('docPdfNative', e);
+    U.toast('PDF nét cao lỗi — dùng bản ảnh', 'error');
+    M._pdfNativeOff = true;
+    try { ({ invoice: M.printInvoice, warehouse: M.warehouseIssueNote, delivery: M.deliveryNote }[type] || M.printInvoice)(si, size, action, opts); }
+    finally { M._pdfNativeOff = false; }
+  }
+};
+
 M._companyHeader = function () {
   const c = M.company();
   return '<div class="ph-head">'
@@ -158,6 +337,7 @@ M._itemRows = function (doc, showPrice) {
 
 /* ---------- Hóa đơn bán (bản đẹp, có VAT + công ty) ---------- */
 M.printInvoice = function (si, size, action, opts) {
+  if (!M._pdfNativeOff && (action === 'pdf' || action === 'pdf-blob') && size !== '80') return M.docPdfNative(si, 'invoice', size, action, opts);
   const c = M.company();
   const cus = PW.customer(si.customerId);
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
@@ -196,6 +376,7 @@ M.printInvoice = function (si, size, action, opts) {
 
 /* ---------- PHIẾU GIAO HÀNG (chứng từ giao hàng + thu hộ COD) ---------- */
 M.deliveryNote = function (si, size, action, opts) {
+  if (!M._pdfNativeOff && (action === 'pdf' || action === 'pdf-blob') && size !== '80') return M.docPdfNative(si, 'delivery', size, action, opts);
   const cus = PW.customer(si.customerId);
   const sub = PW.invoiceTotal(si);
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
@@ -228,6 +409,7 @@ M.deliveryNote = function (si, size, action, opts) {
 
 /* ---------- PHIẾU XUẤT KHO BÁN HÀNG (mẫu chuẩn VN / MISA) ---------- */
 M.warehouseIssueNote = function (si, size, action, opts) {
+  if (!M._pdfNativeOff && (action === 'pdf' || action === 'pdf-blob') && size !== '80') return M.docPdfNative(si, 'warehouse', size, action, opts);
   const c = M.company();
   const cus = PW.customer(si.customerId);
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
@@ -323,10 +505,52 @@ M._invoiceAoa = function (si) {
 M._invoiceExcelBlob = async function (si) {
   try {
     await M._ensureXlsxLib();
-    const ws = window.XLSX.utils.aoa_to_sheet(M._invoiceAoa(si));
-    ws['!cols'] = [{ wch: 5 }, { wch: 14 }, { wch: 42 }, { wch: 8 }, { wch: 6 }, { wch: 13 }, { wch: 14 }];
-    const wb = window.XLSX.utils.book_new(); window.XLSX.utils.book_append_sheet(wb, ws, 'HoaDon');
-    const arr = window.XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const X = window.XLSX;
+    const c = M.company(), cus = PW.customer(si.customerId);
+    const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
+    const ch = PW.channel && PW.channel(si.channelId);
+    const total = PW.invoiceTotal(si), vat = PW.invoiceVat(si), grand = PW.invoiceGrand(si);
+    const NC = 7;                              // A..G
+    const rows = [], merges = [], money = [];  // money: [rowIdx, colIdx] cần định dạng số
+    // Dòng trải full chiều ngang (gộp A:G) -> không bị cắt chữ
+    const wide = (txt) => { rows.push([txt]); merges.push({ s: { r: rows.length - 1, c: 0 }, e: { r: rows.length - 1, c: NC - 1 } }); };
+    wide((c.name || 'DALI').toUpperCase());
+    if (c.address) wide(c.address);
+    if (c.phone || c.mst) wide((c.phone ? 'ĐT: ' + c.phone : '') + (c.phone && c.mst ? '    ' : '') + (c.mst ? 'MST: ' + c.mst : ''));
+    rows.push([]);
+    wide('HÓA ĐƠN BÁN HÀNG');
+    wide('Số: ' + si.code + '          Ngày ' + U.date(si.date));
+    wide('Khách hàng: ' + (cus ? cus.name : ''));
+    wide('Địa chỉ: ' + (cus ? (cus.address || '') : ''));
+    wide('Điện thoại: ' + (cus ? (cus.phone || '') : '') + '          Mã số thuế: ' + (cus ? (cus.taxCode || '') : ''));
+    if (ch) wide('Kênh bán: ' + ch.name);
+    if (emp) wide('Nhân viên bán hàng: ' + emp.name);
+    if (si.note) wide('Diễn giải: ' + si.note);
+    if (si.dueDate) wide('Hạn thanh toán: ' + U.date(si.dueDate));
+    rows.push([]);
+    // Bảng hàng hóa
+    rows.push(['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'Số lượng', 'Đơn giá', 'Thành tiền']);
+    si.items.forEach((it, i) => {
+      const p = PW.product(it.productId), r = rows.length;
+      rows.push([i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]);
+      money.push([r, 5], [r, 6]);
+    });
+    { const r = rows.length; rows.push(['', 'Cộng', '', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', total]); merges.push({ s: { r, c: 1 }, e: { r, c: 3 } }); money.push([r, 6]); }
+    rows.push([]);
+    // Tổng — nhãn gộp B:F (rộng, không cắt), giá trị ở G
+    const tot = (label, val) => { const r = rows.length; rows.push(['', label, '', '', '', '', val]); merges.push({ s: { r, c: 1 }, e: { r, c: 5 } }); money.push([r, 6]); };
+    tot('Cộng tiền hàng', total);
+    if (vat) tot('Tiền thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', vat);
+    tot('TỔNG THANH TOÁN', grand);
+    tot('Đã thanh toán', Number(si.paid || 0));
+    tot('Còn phải thu', grand - Number(si.paid || 0));
+    wide('Số tiền viết bằng chữ: ' + U.readMoneyVN(grand));
+    const ws = X.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 6 }, { wch: 16 }, { wch: 46 }, { wch: 9 }, { wch: 10 }, { wch: 14 }, { wch: 16 }];
+    ws['!merges'] = merges;
+    money.forEach(([r, col]) => { const ref = X.utils.encode_cell({ r, c: col }); if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = '#,##0'; });
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'HoaDon');
+    const arr = X.write(wb, { bookType: 'xlsx', type: 'array' });
     return { blob: new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), ext: 'xlsx' };
   } catch (e) {
     const q = v => { v = (v == null ? '' : String(v)); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
