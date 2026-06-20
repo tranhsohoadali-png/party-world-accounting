@@ -623,6 +623,7 @@ M.productForm = function (p, opts) {
     const hide = (k === 'nvl');
     f.cost.parentElement.style.display = hide ? 'none' : '';
     f.price.parentElement.style.display = hide ? 'none' : '';
+    if (typeof commonField !== 'undefined' && commonField) commonField.style.display = M.isMaterialKind(k) ? '' : 'none';
     fillGroupDL();
     fillSizeChips();
   }
@@ -642,6 +643,11 @@ M.productForm = function (p, opts) {
     chPriceGrid,
   ]) : null;
 
+  // NVL "dùng chung" (vd Cavas) -> tự thêm vào định mức của MỌI kích thước thành phẩm
+  const commonChk = U.el('input', { type: 'checkbox' }); if (p.common) commonChk.checked = true;
+  const commonField = U.el('div', { class: 'field full' },
+    U.el('label', { class: 'radio' }, [commonChk, ' 🔁 NVL dùng chung — tự thêm vào định mức của MỌI kích thước (vd Cavas, vải khổ chung)']));
+
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
       C.field('Tính chất', f.kind),
@@ -653,6 +659,7 @@ M.productForm = function (p, opts) {
       C.field('Tồn tối thiểu (cảnh báo)', f.minStock),
       C.field('Giá vốn (đ)', f.cost),
       C.field('Giá bán (đ)', f.price),
+      commonField,
     ]),
     groupDL,
     M.datalist('dl-punits', PW.data.units.map(u => u.name)),
@@ -676,6 +683,7 @@ M.productForm = function (p, opts) {
       cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,
       openingStock: Number(f.stock.value) || 0,
       minStock: Number(f.minStock.value) || 0,
+      common: M.isMaterialKind(f.kind.value) && commonChk.checked,
       bom: bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })),
       channelPrices: (function () { const o = {}; Object.keys(chInputs).forEach(id => { const v = chInputs[id].value; if (v !== '' && Number(v) >= 0) o[id] = Number(v); }); return o; })(),
     };

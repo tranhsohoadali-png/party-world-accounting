@@ -320,11 +320,12 @@ M.nvlForSize = function (size) {
   const norm = M.detectSize(size) || String(size || '');
   return PW.data.products.filter(p => M.isMaterialKind(p.kind) && M.nvlSizeOf(p) === norm);
 };
-// NVL "dùng chung" (vd Cavas) — thuộc nhóm được đánh dấu common -> thêm vào ĐM ở mọi kích thước
+// NVL "dùng chung" (vd Cavas) -> tự thêm vào định mức ở mọi kích thước.
+// Nhận theo: cờ trên TỪNG SẢN PHẨM (p.common, ưu tiên - chắc chắn) HOẶC nhóm được đánh dấu common.
 M.commonNvl = function () {
   const names = (PW.data.productGroups || []).filter(g => g.common).map(g => (g.name || '').trim().toLowerCase());
-  if (!names.length) return [];
-  return PW.data.products.filter(p => M.isMaterialKind(p.kind) && names.indexOf((p.group || '').trim().toLowerCase()) >= 0);
+  return PW.data.products.filter(p => M.isMaterialKind(p.kind) &&
+    (p.common === true || (names.length && names.indexOf((p.group || '').trim().toLowerCase()) >= 0)));
 };
 
 // Trình soạn ĐỊNH MỨC NVL dùng chung -> { el, get() }. Mỗi dòng = 1 NVL + số lượng.
