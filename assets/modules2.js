@@ -321,6 +321,42 @@ M.nvlForSize = function (size) {
   return PW.data.products.filter(p => M.isMaterialKind(p.kind) && M.nvlSizeOf(p) === norm);
 };
 
+// Trình soạn ĐỊNH MỨC NVL dùng chung -> { el, get() }. Mỗi dòng = 1 NVL + số lượng.
+M.bomEditor = function (initial) {
+  let bom = (initial || []).map(b => ({ materialId: b.materialId, qty: Number(b.qty) || 1 }));
+  const tbody = U.el('tbody');
+  const costCell = U.el('span', { class: 'text-muted' });
+  function cost() { return bom.reduce((s, b) => s + (Number(b.qty) || 0) * PW.unitCost(PW.product(b.materialId)), 0); }
+  function refreshCost() { costCell.textContent = U.money(cost()) + ' đ'; }
+  function draw() {
+    tbody.innerHTML = '';
+    bom.forEach((b, i) => {
+      const sel = M.materialSelect('', b.materialId);
+      sel.addEventListener('change', () => { b.materialId = sel.value; refreshCost(); });
+      const q = U.el('input', { type: 'number', value: b.qty, min: 0, step: 'any', style: 'text-align:right;width:110px' });
+      q.addEventListener('input', () => { b.qty = Number(q.value) || 0; refreshCost(); });
+      tbody.appendChild(U.el('tr', null, [
+        U.el('td', null, sel),
+        U.el('td', { style: 'width:120px' }, q),
+        U.el('td', { class: 'center', style: 'width:40px' }, U.el('button', { class: 'btn sm danger', onclick: () => { bom.splice(i, 1); draw(); refreshCost(); } }, '×')),
+      ]));
+    });
+    refreshCost();
+  }
+  const table = U.el('table', { class: 'items-tbl' });
+  table.appendChild(U.el('thead', null, U.el('tr', null, [U.el('th', null, 'Nguyên vật liệu'), U.el('th', null, 'Định mức /1 thành phẩm'), U.el('th', null, '')])));
+  table.appendChild(tbody);
+  const el = U.el('div', null, [
+    U.el('div', { class: 'table-wrap' }, table),
+    U.el('div', { class: 'mt8', style: 'display:flex;justify-content:space-between;align-items:center;gap:10px' }, [
+      C.btn('+ Thêm NVL', () => { bom.push({ materialId: '', qty: 1 }); draw(); }, 'sm'),
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Giá vốn NVL theo định mức: '), costCell]),
+    ]),
+  ]);
+  draw();
+  return { el: el, get: () => bom.filter(b => b.materialId && Number(b.qty) > 0).map(b => ({ materialId: b.materialId, qty: Number(b.qty) })) };
+};
+
 // Bước 1: chọn tính chất hàng hóa
 M.productTypeChooser = function (onPick) {
   const list = U.el('div', { class: 'kind-list' });

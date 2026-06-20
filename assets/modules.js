@@ -580,14 +580,20 @@ M.productForm = function (p, opts) {
   const sizeChips = U.el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px' });
   const groupWrap = U.el('div', null, [f.group, sizeChips]);
   function loadBomForSize(sz) {
-    const nvls = M.nvlForSize(sz).filter(x => x.id !== (p.id || ''));
-    if (!nvls.length) { U.toast('Chưa có NVL nào thuộc kích thước ' + sz + ' — thêm NVL nhóm "Nguyên vật liệu ' + sz + '" trước', 'error'); return; }
+    // ưu tiên ĐỊNH MỨC đã khai trong Nhóm hàng (Danh mục); chưa khai -> tự gom NVL cùng kích thước
+    const grp = (PW.data.productGroups || []).find(g => g.bom && g.bom.length && M.detectSize(g.name) === sz);
+    let rows;
+    if (grp) rows = grp.bom.map(b => ({ materialId: b.materialId, qty: Number(b.qty) || 1 }))
+                          .filter(b => PW.product(b.materialId) && b.materialId !== (p.id || ''));
+    else rows = M.nvlForSize(sz).filter(x => x.id !== (p.id || '')).map(x => ({ materialId: x.id, qty: 1 }));
+    if (!rows.length) { U.toast('Chưa có định mức/NVL cho kích thước ' + sz + ' — khai ở Danh mục → Nhóm hàng, hoặc thêm NVL nhóm "Nguyên vật liệu ' + sz + '"', 'error'); return; }
     const existing = bom.filter(b => b.materialId);
-    if (existing.length && !U.confirm('Thay định mức NVL hiện tại bằng ' + nvls.length + ' NVL kích thước ' + sz + '?')) return;
-    bom = nvls.map(x => ({ materialId: x.id, qty: 1 }));
+    const srcTxt = grp ? 'định mức nhóm "' + grp.name + '"' : 'kích thước ' + sz;
+    if (existing.length && !U.confirm('Thay định mức NVL hiện tại bằng ' + rows.length + ' NVL theo ' + srcTxt + '?')) return;
+    bom = rows;
     bomSection.style.display = '';
     drawBom(); refreshBomCost();
-    U.toast('Đã nạp ' + nvls.length + ' NVL theo kích thước ' + sz);
+    U.toast('Đã nạp ' + rows.length + ' NVL theo ' + srcTxt);
   }
   function pickSize(sz) {
     const k = f.kind.value;

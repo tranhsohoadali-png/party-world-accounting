@@ -24,6 +24,7 @@ M.CATALOGS = {
       { k: 'name', l: 'Tên nhóm', req: true, full: true },
       { k: 'kind', l: 'Áp dụng cho tính chất', type: 'select',
         options: [{ value: '', label: 'Tất cả tính chất' }].concat((M.PRODUCT_KINDS || []).map(x => ({ value: x.kind, label: x.label }))) },
+      { k: 'bom', l: 'Định mức NVL của nhóm (thành phẩm chọn nhóm này sẽ tự nạp)', type: 'bom', full: true },
     ],
   },
   'cat-units': {
@@ -125,6 +126,7 @@ M.simpleCatalog = function (root, id) {
       label: f.l, num: f.type === 'number',
       render: r => {
         if (f.type === 'number') return U.num(r[f.k] || 0);
+        if (f.type === 'bom') return (r[f.k] || []).length ? ((r[f.k] || []).length + ' NVL') : '<span class="text-muted">—</span>';
         if (f.type === 'select') { const o = (f.options || []).find(o => String(o.value) === String(r[f.k] || '')); return U.esc(o ? o.label : (r[f.k] || '')); }
         return U.esc(r[f.k] || '');
       },
@@ -153,6 +155,12 @@ M.catalogForm = function (id, item) {
   const rows = [];
   if (codeI) rows.push(C.field('Mã', codeI));
   cfg.fields.forEach(f => {
+    if (f.type === 'bom') {
+      const ed = M.bomEditor(item[f.k] || []);
+      inputs[f.k] = ed;
+      rows.push(C.field(f.l, ed.el, { full: true }));
+      return;
+    }
     const inp = f.type === 'select'
       ? C.select(f.options || [], item[f.k] != null ? item[f.k] : '')
       : C.input({ type: f.type || 'text', value: item[f.k] != null ? item[f.k] : '' });
@@ -167,6 +175,7 @@ M.catalogForm = function (id, item) {
       if (codeI) obj.code = codeI.value.trim();
       let ok = true;
       cfg.fields.forEach(f => {
+        if (f.type === 'bom') { obj[f.k] = inputs[f.k].get(); return; }
         const v = inputs[f.k].value;
         if (f.req && !String(v).trim()) ok = false;
         obj[f.k] = f.type === 'number' ? (Number(v) || 0) : v.trim();
