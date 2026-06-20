@@ -141,7 +141,7 @@ AIC.run = {
         .slice(-lim).reverse();
     }
     switch (inp.loai) {
-      case 'hoadon': return pick(PW.data.salesInvoices, si => ({ so: si.code, ngay: si.date, khach: AIC._cusName(si.customerId), tong: PW.invoiceTotal(si), da_thu: si.paid || 0 }));
+      case 'hoadon': return pick(PW.data.salesInvoices, si => ({ so: si.code, ngay: si.date, khach: AIC._cusName(si.customerId), tong: PW.invoiceGrand(si), da_thu: si.paid || 0 }));
       case 'donhang': return pick(PW.data.salesOrders, o => ({ so: o.code, ngay: o.date, khach: AIC._cusName(o.customerId), tong: (o.items || []).reduce((s, i) => s + i.qty * i.price, 0), trang_thai: o.status }));
       case 'phieuthu': return pick(PW.data.receipts, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khach: x.customerId ? AIC._cusName(x.customerId) : '' }));
       case 'phieuchi': return pick(PW.data.payments, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khoan_muc: x.category || '', ncc: x.supplierId ? AIC._supName(x.supplierId) : '' }));

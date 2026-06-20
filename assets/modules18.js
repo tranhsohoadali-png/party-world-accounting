@@ -193,7 +193,7 @@ M.purchaseScan = function (root) {
     const pu = { id: PW.uid(), code: code, date: dateI.value, supplierId: supSel.ppValue(),
       vatRate: Number(vatSel.value) || 0, items: items, discount: 0, paid: 0, paidAccountId: null, note: 'Quét hóa đơn mua (AI)' };
     PW.data.purchases.push(pu);
-    PW.logActivity('create', 'purchase', code, U.money(PW.purchaseTotal(pu)) + ' đ (quét AI)');
+    PW.logActivity('create', 'purchase', code, U.money(PW.purchaseGrand(pu)) + ' đ (quét AI)');
     PW.save();
     U.toast('Đã tạo ' + code + ' (' + items.length + ' mặt hàng) + nhớ ' + valid.length + ' bí danh');
     state.rows = []; ta.value = ''; draw();

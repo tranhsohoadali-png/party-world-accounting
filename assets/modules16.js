@@ -17,7 +17,7 @@ M.actionCenter = function (root) {
       const debt = PW.customerDebt(c.id);
       if (debt <= 0) return null;
       const overdue = PW.data.salesInvoices.some(si => si.customerId === c.id && si.dueDate
-        && si.dueDate < today && (PW.invoiceTotal(si) - Number(si.paid || 0)) > 0);
+        && si.dueDate < today && (PW.invoiceGrand(si) - Number(si.paid || 0)) > 0);
       return { c, debt, overdue };
     }).filter(Boolean).sort((a, b) => (b.overdue - a.overdue) || (b.debt - a.debt));
     if (rows.length) groups.push({
@@ -36,7 +36,7 @@ M.actionCenter = function (root) {
       const debt = PW.supplierDebt(s.id);
       if (debt <= 0) return null;
       const overdue = PW.data.purchases.some(pu => pu.supplierId === s.id && pu.dueDate
-        && pu.dueDate < today && (PW.purchaseTotal(pu) - Number(pu.paid || 0)) > 0);
+        && pu.dueDate < today && (PW.purchaseGrand(pu) - Number(pu.paid || 0)) > 0);
       return { s, debt, overdue };
     }).filter(Boolean).sort((a, b) => (b.overdue - a.overdue) || (b.debt - a.debt));
     if (rows.length) groups.push({
@@ -59,7 +59,7 @@ M.actionCenter = function (root) {
     count: unrec.length, urgent: 0,
     items: unrec.sort((a, b) => a.date < b.date ? 1 : -1).map(si => ({
       text: si.code + ' · ' + (PW.customer(si.customerId) ? PW.customer(si.customerId).name : ''),
-      sub: U.date(si.date) + ' · ' + U.vnd(PW.invoiceTotal(si)),
+      sub: U.date(si.date) + ' · ' + U.vnd(PW.invoiceGrand(si)),
     })),
   });
 

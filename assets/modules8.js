@@ -198,14 +198,14 @@ M.ledgerToVoucher = function (entry, kind, after) {
   const catI = isChi ? C.input({ value: entry.category || '', list: 'dl-conv-expitems', placeholder: 'vd Phần mềm AI, NVL, Lương...' }) : null;
 
   function unpaidDocs(pid) {
-    if (isChi) return (PW.data.purchases || []).filter(pu => pu.supplierId === pid && (PW.purchaseTotal(pu) - (Number(pu.paid) || 0)) > 0.5);
-    return (PW.data.salesInvoices || []).filter(si => si.customerId === pid && (PW.invoiceTotal(si) - (Number(si.paid) || 0)) > 0.5);
+    if (isChi) return (PW.data.purchases || []).filter(pu => pu.supplierId === pid && (PW.purchaseGrand(pu) - (Number(pu.paid) || 0)) > 0.5);
+    return (PW.data.salesInvoices || []).filter(si => si.customerId === pid && (PW.invoiceGrand(si) - (Number(si.paid) || 0)) > 0.5);
   }
   function rebuildDocs() {
     const pid = partySel.value;
     const opts = [{ value: '', label: '-- Không gắn đơn (trả/thu nợ chung) --' }];
     if (pid) unpaidDocs(pid).forEach(d => {
-      const rem = (isChi ? PW.purchaseTotal(d) : PW.invoiceTotal(d)) - (Number(d.paid) || 0);
+      const rem = (isChi ? PW.purchaseGrand(d) : PW.invoiceGrand(d)) - (Number(d.paid) || 0);
       opts.push({ value: d.id, label: d.code + ' · còn ' + U.money(rem) + ' đ' });
     });
     M.rebuildSelect(docSel, opts, '');

@@ -527,7 +527,7 @@ M.reportAgingDetail = function (host) {
   PW.data.customers.forEach(c => {
     const b = { cur: 0, b1: 0, b2: 0, b3: 0, b4: 0 };
     PW.data.salesInvoices.filter(si => si.customerId === c.id).forEach(si => {
-      const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+      const rem = PW.invoiceGrand(si) - Number(si.paid || 0);
       if (rem <= 0) return;
       const od = diff(si.dueDate || si.date, today);   // số ngày quá hạn (âm = chưa đến hạn)
       if (od <= 0) b.cur += rem; else if (od <= 30) b.b1 += rem; else if (od <= 60) b.b2 += rem;

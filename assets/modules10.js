@@ -97,7 +97,7 @@ M.reconcile = function (root) {
       t.cnt++;
       if (isRealized(si)) {
         const net = PW.invoiceNet(si);
-        t.gross += PW.invoiceTotal(si); t.net += net; t.delivered++;
+        t.gross += PW.invoiceGrand(si); t.net += net; t.delivered++;
         if (si.reconciled) { t.settled += Number(si.settledAmount || 0); t.diff += Number(si.settledAmount || 0) - net; }
       } else { t.abnormal++; }
       if (!goodsState(si).done) t.goodsTodo++;
@@ -164,7 +164,7 @@ M.reconcile = function (root) {
         U.el('td', { 'data-label': 'Số HĐ' }, U.esc(si.code)),
         U.el('td', { 'data-label': 'Khách' }, cust ? U.esc(cust.name) : ''),
         U.el('td', { 'data-label': 'Trạng thái' }, stSel),
-        U.el('td', { class: 'num', 'data-label': 'Doanh thu' }, U.money(PW.invoiceTotal(si))),
+        U.el('td', { class: 'num', 'data-label': 'Doanh thu' }, U.money(PW.invoiceGrand(si))),
         U.el('td', { class: 'num', 'data-label': 'Thực nhận sổ' }, realized ? U.el('b', null, U.money(expNet)) : U.el('span', { class: 'text-muted' }, '—')),
         U.el('td', { class: 'num', 'data-label': 'Tiền sàn thực trả' }, settledI),
         U.el('td', { class: 'num', 'data-label': 'Lệch' }, diffCell),

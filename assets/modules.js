@@ -1118,16 +1118,16 @@ M.debtLedgerData = function (kind, id) {
   const rows = [];
   if (isCus) {
     PW.data.salesInvoices.filter(si => si.customerId === id).forEach(si =>
-      rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceTotal(si), giam: Number(si.paid || 0) }));
+      rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0) }));
     PW.data.receipts.filter(r => r.customerId === id).forEach(r =>
       rows.push({ date: r.date, code: r.code, desc: r.reason || 'Thu tiền', tang: 0, giam: Number(r.amount) }));
     PW.data.salesReturns.filter(sr => sr.customerId === id).forEach(sr =>
-      rows.push({ date: sr.date, code: sr.code, desc: 'Trả lại hàng bán', tang: 0, giam: PW.returnTotal(sr) }));
+      rows.push({ date: sr.date, code: sr.code, desc: 'Trả lại hàng bán', tang: 0, giam: PW.returnGrand(sr) }));
     PW.data.salesDiscounts.filter(g => g.customerId === id).forEach(g =>
       rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng bán' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: Number(g.amount) }));
   } else {
     PW.data.purchases.filter(pu => pu.supplierId === id).forEach(pu =>
-      rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseTotal(pu), giam: Number(pu.paid || 0) }));
+      rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0) }));
     PW.data.payments.filter(p => p.supplierId === id).forEach(p =>
       rows.push({ date: p.date, code: p.code, desc: p.reason || 'Trả tiền', tang: 0, giam: Number(p.amount) }));
     PW.data.purchaseReturns.filter(pr => pr.supplierId === id).forEach(pr =>

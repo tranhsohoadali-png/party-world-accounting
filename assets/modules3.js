@@ -389,7 +389,7 @@ M.returnForm = function (sr) {
   const custI = C.select(PW.data.customers.map(c => ({ value: c.id, label: c.name })), sr.customerId);
   const invOpts = cid => [{ value: '', label: '-- Không gắn hóa đơn --' }].concat(
     PW.data.salesInvoices.filter(si => si.customerId === cid).sort((a, b) => a.date < b.date ? 1 : -1)
-      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceTotal(si)) + 'đ' })));
+      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceGrand(si)) + 'đ' })));
   const invSel = C.select(invOpts(custI.value), sr.invoiceId || '');
   custI.addEventListener('change', () => M.rebuildSelect(invSel, invOpts(custI.value), ''));
   const noteI = C.input({ value: sr.note || '' });
@@ -483,7 +483,7 @@ M.discountForm = function (g) {
   };
   const invOpts = cid => [{ value: '', label: '-- Không gắn hóa đơn --' }].concat(
     PW.data.salesInvoices.filter(si => si.customerId === cid).sort((a, b) => a.date < b.date ? 1 : -1)
-      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceTotal(si)) + 'đ' })));
+      .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceGrand(si)) + 'đ' })));
   f.inv = C.select(invOpts(g.customerId), g.invoiceId || '');
   f.cust.addEventListener('change', () => M.rebuildSelect(f.inv, invOpts(f.cust.value), ''));
   const body = U.el('div', { class: 'form-grid' }, [

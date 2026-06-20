@@ -360,7 +360,7 @@ PW.invoiceTotal = function (si) {
 // ----- Kênh bán & phí sàn -----
 PW.channel = id => PW.data.channels.find(c => c.id === id);
 PW.invoiceFees = si => Number(si.platformFee || 0) + Number(si.shippingFee || 0); // phí sàn + phí ship
-PW.invoiceNet = si => PW.invoiceTotal(si) - PW.invoiceFees(si);                  // thực nhận sau phí
+PW.invoiceNet = si => PW.invoiceGrand(si) - PW.invoiceFees(si);                  // thực nhận sau phí (KH trả gồm thuế, trừ phí)
 PW.channelPrice = function (product, channelId) {
   if (product && product.channelPrices && channelId &&
       product.channelPrices[channelId] != null && product.channelPrices[channelId] !== '') {
@@ -378,6 +378,26 @@ PW.sellingFees = function (from, to) {
 // Tổng tiền 1 phiếu nhập mua
 PW.purchaseTotal = function (pu) {
   return pu.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0);
+};
+
+/* ---------- Tiền có THUẾ (khách/NCC trả gồm thuế) — dùng cho TỔNG phải thu/trả, công nợ ----------
+   Lưu ý: DOANH THU (revenue) vẫn dùng invoiceTotal (TRƯỚC thuế) — thuế GTGT là khoản phải nộp, không phải doanh thu. */
+PW.invoiceVat = si => Math.round(PW.invoiceTotal(si) * Number(si.vatRate || 0) / 100);
+PW.purchaseVat = pu => Math.round(PW.purchaseTotal(pu) * Number(pu.vatRate || 0) / 100);
+PW.invoiceGrand = si => PW.invoiceTotal(si) + PW.invoiceVat(si);     // tổng KH phải trả
+PW.purchaseGrand = pu => PW.purchaseTotal(pu) + PW.purchaseVat(pu);  // tổng phải trả NCC
+// Trả lại: kế thừa thuế từ hóa đơn/phiếu nhập gốc (nếu có gắn) để bù trừ công nợ khớp gồm thuế
+PW.returnGrand = function (sr) {
+  const base = PW.returnTotal(sr);
+  const inv = sr.invoiceId && PW.data.salesInvoices.find(x => x.id === sr.invoiceId);
+  const rate = inv ? Number(inv.vatRate || 0) : Number(sr.vatRate || 0);
+  return base + Math.round(base * rate / 100);
+};
+PW.purchaseReturnGrand = function (pr) {
+  const base = PW.purchaseReturnTotal(pr);
+  const pu = (pr.purchaseId || pr.invoiceId) && PW.data.purchases.find(x => x.id === (pr.purchaseId || pr.invoiceId));
+  const rate = pu ? Number(pu.vatRate || 0) : Number(pr.vatRate || 0);
+  return base + Math.round(base * rate / 100);
 };
 
 // Số dư tài khoản tiền
@@ -441,7 +461,7 @@ PW.dueReceivables = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   const out = [];
   PW.data.salesInvoices.forEach(si => {
-    const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+    const rem = PW.invoiceGrand(si) - Number(si.paid || 0);
     if (rem <= 0) return;
     const due = si.dueDate || si.date;
     if (inR(due)) out.push({ party: PW.customer(si.customerId), code: si.code, due: due, remaining: rem });
@@ -454,7 +474,7 @@ PW.duePayables = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   const out = [];
   PW.data.purchases.forEach(pu => {
-    const rem = PW.purchaseTotal(pu) - Number(pu.paid || 0);
+    const rem = PW.purchaseGrand(pu) - Number(pu.paid || 0);
     if (rem <= 0) return;
     const due = pu.dueDate || pu.date;
     if (inR(due)) out.push({ party: PW.supplier(pu.supplierId), code: pu.code, due: due, remaining: rem });
@@ -469,16 +489,16 @@ PW.customerDebt = function (customerId) {
   let debt = Number(c.openingDebt || 0);
   PW.data.salesInvoices.forEach(si => {
     if (si.customerId === customerId) {
-      debt += PW.invoiceTotal(si) - Number(si.paid || 0);
+      debt += PW.invoiceGrand(si) - Number(si.paid || 0);   // gồm thuế GTGT
     }
   });
   // Phiếu thu gắn với khách hàng (thu nợ)
   PW.data.receipts.forEach(r => {
     if (r.customerId === customerId) debt -= Number(r.amount);
   });
-  // Trả lại hàng bán -> giảm công nợ phải thu
+  // Trả lại hàng bán -> giảm công nợ phải thu (gồm thuế theo HĐ gốc)
   PW.data.salesReturns.forEach(sr => {
-    if (sr.customerId === customerId) debt -= PW.returnTotal(sr);
+    if (sr.customerId === customerId) debt -= PW.returnGrand(sr);
   });
   // Giảm giá hàng bán -> giảm công nợ phải thu
   PW.data.salesDiscounts.forEach(g => {
@@ -494,15 +514,15 @@ PW.supplierDebt = function (supplierId) {
   let debt = Number(s.openingDebt || 0);
   PW.data.purchases.forEach(pu => {
     if (pu.supplierId === supplierId) {
-      debt += PW.purchaseTotal(pu) - Number(pu.paid || 0);
+      debt += PW.purchaseGrand(pu) - Number(pu.paid || 0);   // gồm thuế GTGT
     }
   });
   PW.data.payments.forEach(p => {
     if (p.supplierId === supplierId) debt -= Number(p.amount);
   });
-  // Trả lại hàng mua -> giảm công nợ phải trả
+  // Trả lại hàng mua -> giảm công nợ phải trả (gồm thuế theo phiếu nhập gốc)
   PW.data.purchaseReturns.forEach(pr => {
-    if (pr.supplierId === supplierId) debt -= PW.purchaseReturnTotal(pr);
+    if (pr.supplierId === supplierId) debt -= PW.purchaseReturnGrand(pr);
   });
   // Giảm giá hàng mua -> giảm công nợ phải trả
   PW.data.purchaseDiscounts.forEach(g => {
@@ -523,7 +543,7 @@ PW.agingReceivable = function (todayYmd) {
   const today = todayYmd || PW.todayStr();
   let overdue = 0;
   PW.data.salesInvoices.forEach(si => {
-    const rem = PW.invoiceTotal(si) - Number(si.paid || 0);
+    const rem = PW.invoiceGrand(si) - Number(si.paid || 0);
     if (rem > 0 && si.dueDate && si.dueDate < today) overdue += rem;
   });
   const total = PW.totalReceivable();
@@ -536,7 +556,7 @@ PW.agingPayable = function (todayYmd) {
   const today = todayYmd || PW.todayStr();
   let overdue = 0;
   PW.data.purchases.forEach(pu => {
-    const rem = PW.purchaseTotal(pu) - Number(pu.paid || 0);
+    const rem = PW.purchaseGrand(pu) - Number(pu.paid || 0);
     if (rem > 0 && pu.dueDate && pu.dueDate < today) overdue += rem;
   });
   const total = PW.totalPayable();

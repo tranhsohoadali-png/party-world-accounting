@@ -47,8 +47,8 @@ M.sales = function (root) {
       date: si => si.date,
       customerId: si => si.customerId,
       channelId: si => si.channelId || '',
-      amount: si => PW.invoiceTotal(si),
-      paymentStatus: si => (PW.invoiceTotal(si) - (si.paid || 0) > 0 ? 'no' : 'paid'),
+      amount: si => PW.invoiceGrand(si),
+      paymentStatus: si => (PW.invoiceGrand(si) - (si.paid || 0) > 0 ? 'no' : 'paid'),
       text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
@@ -57,10 +57,10 @@ M.sales = function (root) {
       { label: 'Số HĐ', render: si => U.esc(si.code) },
       { label: 'Khách hàng', render: si => { const c = PW.customer(si.customerId); return c ? U.esc(c.name) : ''; } },
       { label: 'Số mặt hàng', center: true, render: si => si.items.length },
-      { label: 'Tổng tiền', num: true, render: si => U.money(PW.invoiceTotal(si)) },
+      { label: 'Tổng tiền', num: true, render: si => U.money(PW.invoiceGrand(si)) },
       { label: 'Đã thu', num: true, render: si => U.money(si.paid || 0) },
       { label: 'Còn nợ', num: true, render: si => {
-          const d = PW.invoiceTotal(si) - (si.paid || 0);
+          const d = PW.invoiceGrand(si) - (si.paid || 0);
           return d > 0 ? `<span class="text-red">${U.money(d)}</span>` : '<span class="tag green">Đã thu đủ</span>';
         } },
       { label: '', render: si => C.actions([
@@ -69,7 +69,7 @@ M.sales = function (root) {
           { label: '🖨 In', cls: 'primary', title: 'In phiếu xuất kho / hóa đơn / phiếu giao hàng', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
-                PW.logActivity('delete', 'salesInvoice', si.code, U.money(PW.invoiceTotal(si)) + ' đ');
+                PW.logActivity('delete', 'salesInvoice', si.code, U.money(PW.invoiceGrand(si)) + ' đ');
                 PW.data.salesInvoices = PW.data.salesInvoices.filter(x => x.id !== si.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -145,8 +145,8 @@ M.purchases = function (root) {
     const rows = M.applyFilter(PW.data.purchases, st, {
       date: pu => pu.date,
       supplierId: pu => pu.supplierId,
-      amount: pu => PW.purchaseTotal(pu),
-      paymentStatus: pu => (PW.purchaseTotal(pu) - (pu.paid || 0) > 0 ? 'no' : 'paid'),
+      amount: pu => PW.purchaseGrand(pu),
+      paymentStatus: pu => (PW.purchaseGrand(pu) - (pu.paid || 0) > 0 ? 'no' : 'paid'),
       text: pu => { const s = PW.supplier(pu.supplierId); return [pu.code, s ? s.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
@@ -155,10 +155,10 @@ M.purchases = function (root) {
       { label: 'Số phiếu', render: pu => U.esc(pu.code) },
       { label: 'Nhà cung cấp', render: pu => { const s = PW.supplier(pu.supplierId); return s ? U.esc(s.name) : ''; } },
       { label: 'Số mặt hàng', center: true, render: pu => pu.items.length },
-      { label: 'Tổng tiền', num: true, render: pu => U.money(PW.purchaseTotal(pu)) },
+      { label: 'Tổng tiền', num: true, render: pu => U.money(PW.purchaseGrand(pu)) },
       { label: 'Đã trả', num: true, render: pu => U.money(pu.paid || 0) },
       { label: 'Còn nợ', num: true, render: pu => {
-          const d = PW.purchaseTotal(pu) - (pu.paid || 0);
+          const d = PW.purchaseGrand(pu) - (pu.paid || 0);
           return d > 0 ? `<span class="text-red">${U.money(d)}</span>` : '<span class="tag green">Đã trả đủ</span>';
         } },
       { label: '', render: pu => C.actions([
@@ -167,7 +167,7 @@ M.purchases = function (root) {
           { label: 'In', onClick: () => M.printDoc('purchase', pu) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu nhập ' + pu.code + '?')) {
-                PW.logActivity('delete', 'purchase', pu.code, U.money(PW.purchaseTotal(pu)) + ' đ');
+                PW.logActivity('delete', 'purchase', pu.code, U.money(PW.purchaseGrand(pu)) + ' đ');
                 PW.data.purchases = PW.data.purchases.filter(x => x.id !== pu.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -706,24 +706,27 @@ M.docForm = function (cfg) {
   const paidI = C.input({ type: 'number', value: doc.paid || 0, min: 0, style: 'width:140px;text-align:right' });
   const paidAccI = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), doc.paidAccountId || PW.data.cashAccounts[0].id);
   const grandCell = U.el('span', { style: 'font-weight:700' });
+  const payCell = U.el('span', { style: 'font-weight:800;color:#5a8e2e' });   // TỔNG THANH TOÁN gồm thuế
   const remainCell = U.el('span', { style: 'font-weight:700' });
 
   function calc() {
     let sub = 0;
     items.forEach(it => { sub += (Number(it.qty) || 0) * (Number(it[unitField]) || 0); });
     const disc = Number(discountI.value) || 0;
-    const grand = sub - disc;
+    const grand = sub - disc;                                            // thành tiền (trước thuế)
+    const vat = Math.round(grand * (Number(vatRateI.value) || 0) / 100);
+    const payable = grand + vat;                                          // tổng thanh toán (gồm thuế)
     const paid = Number(paidI.value) || 0;
     totalCell.textContent = U.money(sub);
     grandCell.textContent = U.money(grand) + ' đ';
-    remainCell.textContent = U.money(grand - paid) + ' đ';
-    remainCell.className = (grand - paid) > 0 ? 'text-red' : 'text-green';
+    vatCell.textContent = U.money(vat) + ' đ';
+    payCell.textContent = U.money(payable) + ' đ';
+    remainCell.textContent = U.money(payable - paid) + ' đ';
+    remainCell.className = (payable - paid) > 0 ? 'text-red' : 'text-green';
     if (isSale && netCell) {
       const fees = (Number(platformFeeI.value) || 0) + (Number(shippingFeeI.value) || 0);
-      netCell.textContent = U.money(grand - fees) + ' đ';
+      netCell.textContent = U.money(payable - fees) + ' đ';
     }
-    const vat = Math.round(grand * (Number(vatRateI.value) || 0) / 100);
-    vatCell.textContent = U.money(vat) + ' đ';
   }
 
   function drawItems() {
@@ -895,6 +898,7 @@ M.docForm = function (cfg) {
     U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Giảm giá: '), discountI]),
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'THÀNH TIỀN: '), grandCell]),
     U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Thuế GTGT: '), vatCell]),
+    U.el('div', null, [U.el('span', { class: 'text-muted' }, 'TỔNG THANH TOÁN (gồm thuế): '), payCell]),
     isSale ? U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Phí sàn: '), platformFeeI]) : null,
     isSale ? U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Phí vận chuyển: '), shippingFeeI]) : null,
     isSale ? U.el('div', null, [U.el('span', { class: 'text-muted' }, 'THỰC NHẬN (sau phí): '), netCell]) : null,
@@ -968,14 +972,14 @@ M.docForm = function (cfg) {
       if (isSale && isNew) {
         const cust = PW.customer(partnerI.value);
         if (cust && Number(cust.creditLimit) > 0) {
-          const projected = PW.customerDebt(cust.id) + (PW.invoiceTotal(obj) - (Number(obj.paid) || 0));
+          const projected = PW.customerDebt(cust.id) + (PW.invoiceGrand(obj) - (Number(obj.paid) || 0));
           if (projected > Number(cust.creditLimit) &&
             !U.confirm('Công nợ của "' + cust.name + '" sẽ là ' + U.money(projected) + ' đ — VƯỢT hạn mức ' + U.money(cust.creditLimit) + ' đ.\n\nVẫn lưu hóa đơn?')) return;
         }
       }
       onSave(obj);
       PW.logActivity(isNew ? 'create' : 'update', isSale ? 'salesInvoice' : 'purchase', obj.code,
-        U.money(isSale ? PW.invoiceTotal(obj) : PW.purchaseTotal(obj)) + ' đ');
+        U.money(isSale ? PW.invoiceGrand(obj) : PW.purchaseGrand(obj)) + ' đ');
       clearTimeout(_draftTimer);        // (B3) chặn timer debounce ghi lại nháp sau khi đã lưu
       if (isNew) M.draft.clear(mode);   // (B3) xóa nháp sau khi lưu thành công
       PW.save(); C.closeModal(); App.refresh();
@@ -991,7 +995,7 @@ M.printDoc = function (mode, doc) {
   const isSale = mode === 'sale';
   const partner = isSale ? PW.customer(doc.customerId) : PW.supplier(doc.supplierId);
   const unitField = isSale ? 'price' : 'cost';
-  const total = isSale ? PW.invoiceTotal(doc) : PW.purchaseTotal(doc);
+  const total = isSale ? PW.invoiceGrand(doc) : PW.purchaseGrand(doc);
   const rows = doc.items.map((it, i) => {
     const p = PW.product(it.productId);
     const lt = Number(it.qty) * Number(it[unitField]);
