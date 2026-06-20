@@ -302,7 +302,7 @@ M.exportDocExcel = function (si, fname) {
 /* ---------- Gửi chứng từ qua Zalo ----------
    Ưu tiên đính kèm FILE PDF (builderFn tạo PDF). Điện thoại: Web Share -> chọn Zalo.
    Máy tính: tải tệp + copy nội dung + mở Zalo để đính kèm. (Gửi PDF tự động tới từng KH cần Zalo OA.) */
-M.sendZalo = function (si, builderFn, size) {
+M.sendZalo = function (si, builderFn, size, fmt) {
   const c = M.company(), cus = PW.customer(si.customerId);
   const grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
   const lines = si.items.map(it => { const p = PW.product(it.productId); return '• ' + (p ? p.name : '') + '  x' + U.num(it.qty) + ' = ' + U.money(Number(it.qty) * Number(it.price || 0)) + 'đ'; }).join('\n');
@@ -327,13 +327,12 @@ M.sendZalo = function (si, builderFn, size) {
     const xb = M._invoiceCsvBlob(si); let f = null; try { f = new File([xb], 'HoaDon-' + si.code + '.csv', { type: 'text/csv' }); } catch (e) {}
     shareFile(f);
   }
-  if (builderFn) {
-    builderFn(si, size || 'A4', 'pdf-blob', { then: (blob) => {
-      if (!blob) return fallbackExcel();
-      let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.pdf', { type: 'application/pdf' }); } catch (e) {}
-      shareFile(f);
-    } });
-  } else { fallbackExcel(); }
+  if (fmt === 'excel' || !builderFn) return fallbackExcel();   // gửi Excel (CSV)
+  builderFn(si, size || 'A4', 'pdf-blob', { then: (blob) => {   // gửi PDF
+    if (!blob) return fallbackExcel();
+    let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.pdf', { type: 'application/pdf' }); } catch (e) {}
+    shareFile(f);
+  } });
 };
 
 /* ---------- Menu In / Xuất khẩu / Gửi Zalo (như MISA) ---------- */
@@ -359,9 +358,10 @@ M.printMenu = function (si) {
         C.btn('📄 Xuất PDF', () => { const fn = fnOf(), sz = sizeSel.value; M.askFileName('HoaDon-' + si.code, 'pdf', nm => fn(si, sz, 'pdf', { fname: nm })); }),
         C.btn('📊 Xuất Excel', () => { M.askFileName('HoaDon-' + si.code, 'csv', nm => M.exportDocExcel(si, nm)); }),
       ]),
-      U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách:'),
+      U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách qua Zalo:'),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('💬 Gửi qua Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value); }, 'primary'),
+        C.btn('💬 Gửi Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value, 'pdf'); }, 'primary'),
+        C.btn('📊 Gửi Zalo (Excel)', () => { M.sendZalo(si, null, sizeSel.value, 'excel'); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
         'Xuất PDF/Excel: đặt tên file rồi tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF); máy tính tự tải PDF + copy nội dung + mở Zalo để đính kèm.'),
