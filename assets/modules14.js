@@ -45,31 +45,56 @@ M._ciCode = function (normed) {
   return best;
 };
 
-// Tách 1 dòng đơn hàng -> { raw, name, codeKey, sizeKey, qty, price }
-M._ciParseLine = function (line) {
-  const raw = line.trim();
-  if (!raw) return null;
-  const cells = raw.indexOf('\t') >= 0 ? raw.split('\t')
+// Tách ô của 1 dòng Excel/CSV/dán (tab | ; ) -> mảng ô hoặc null nếu không phải dạng cột
+M._ciSplitCells = function (raw) {
+  return raw.indexOf('\t') >= 0 ? raw.split('\t')
     : (raw.indexOf('|') >= 0 ? raw.split('|')
     : (raw.split(';').length > 2 ? raw.split(';') : null));
+};
+// Đọc dòng TIÊU ĐỀ -> bản đồ cột { name, qty, price, code } theo tên cột
+M._ciHeaderMap = function (cells) {
+  const map = {};
+  (cells || []).forEach((c, i) => {
+    const n = M._ciNorm(c);
+    if (!n) return;
+    if (map.name == null && /(ten hang|ten san pham|ten sp|hang hoa|mat hang|dien giai|noi dung|san pham|^ten)/.test(n)) map.name = i;
+    else if (map.qty == null && /(so luong dat|so luong|sl dat|^sl|qty|number)/.test(n)) map.qty = i;
+    else if (map.price == null && /(don gia|gia ban|thanh tien|unit price|^gia)/.test(n)) map.price = i;
+    else if (map.code == null && /(ma vach|barcode|ma hang|ma sp|sku|^ma)/.test(n)) map.code = i;
+  });
+  return map;   // hợp lệ khi có name + (qty hoặc price) -> người gọi tự kiểm
+};
+
+// Tách 1 dòng đơn hàng -> { raw, name, codeKey, sizeKey, qty, price }. colMap (tùy chọn) = bản đồ cột theo tiêu đề.
+M._ciParseLine = function (line, colMap) {
+  const raw = line.replace(/[\t ]+$/, '');   // chỉ cắt PHẢI, GIỮ ô trống bên trái -> không lệch cột
+  if (!raw.trim()) return null;
+  const cells = M._ciSplitCells(raw);
   let text = raw, qtyCell = null, priceCell = null;
-  if (cells) {
-    // Dòng Excel/CSV: ô chữ dài nhất = tên; ô số nguyên nhỏ = SL; ô số lớn = giá
-    let name = '';
+  if (cells && colMap && colMap.name != null) {
+    // CÓ tiêu đề cột -> lấy đúng cột (tránh nhầm STT/mã vạch)
+    text = (cells[colMap.name] || '').trim() || raw;
+    if (colMap.qty != null) { const q = parseInt(String(cells[colMap.qty] || '').replace(/[^\d]/g, ''), 10); if (q > 0) qtyCell = q; }
+    if (colMap.price != null) { const pr = Number(String(cells[colMap.price] || '').replace(/[.,\s]/g, '')); if (pr > 0) priceCell = pr; }
+  } else if (cells) {
+    // KHÔNG có tiêu đề -> đoán cột: ô chữ dài nhất = tên; tránh STT (số nhỏ đầu) & mã vạch (số dài / có 0 đầu)
+    let name = ''; const smalls = [];
     cells.forEach(c => {
-      const t = c.trim();
-      if (!t) return;
+      const t = c.trim(); if (!t) return;
+      if (/^\d{1,3}([.,]\d{3})+$/.test(t)) { if (priceCell == null) priceCell = Number(t.replace(/[.,]/g, '')); return; }   // 1.200.000 -> giá
       const pure = t.replace(/[.,\s]/g, '');
       if (/^\d+$/.test(pure)) {
-        const n = Number(pure);
-        if (n >= 1000) { if (priceCell == null) priceCell = n; }
-        else if (n >= 1 && n <= 9999) { if (qtyCell == null) qtyCell = n; }
+        if (pure.length >= 7 || (pure[0] === '0' && pure.length >= 5)) return;       // mã vạch -> bỏ qua
+        if (pure.length >= 4) { if (priceCell == null) priceCell = Number(pure); }   // 4-6 chữ số -> giá
+        else smalls.push(Number(pure));                                              // 1-3 chữ số -> SL/STT
       } else if (t.length > name.length) name = t;
     });
+    if (smalls.length) qtyCell = smalls[smalls.length - 1];   // SL thường ở cột phải nhất (STT ở đầu)
     text = name || raw;
   }
   let normed = M._ciNorm(text);
   if (!normed || !/\d|[a-z]{3,}/.test(normed)) return null;   // dòng không có nội dung hàng
+  if (/tong cong|^cong$|^tong$|tong:/.test(normed)) return null;   // bỏ dòng "Tổng cộng"
   const size = M._ciSize(normed);
   if (size) normed = normed.replace(size.token, ' ');
   const code = M._ciCode(normed);
@@ -189,7 +214,7 @@ M._ciXlsxToLines = async function (file) {
       for (let k = 0; k < colLetters.length; k++) col = col * 26 + (colLetters.charCodeAt(k) - 64);
       if (col > 0) vals[col - 1] = v; else vals.push(v);
     }
-    const line = Array.from(vals, x => x == null ? '' : x).join('\t').replace(/\t+$/, '').trim();
+    const line = Array.from(vals, x => x == null ? '' : x).join('\t').replace(/[\t ]+$/, '');   // GIỮ ô trống bên trái (không lệch cột dòng tổng)
     if (line) lines.push(line);
   }
   return lines;
@@ -286,20 +311,23 @@ M._ciProductIndex = function () {
 // Khớp 1 dòng đã tách -> { productId, status: 'alias'|'code'|'fuzzy'|'none' }
 M._ciMatch = function (parsed, idx, customerId) {
   const aliasKey = parsed.aliasKey || M._ciNorm(parsed.name);
+  // Kích thước của sản phẩm (để xác minh khớp ĐÚNG size)
+  const psize = {}; idx.all.forEach(e => { psize[e.p.id] = e.sizeKey; });
+  const sizeOk = id => !parsed.sizeKey || !psize[id] || psize[id] === parsed.sizeKey;   // chỉ "đã khớp" khi size cũng trùng
   // 1) Bí danh đã học (ưu tiên đúng nhà sách, rồi chung)
   const aliases = PW.data.productAliases || [];
   let al = aliases.find(a => a.customerId === customerId && a.alias === aliasKey) ||
            aliases.find(a => a.alias === aliasKey);
   if (al && PW.data.products.some(p => p.id === al.productId)) {
-    return { productId: al.productId, status: 'alias' };
+    return { productId: al.productId, status: sizeOk(al.productId) ? 'alias' : 'fuzzy' };
   }
-  // 2) Mã + kích thước
+  // 2) Mã + kích thước (khớp đúng cả size)
   if (parsed.codeKey) {
     const hit = idx.full[parsed.codeKey + '|' + parsed.sizeKey];
     if (hit && hit.length) return { productId: hit[0].p.id, status: 'code' };
-    // 3) Chỉ mã (duy nhất)
+    // 3) Chỉ mã (duy nhất) — nhưng nếu size khác thì hạ xuống "cần xem lại"
     const byCode = idx.code[parsed.codeKey];
-    if (byCode && byCode.length === 1) return { productId: byCode[0].p.id, status: 'code' };
+    if (byCode && byCode.length === 1) return { productId: byCode[0].p.id, status: sizeOk(byCode[0].p.id) ? 'code' : 'fuzzy' };
     if (byCode && byCode.length > 1) {
       const bySize = byCode.filter(e => e.sizeKey === parsed.sizeKey);
       if (bySize.length === 1) return { productId: bySize[0].p.id, status: 'code' };
@@ -456,18 +484,26 @@ M.consignImport = function (root) {
   revCard.appendChild(U.el('div', { class: 'pill-row mt16' }, [createBtn]));
 
   const STATUS_TAG = {
-    alias: '<span class="tag green">Bí danh ✓</span>',
-    code: '<span class="tag green">Mã hàng ✓</span>',
+    alias: '<span class="tag green">Đã khớp</span>',
+    code: '<span class="tag green">Đã khớp</span>',
+    manual: '<span class="tag green">Đã chọn</span>',
     fuzzy: '<span class="tag orange">Cần xem lại</span>',
     none: '<span class="tag red">Chưa khớp</span>',
   };
 
   function doParse() {
     applyDetect(ta.value);   // nhận diện nhà sách/ngày/kênh/VAT TRƯỚC (bí danh khớp theo nhà sách)
-    const lines = ta.value.split(/\r?\n/);
+    const lines = ta.value.split(/\r?\n/).filter(l => l.trim());
+    // Phát hiện dòng TIÊU ĐỀ ở đầu -> map cột (lấy đúng SL/Tên hàng, bỏ STT/Mã vạch)
+    let colMap = null;
+    if (lines.length) {
+      const hc = M._ciSplitCells(lines[0].trim());
+      if (hc) { const hm = M._ciHeaderMap(hc); if (hm.name != null && (hm.qty != null || hm.price != null)) colMap = hm; }
+    }
+    const dataLines = colMap ? lines.slice(1) : lines;
     state.rows = [];
-    lines.forEach(l => {
-      const parsed = M._ciParseLine(l);
+    dataLines.forEach(l => {
+      const parsed = M._ciParseLine(l, colMap);
       if (!parsed) return;
       const m = M._ciMatch(parsed, state.idx, cusSel.value || null);
       const row = Object.assign(parsed, m);
@@ -489,10 +525,10 @@ M.consignImport = function (root) {
   function draw() {
     host.innerHTML = '';
     if (!state.rows.length) { sumDiv.textContent = 'Không nhận diện được dòng hàng nào.'; return; }
-    const ok = state.rows.filter(r => r.status === 'alias' || r.status === 'code').length;
-    const warn = state.rows.filter(r => r.status === 'fuzzy').length;
-    const bad = state.rows.filter(r => r.status === 'none').length;
-    sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — khớp chắc <b class="text-green">' + ok +
+    const ok = state.rows.filter(r => r.manual || r.status === 'alias' || r.status === 'code').length;
+    const warn = state.rows.filter(r => !r.manual && r.status === 'fuzzy').length;
+    const bad = state.rows.filter(r => !r.manual && r.status === 'none').length;
+    sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
     const prodOpts = [{ value: '', label: '-- Chọn hàng --' }]
       .concat(PW.data.products.map(p => ({ value: p.id, label: (p.code ? p.code + ' - ' : '') + p.name })));
@@ -543,7 +579,7 @@ M.consignImport = function (root) {
           i.addEventListener('input', () => { r.price = Number(i.value) || 0; r.priceTouched = true; });
           return i;
         } },
-      { label: 'Trạng thái', center: true, render: r => STATUS_TAG[r.manual ? 'alias' : r.status] || '' },
+      { label: 'Trạng thái', center: true, render: r => STATUS_TAG[r.manual ? 'manual' : r.status] || '' },
       { label: '', width: '40px', render: r => C.actions([{ label: '✕', title: 'Bỏ dòng', onClick: () => {
           state.rows.splice(state.rows.indexOf(r), 1); draw();
         } }]) },
