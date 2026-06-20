@@ -42,6 +42,8 @@ M.printHTML = function (title, innerHtml, size) {
     + 'table.it{width:100%;border-collapse:collapse;margin-top:8px}'
     + 'table.it th,table.it td{border:1px solid #b9c4a8;padding:' + (narrow ? '4px 5px' : '7px 9px') + ';font-size:' + (narrow ? '11' : '12.5') + 'px}'
     + 'table.it th{background:#eef6e1;text-align:left}'
+    + 'table.it tfoot{display:table-row-group}'   // tổng chỉ hiện 1 lần ở CUỐI, không lặp mỗi trang
+    + 'table.it tfoot tr{break-inside:avoid}'
     + '.r{text-align:right}.c{text-align:center}'
     + '.tot{text-align:right;margin-top:6px}.tot.big{font-size:' + (narrow ? '14' : '16') + 'px;font-weight:800;color:#5a8e2e}'
     + '.cod{margin-top:10px;padding:8px 10px;border:1.5px dashed #e0922a;border-radius:8px;background:#fff6e5;font-size:' + (narrow ? '13' : '15') + 'px}'

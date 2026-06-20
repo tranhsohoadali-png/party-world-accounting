@@ -312,6 +312,7 @@ M.printSalesDoc = function (kind, doc) {
     .company{text-align:center;color:#1ea7a0;font-weight:700;font-size:18px}
     h2{text-align:center;margin:6px 0} table{width:100%;border-collapse:collapse;margin-top:16px}
     th,td{border:1px solid #999;padding:7px 9px;font-size:13px} th{background:#f0f0f0}
+    tfoot{display:table-row-group} tfoot tr{break-inside:avoid}
     .meta{margin-top:10px;font-size:14px;line-height:1.7} .tot{text-align:right;margin-top:10px;font-size:15px}
     .sign{display:flex;justify-content:space-around;margin-top:50px;text-align:center}</style></head><body>
     <div class="company">DALI — Tô điểm cuộc sống</div>
