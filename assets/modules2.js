@@ -52,21 +52,26 @@ M.sales = function (root) {
       text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
+    const sHang = rows.reduce((s, si) => s + PW.invoiceTotal(si), 0);
+    const sThue = rows.reduce((s, si) => s + PW.invoiceVat(si), 0);
+    const sTong = rows.reduce((s, si) => s + PW.invoiceGrand(si), 0);
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: si => U.date(si.date) },
       { label: 'Số HĐ', render: si => U.el('a', { href: '#', style: 'font-weight:700;color:var(--teal-d);text-decoration:underline', title: 'Xem chi tiết hóa đơn', onclick: e => { e.preventDefault(); M.invoiceView(si); } }, si.code) },
       { label: 'Khách hàng', render: si => { const c = PW.customer(si.customerId); return c ? U.esc(c.name) : ''; } },
-      { label: 'Số mặt hàng', center: true, render: si => si.items.length },
-      { label: 'Tổng tiền', num: true, render: si => U.money(PW.invoiceGrand(si)) },
-      { label: 'Đã thu', num: true, render: si => U.money(si.paid || 0) },
-      { label: 'Còn nợ', num: true, render: si => {
-          const d = PW.invoiceGrand(si) - (si.paid || 0);
-          return d > 0 ? `<span class="text-red">${U.money(d)}</span>` : '<span class="tag green">Đã thu đủ</span>';
+      { label: 'Diễn giải', render: si => U.esc(si.note || '') },
+      { label: 'Tổng tiền hàng', num: true, render: si => U.money(PW.invoiceTotal(si)) },
+      { label: 'Tiền thuế GTGT', num: true, render: si => U.money(PW.invoiceVat(si)) },
+      { label: 'Tổng thanh toán', num: true, render: si => U.money(PW.invoiceGrand(si)) },
+      { label: 'TT thanh toán', center: true, render: si => {
+          const g = PW.invoiceGrand(si), p = Number(si.paid || 0);
+          return p <= 0 ? '<span class="tag red">Chưa thu</span>' : (p < g ? '<span class="tag orange">Thu 1 phần</span>' : '<span class="tag green">Đã thu đủ</span>');
         } },
       { label: '', render: si => C.actions([
+          { label: 'Thu tiền', title: 'Lập phiếu thu cho hóa đơn này', onClick: () => M.receiptForm ? M.receiptForm(null, si.customerId) : M.salesForm(si) },
           { label: 'Sửa', onClick: () => M.salesForm(si) },
           { label: 'Sao chép', title: 'Tạo hóa đơn mới từ hóa đơn này', onClick: () => M.docCopy(si, 'sale') },
-          { label: '🖨 In', cls: 'primary', title: 'In phiếu xuất kho / hóa đơn / phiếu giao hàng', onClick: () => M.printMenu(si) },
+          { label: '🖨 In', cls: 'primary', title: 'In / gửi Zalo', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
                 PW.logActivity('delete', 'salesInvoice', si.code, U.money(PW.invoiceGrand(si)) + ' đ');
@@ -75,7 +80,11 @@ M.sales = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc' }));
+    ], { empty: 'Chưa có hóa đơn bán hàng phù hợp bộ lọc', footer: [
+      { colspan: 4, html: 'TỔNG (' + rows.length + ' hóa đơn)' },
+      { num: true, html: U.money(sHang) }, { num: true, html: U.money(sThue) }, { num: true, html: U.money(sTong) },
+      { html: '' }, { html: '' },
+    ] }));
   }
   draw();
 };
@@ -112,6 +121,36 @@ M.invoiceView = function (si) {
     footer: [C.btn('Đóng', C.closeModal),
       C.btn('Sửa', () => { C.closeModal(); M.salesForm(si); }),
       C.btn('🖨 In', () => M.printMenu(si), 'primary')],
+  });
+};
+
+/* Xem nhanh 1 phiếu nhập mua (chế độ chỉ đọc) — bấm vào Số phiếu */
+M.purchaseView = function (pu) {
+  const sup = PW.supplier(pu.supplierId);
+  const sub = PW.purchaseTotal(pu), vat = PW.purchaseVat(pu), grand = PW.purchaseGrand(pu), paid = Number(pu.paid || 0);
+  const rowsHtml = pu.items.map((it, i) => {
+    const p = PW.product(it.productId); const cost = Number(it.cost || 0);
+    return `<tr><td class="c">${i + 1}</td><td>${U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '')}</td><td class="c">${U.esc(p ? p.unit : '')}</td><td class="r">${U.num(it.qty)}</td><td class="r">${U.money(cost)}</td><td class="r">${U.money(Number(it.qty) * cost)}</td></tr>`;
+  }).join('');
+  const body = U.el('div', { html:
+    `<div style="line-height:1.9;font-size:14px">
+      <div><b>Số phiếu:</b> ${U.esc(pu.code)} &nbsp;·&nbsp; <b>Ngày:</b> ${U.date(pu.date)}${pu.dueDate ? ' &nbsp;·&nbsp; <b>Hạn TT:</b> ' + U.date(pu.dueDate) : ''}</div>
+      <div><b>Nhà cung cấp:</b> ${U.esc(sup ? sup.name : '')}</div>
+      <div><b>Địa chỉ:</b> ${U.esc(sup ? (sup.address || '') : '')} &nbsp; <b>Điện thoại:</b> ${U.esc(sup ? (sup.phone || '') : '')}${sup && sup.taxCode ? ' &nbsp; <b>MST:</b> ' + U.esc(sup.taxCode) : ''}</div>
+      ${pu.note ? `<div><b>Diễn giải:</b> ${U.esc(pu.note)}</div>` : ''}
+    </div>
+    <table class="items-tbl" style="margin-top:10px;width:100%;border-collapse:collapse">
+      <thead><tr><th>STT</th><th>Tên hàng</th><th>ĐVT</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+    <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;font-size:14px">
+      <div>Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
+      ${vat ? `<div>Thuế GTGT: ${U.money(vat)} đ</div>` : ''}
+      <div style="font-size:16px;font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN: ${U.money(grand)} đ</div>
+      <div>Đã trả: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${grand - paid > 0 ? 'text-red' : 'text-green'}">${U.money(grand - paid)} đ</b></div>
+    </div>` });
+  C.modal({
+    title: 'Phiếu nhập ' + pu.code, wide: true, body,
+    footer: [C.btn('Đóng', C.closeModal), C.btn('Sửa', () => { C.closeModal(); M.purchaseForm(pu); }), C.btn('In', () => M.printDoc('purchase', pu), 'primary')],
   });
 };
 
@@ -185,16 +224,20 @@ M.purchases = function (root) {
       text: pu => { const s = PW.supplier(pu.supplierId); return [pu.code, s ? s.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
+    const sHang = rows.reduce((s, pu) => s + PW.purchaseTotal(pu), 0);
+    const sThue = rows.reduce((s, pu) => s + PW.purchaseVat(pu), 0);
+    const sTong = rows.reduce((s, pu) => s + PW.purchaseGrand(pu), 0);
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: pu => U.date(pu.date) },
-      { label: 'Số phiếu', render: pu => U.esc(pu.code) },
+      { label: 'Số phiếu', render: pu => U.el('a', { href: '#', style: 'font-weight:700;color:var(--teal-d);text-decoration:underline', title: 'Xem chi tiết phiếu nhập', onclick: e => { e.preventDefault(); M.purchaseView(pu); } }, pu.code) },
       { label: 'Nhà cung cấp', render: pu => { const s = PW.supplier(pu.supplierId); return s ? U.esc(s.name) : ''; } },
-      { label: 'Số mặt hàng', center: true, render: pu => pu.items.length },
-      { label: 'Tổng tiền', num: true, render: pu => U.money(PW.purchaseGrand(pu)) },
-      { label: 'Đã trả', num: true, render: pu => U.money(pu.paid || 0) },
-      { label: 'Còn nợ', num: true, render: pu => {
-          const d = PW.purchaseGrand(pu) - (pu.paid || 0);
-          return d > 0 ? `<span class="text-red">${U.money(d)}</span>` : '<span class="tag green">Đã trả đủ</span>';
+      { label: 'Diễn giải', render: pu => U.esc(pu.note || '') },
+      { label: 'Tổng tiền hàng', num: true, render: pu => U.money(PW.purchaseTotal(pu)) },
+      { label: 'Tiền thuế GTGT', num: true, render: pu => U.money(PW.purchaseVat(pu)) },
+      { label: 'Tổng thanh toán', num: true, render: pu => U.money(PW.purchaseGrand(pu)) },
+      { label: 'TT thanh toán', center: true, render: pu => {
+          const g = PW.purchaseGrand(pu), p = Number(pu.paid || 0);
+          return p <= 0 ? '<span class="tag red">Chưa trả</span>' : (p < g ? '<span class="tag orange">Trả 1 phần</span>' : '<span class="tag green">Đã trả đủ</span>');
         } },
       { label: '', render: pu => C.actions([
           { label: 'Sửa', onClick: () => M.purchaseForm(pu) },
@@ -208,7 +251,11 @@ M.purchases = function (root) {
               }
             } },
         ]) },
-    ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc' }));
+    ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc', footer: [
+      { colspan: 4, html: 'TỔNG (' + rows.length + ' phiếu)' },
+      { num: true, html: U.money(sHang) }, { num: true, html: U.money(sThue) }, { num: true, html: U.money(sTong) },
+      { html: '' }, { html: '' },
+    ] }));
   }
   draw();
 };

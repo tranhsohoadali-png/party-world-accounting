@@ -107,11 +107,10 @@ M.printInvoice = function (si, size) {
     + '</tr></table>'
     + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
     + '<tfoot>'
+    + '<tr><td colspan="3" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
     + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
     + (Number(si.vatRate) ? '<tr><td colspan="5" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
     + '<tr><td colspan="5" class="r" style="font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
-    + '<tr><td colspan="5" class="r">Đã thu</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
-    + '<tr><td colspan="5" class="r"><b>Còn lại</b></td><td class="r"><b>' + U.money(grand - (si.paid || 0)) + '</b></td></tr>'
     + '</tfoot></table>'
     + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
@@ -194,6 +193,7 @@ M.warehouseIssueNote = function (si, size) {
     + '<th class="c">Đơn vị</th><th class="r">Số lượng</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th></tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '<tfoot>'
+    + '<tr><td colspan="4" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
     + '<tr><td colspan="6" class="r"><b>Cộng tiền hàng</b></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
     + '<tr><td colspan="6" class="r">Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)</td><td class="r">' + U.money(vat) + '</td></tr>'
     + '<tr><td colspan="6" class="r" style="font-weight:800;color:#5a8e2e">TỔNG TIỀN THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
@@ -203,6 +203,47 @@ M.warehouseIssueNote = function (si, size) {
     + '<div class="r" style="margin-top:14px;font-style:italic">Ngày ..... tháng ..... năm ........</div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, họ tên)</i></div><div>Kế toán trưởng<br><i>(Ký, họ tên)</i></div><div>Giám đốc<br><i>(Ký, họ tên, đóng dấu)</i></div></div>';
   M.printHTML('Phiếu xuất kho ' + si.code, inner, size);
+};
+
+/* ---------- Gửi hóa đơn qua Zalo ----------
+   Điện thoại: dùng Web Share API -> chọn Zalo trong khay chia sẻ (kèm tệp Excel + nội dung).
+   Máy tính: tải tệp + copy nội dung + mở Zalo web để dán. (Gửi tệp PDF tự động cho từng KH cần Zalo OA.) */
+M.sendZalo = function (si) {
+  const c = M.company();
+  const cus = PW.customer(si.customerId);
+  const grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
+  const lines = si.items.map(it => { const p = PW.product(it.productId); return '• ' + (p ? p.name : '') + '  x' + U.num(it.qty) + ' = ' + U.money(Number(it.qty) * Number(it.price || 0)) + 'đ'; }).join('\n');
+  const text = (c.name || 'DALI') + ' — HÓA ĐƠN ' + si.code + '\n'
+    + 'Ngày: ' + U.date(si.date) + (cus ? '\nKhách: ' + cus.name : '') + '\n' + lines + '\n'
+    + 'TỔNG THANH TOÁN: ' + U.money(grand) + ' đ'
+    + (paid < grand ? '\nCòn nợ: ' + U.money(grand - paid) + ' đ' : ' (đã thanh toán)');
+
+  function xlsBlob() {
+    const headers = ['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền'];
+    const rs = si.items.map((it, i) => { const p = PW.product(it.productId); return [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]; });
+    rs.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
+    if (PW.invoiceVat(si)) rs.push(['', '', '', '', '', 'Thuế GTGT', PW.invoiceVat(si)]);
+    rs.push(['', '', '', '', '', 'TỔNG THANH TOÁN', grand]);
+    let h = '<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">';
+    h += '<tr><td colspan="7" style="font-weight:bold">HÓA ĐƠN ' + U.esc(si.code) + ' — ' + U.esc(cus ? cus.name : '') + '</td></tr>';
+    h += '<tr>' + headers.map(x => '<th>' + U.esc(x) + '</th>').join('') + '</tr>';
+    rs.forEach(r => { h += '<tr>' + r.map(cl => typeof cl === 'number' ? '<td>' + cl + '</td>' : '<td>' + U.esc(cl == null ? '' : cl) + '</td>').join('') + '</tr>'; });
+    return new Blob(['﻿' + h + '</table></body></html>'], { type: 'application/vnd.ms-excel' });
+  }
+  const blob = xlsBlob();
+  let file = null;
+  try { file = new File([blob], 'HoaDon-' + si.code + '.xls', { type: 'application/vnd.ms-excel' }); } catch (e) {}
+
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
+  } else if (navigator.share) {
+    navigator.share({ title: 'Hóa đơn ' + si.code, text: text }).catch(() => {});
+  } else {
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'HoaDon-' + si.code + '.xls'; a.click(); URL.revokeObjectURL(url);
+    try { if (navigator.clipboard) navigator.clipboard.writeText(text); } catch (e) {}
+    window.open('https://chat.zalo.me/', '_blank');
+    U.toast('Đã tải tệp + copy nội dung — dán/kéo vào Zalo để gửi');
+  }
 };
 
 /* ---------- Menu in: chọn loại chứng từ + khổ giấy ---------- */
@@ -223,6 +264,12 @@ M.printMenu = function (si) {
         C.btn('📄 Hóa đơn bán hàng', doc(M.printInvoice)),
         C.btn('🚚 Phiếu giao hàng', doc(M.deliveryNote)),
       ]),
+      U.el('p', { class: 'section-sub', style: 'margin:12px 0 6px' }, 'Hoặc gửi cho khách:'),
+      U.el('div', { class: 'pill-row' }, [
+        C.btn('💬 Gửi qua Zalo', () => { C.closeModal(); M.sendZalo(si); }, 'primary'),
+      ]),
+      U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
+        'Trên điện thoại: chọn Zalo trong khay chia sẻ (kèm tệp Excel + nội dung). Trên máy tính: tự tải tệp + copy nội dung + mở Zalo để dán.'),
     ]),
   });
 };
