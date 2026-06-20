@@ -1345,9 +1345,10 @@ M._cashCountTab = function () {
 
 M.cashCountForm = function () {
   const dateI = C.input({ type: 'date', value: U.today() });
+  const noteI = C.input({ placeholder: 'Diễn giải / lý do chênh lệch (nếu có)' });
   const accInputs = {};
   const body = U.el('div');
-  body.appendChild(U.el('div', { class: 'form-grid' }, [C.field('Kiểm kê đến ngày', dateI)]));
+  body.appendChild(U.el('div', { class: 'form-grid' }, [C.field('Kiểm kê đến ngày', dateI), C.field('Diễn giải', noteI, { full: true })]));
   const tblHost = U.el('div', { style: 'margin-top:10px' });
   body.appendChild(tblHost);
   function drawTbl() {
@@ -1382,14 +1383,15 @@ M.cashCountForm = function () {
         const book = PW.balanceAsOf(a.id, dateI.value);
         const actual = Number(accInputs[a.id].input.value) || 0;
         const diff = actual - book;
-        const cc = { id: PW.uid(), date: dateI.value, accountId: a.id, bookBalance: book, actualBalance: actual, diff: diff, adjustmentId: null };
+        const note = noteI.value.trim();
+        const cc = { id: PW.uid(), date: dateI.value, accountId: a.id, bookBalance: book, actualBalance: actual, diff: diff, note: note, adjustmentId: null };
         if (Math.abs(diff) >= 1) {
           if (diff > 0) {
-            const obj = { id: PW.uid(), code: PW.nextCode('PT'), date: dateI.value, accountId: a.id, customerId: null, amount: diff, reason: 'Thừa quỹ kiểm kê - ' + a.name, note: '' };
+            const obj = { id: PW.uid(), code: PW.nextCode('PT'), date: dateI.value, accountId: a.id, customerId: null, amount: diff, reason: 'Thừa quỹ kiểm kê - ' + a.name, note: note };
             PW.data.receipts.push(obj); cc.adjustmentId = obj.id;
             PW.logActivity('create', 'receipt', obj.code, U.money(diff) + ' đ — điều chỉnh kiểm kê');
           } else {
-            const obj = { id: PW.uid(), code: PW.nextCode('PC'), date: dateI.value, accountId: a.id, supplierId: null, amount: -diff, reason: 'Thiếu quỹ kiểm kê - ' + a.name, note: '' };
+            const obj = { id: PW.uid(), code: PW.nextCode('PC'), date: dateI.value, accountId: a.id, supplierId: null, amount: -diff, reason: 'Thiếu quỹ kiểm kê - ' + a.name, note: note };
             PW.data.payments.push(obj); cc.adjustmentId = obj.id;
             PW.logActivity('create', 'payment', obj.code, U.money(-diff) + ' đ — điều chỉnh kiểm kê');
           }
