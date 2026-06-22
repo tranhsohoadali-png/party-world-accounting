@@ -690,6 +690,110 @@ M.exportDocExcel = async function (si, fname) {
   U.toast('Đã xuất Excel: ' + (fname || si.code));
 };
 
+/* ============================================================
+   XUẤT BÁO CÁO DANH SÁCH -> Excel ĐẸP (ExcelJS) — như MISA
+   opts = {
+     title, subtitle, fname,
+     columns: [{header, width, align:'left'|'center'|'right', money:bool}],
+     rows: [[cell,...]],                 // giá trị thô; cột money là số
+     totals: [cell,...]|null,            // căn theo columns; số -> money đậm, chuỗi -> đậm, null -> trống
+     totalsLabel, totalsLabelSpan        // gộp ô nhãn tổng ở đầu dòng tổng
+   }
+   Lỗi -> tự lui về .xlsx thường (SheetJS) -> .xls (HTML).
+   ============================================================ */
+M.exportListExcel = async function (opts) {
+  U.toast('Đang tạo Excel báo cáo...');
+  try { const r = await M._listExcelExcelJS(opts); M._download(r.blob, (opts.fname || 'BaoCao') + '.xlsx'); U.toast('Đã xuất Excel: ' + (opts.fname || 'báo cáo')); return; }
+  catch (e) { console.warn('Excel báo cáo (ExcelJS) lỗi -> bản thường:', e); }
+  try {
+    await M._ensureXlsxLib(); const X = window.XLSX;
+    const cols = opts.columns, head = cols.map(c => c.header);
+    const aoa = [[opts.title || 'BÁO CÁO']];
+    if (opts.subtitle) aoa.push([opts.subtitle]);
+    aoa.push([]); aoa.push(head);
+    opts.rows.forEach(r => aoa.push(r.slice()));
+    if (opts.totals) aoa.push(opts.totals.map(v => v == null ? '' : v));
+    const ws = X.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = cols.map(c => ({ wch: c.width || 14 }));
+    const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'BaoCao');
+    const arr = X.write(wb, { bookType: 'xlsx', type: 'array' });
+    M._download(new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), (opts.fname || 'BaoCao') + '.xlsx');
+    U.toast('Đã xuất Excel: ' + (opts.fname || 'báo cáo'));
+  } catch (e2) {
+    U.exportExcel(opts.fname || 'BaoCao', opts.columns.map(c => c.header), opts.rows, opts.title);
+  }
+};
+// Dòng phụ đề báo cáo: kỳ lọc + bộ lọc khác + ngày xuất
+M._reportSubtitle = function (st, extra) {
+  const parts = [];
+  if (st && (st.from || st.to)) parts.push('Kỳ: ' + (st.from ? U.date(st.from) : '…') + ' → ' + (st.to ? U.date(st.to) : '…'));
+  else parts.push('Kỳ: ' + ((st && U.PERIOD_LABEL[st.periodKey]) || 'Tất cả'));
+  (extra || []).forEach(x => { if (x) parts.push(x); });
+  parts.push('Ngày xuất: ' + U.date(U.today()));
+  return parts.join('     ·     ');
+};
+M._listExcelExcelJS = async function (opts) {
+  await M._ensureExcelJsLib();
+  const EJS = window.ExcelJS, c = M.company();
+  const cols = opts.columns, NC = cols.length;
+  const FN = 'Times New Roman', GREEN = 'FF5A8E2E', HEADBG = 'FFEEF6E1', LINE = 'FFB9C4A8';
+  const fnt = o => Object.assign({ name: FN }, o || {});
+  const bThin = { style: 'thin', color: { argb: LINE } };
+  const boxAll = { top: bThin, left: bThin, bottom: bThin, right: bThin };
+  const wb = new EJS.Workbook();
+  const ws = wb.addWorksheet('BaoCao', {
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 } },
+  });
+  ws.columns = cols.map(c2 => ({ width: c2.width || 14 }));
+  const merge = (r1, x1, r2, x2) => ws.mergeCells(r1, x1, r2, x2);
+  let cc;
+  // Header công ty
+  merge(1, 1, 1, NC); cc = ws.getCell(1, 1); cc.value = c.name || 'DALI'; cc.font = fnt({ bold: true, size: 13, color: { argb: GREEN } });
+  let R = 1;
+  if (c.address) { R = 2; merge(R, 1, R, NC); cc = ws.getCell(R, 1); cc.value = 'Địa chỉ: ' + c.address + (c.mst ? '     ·     MST: ' + c.mst : ''); cc.font = fnt({ size: 9.5, color: { argb: 'FF666666' } }); }
+  // Tiêu đề báo cáo
+  R += 2; merge(R, 1, R, NC); cc = ws.getCell(R, 1); cc.value = opts.title || 'BÁO CÁO'; cc.font = fnt({ bold: true, size: 16, color: { argb: 'FF1F2A16' } }); cc.alignment = { horizontal: 'center' }; ws.getRow(R).height = 22;
+  if (opts.subtitle) { R += 1; merge(R, 1, R, NC); cc = ws.getCell(R, 1); cc.value = opts.subtitle; cc.font = fnt({ italic: true, size: 10.5, color: { argb: 'FF555555' } }); cc.alignment = { horizontal: 'center' }; }
+  // Dòng tiêu đề cột
+  R += 2; const HEAD = R;
+  cols.forEach((col, i) => {
+    const x = ws.getCell(HEAD, i + 1); x.value = col.header; x.font = fnt({ bold: true, size: 10.5, color: { argb: 'FF28471A' } });
+    x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADBG } }; x.border = boxAll; x.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  });
+  ws.getRow(HEAD).height = 20;
+  const FIRST = HEAD + 1;
+  opts.rows.forEach(row => {
+    R++;
+    cols.forEach((col, i) => {
+      const x = ws.getCell(R, i + 1); x.value = (row[i] == null ? '' : row[i]); x.font = fnt({ size: 10 }); x.border = boxAll;
+      const al = col.align || (col.money ? 'right' : 'left');
+      x.alignment = { horizontal: al, vertical: 'middle', wrapText: col.align !== 'center' && !col.money };
+      if (col.money) x.numFmt = '#,##0';
+    });
+  });
+  const LAST = R;
+  // Dòng TỔNG
+  if (opts.totals) {
+    R++;
+    const span = opts.totalsLabelSpan || 0;
+    if (span > 0) { merge(R, 1, R, span); cc = ws.getCell(R, 1); cc.value = opts.totalsLabel || 'TỔNG'; cc.font = fnt({ bold: true, size: 10.5 }); cc.alignment = { horizontal: 'left', vertical: 'middle' }; }
+    cols.forEach((col, i) => {
+      if (span > 0 && i < span) { ws.getCell(R, i + 1).border = boxAll; return; }
+      const x = ws.getCell(R, i + 1); const v = opts.totals[i];
+      x.value = (v == null ? '' : v); x.font = fnt({ bold: true, size: 10.5 }); x.border = boxAll;
+      x.alignment = { horizontal: col.money ? 'right' : (col.align || 'left'), vertical: 'middle' };
+      if (col.money && typeof v === 'number') x.numFmt = '#,##0';
+    });
+  }
+  const LASTROW = R;
+  ws.views = [{ state: 'frozen', ySplit: HEAD }];
+  if (LAST >= FIRST) ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: LAST, column: NC } };
+  ws.pageSetup.printArea = 'A1:' + ws.getColumn(NC).letter + LASTROW;
+  ws.pageSetup.printTitlesRow = HEAD + ':' + HEAD;
+  const buf = await wb.xlsx.writeBuffer();
+  return { blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }) };
+};
+
 /* ---------- Gửi chứng từ qua Zalo ----------
    Ưu tiên đính kèm FILE PDF (builderFn tạo PDF). Điện thoại: Web Share -> chọn Zalo.
    Máy tính: tải tệp + copy nội dung + mở Zalo để đính kèm. (Gửi PDF tự động tới từng KH cần Zalo OA.) */

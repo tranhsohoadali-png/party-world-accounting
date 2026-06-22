@@ -35,7 +35,10 @@ M.sales = function (root) {
       { type: 'amountRange', key: 'amount', label: 'Tổng tiền' },
       { type: 'search', key: 'q', placeholder: 'Tìm số HĐ / khách hàng...' },
     ],
-    actions: [C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary')],
+    actions: [
+      C.btn('📊 Xuất Excel', () => doExport(), ''),
+      C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary'),
+    ],
   });
   card.appendChild(fb.el);
   card.appendChild(host);
@@ -44,9 +47,8 @@ M.sales = function (root) {
   root.appendChild(detailHost);
   function showDetail(si) { detailHost.innerHTML = ''; detailHost.appendChild(M.docDetailPanel(si, 'sale')); }
 
-  function draw() {
-    const st = fb.getState();
-    const rows = M.applyFilter(PW.data.salesInvoices, st, {
+  function filteredRows(st) {
+    return M.applyFilter(PW.data.salesInvoices, st, {
       date: si => si.date,
       customerId: si => si.customerId,
       channelId: si => si.channelId || '',
@@ -54,6 +56,50 @@ M.sales = function (root) {
       paymentStatus: si => (PW.invoiceGrand(si) - (si.paid || 0) > 0 ? 'no' : 'paid'),
       text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
+  }
+
+  function doExport() {
+    const st = fb.getState();
+    const rows = filteredRows(st);
+    if (!rows.length) return U.toast('Không có hóa đơn phù hợp bộ lọc để xuất', 'error');
+    const columns = [
+      { header: 'Ngày', width: 12, align: 'center' },
+      { header: 'Số HĐ', width: 12, align: 'center' },
+      { header: 'Khách hàng', width: 34 },
+      { header: 'Diễn giải', width: 28 },
+      { header: 'Tổng tiền hàng', width: 16, money: true },
+      { header: 'Tiền thuế GTGT', width: 15, money: true },
+      { header: 'Tổng thanh toán', width: 16, money: true },
+      { header: 'Đã thu', width: 14, money: true },
+      { header: 'Còn nợ', width: 14, money: true },
+      { header: 'TT thanh toán', width: 14, align: 'center' },
+    ];
+    const data = rows.map(si => {
+      const g = PW.invoiceGrand(si), p = Number(si.paid || 0), c = PW.customer(si.customerId);
+      const status = p <= 0 ? 'Chưa thu' : (p < g ? 'Thu 1 phần' : 'Đã thu đủ');
+      return [U.date(si.date), si.code, c ? c.name : '', si.note || '', PW.invoiceTotal(si), PW.invoiceVat(si), g, p, g - p, status];
+    });
+    const sHang = rows.reduce((s, si) => s + PW.invoiceTotal(si), 0);
+    const sThue = rows.reduce((s, si) => s + PW.invoiceVat(si), 0);
+    const sTong = rows.reduce((s, si) => s + PW.invoiceGrand(si), 0);
+    const sPaid = rows.reduce((s, si) => s + Number(si.paid || 0), 0);
+    const totals = [null, null, null, null, sHang, sThue, sTong, sPaid, sTong - sPaid, null];
+    const extra = [];
+    if (st.customerId) { const c = PW.customer(st.customerId); if (c) extra.push('Khách hàng: ' + c.name); }
+    if (st.channelId) { const ch = PW.channel && PW.channel(st.channelId); if (ch) extra.push('Kênh: ' + ch.name); }
+    if (st.paymentStatus === 'no') extra.push('Trạng thái: Còn nợ'); else if (st.paymentStatus === 'paid') extra.push('Trạng thái: Đã thu đủ');
+    M.exportListExcel({
+      title: 'BÁO CÁO BÁN HÀNG & CÔNG NỢ PHẢI THU',
+      subtitle: M._reportSubtitle(st, extra),
+      fname: 'BaoCao-BanHang',
+      columns: columns, rows: data, totals: totals,
+      totalsLabel: 'TỔNG (' + rows.length + ' hóa đơn)', totalsLabelSpan: 4,
+    });
+  }
+
+  function draw() {
+    const st = fb.getState();
+    const rows = filteredRows(st);
     host.innerHTML = '';
     const sHang = rows.reduce((s, si) => s + PW.invoiceTotal(si), 0);
     const sThue = rows.reduce((s, si) => s + PW.invoiceVat(si), 0);
