@@ -434,6 +434,7 @@ M.consignImport = function (root) {
   const typeSel = C.select([
     { value: 'invoice', label: 'Hóa đơn bán (ghi doanh thu + trừ kho)' },
     { value: 'order', label: 'Đơn đặt hàng (chưa ghi sổ)' },
+    { value: 'return', label: 'Trả lại hàng bán (nhà sách trả — nhập lại kho, giảm công nợ)' },
   ], 'invoice');
   const dateI = C.input({ type: 'date', value: U.today() });
   const chSel = C.select(
@@ -618,16 +619,24 @@ M.consignImport = function (root) {
     });
 
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
-    let code;
-    const note = noteI.value.trim() || 'Gom đơn ký gửi tự động';
+    let code, mucXem;
+    const isReturn = typeSel.value === 'return';
+    const note = noteI.value.trim() || (isReturn ? 'Nhà sách trả hàng (gom tự động)' : 'Gom đơn ký gửi tự động');
     if (typeSel.value === 'order') {
-      code = PW.nextCode('DH');
+      code = PW.nextCode('DH'); mucXem = 'Đơn đặt hàng';
       PW.data.salesOrders.push({
         id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
         items: items, discount: 0, status: 'open', note: note,
       });
+    } else if (isReturn) {
+      code = PW.nextCode('TL'); mucXem = 'Trả lại hàng bán';
+      PW.data.salesReturns.push({
+        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
+        invoiceId: null, vatRate: Number(vatSel.value) || 0, items: items, note: note,
+      });
+      PW.logActivity('create', 'salesReturn', code, items.length + ' mặt hàng — gom AI');
     } else {
-      code = PW.nextCode('HD');
+      code = PW.nextCode('HD'); mucXem = 'Hóa đơn bán';
       PW.data.salesInvoices.push({
         id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
         channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0, items: items, discount: 0,
@@ -639,8 +648,7 @@ M.consignImport = function (root) {
     state.rows = [];
     ta.value = '';
     draw();
-    sumDiv.innerHTML = 'Đã tạo chứng từ <b>' + U.esc(code) + '</b>. Xem ở mục ' +
-      (typeSel.value === 'order' ? 'Đơn đặt hàng' : 'Hóa đơn bán') + '.';
+    sumDiv.innerHTML = 'Đã tạo chứng từ <b>' + U.esc(code) + '</b>. Xem ở mục ' + mucXem + '.';
   }
 
   root.appendChild(srcCard);
