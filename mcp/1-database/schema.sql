@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `accounting_entries` (
   `description` TEXT NOT NULL,
   `amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
   `currency` VARCHAR(8) NOT NULL DEFAULT 'VND',
+  `payment_method` ENUM('cash','bank','ewallet','other') DEFAULT NULL COMMENT 'cash=tiền mặt, bank=chuyển khoản, ewallet=ví, other=khác',
   `category` VARCHAR(100) DEFAULT NULL COMMENT 'Danh mục: NVL, Lương, Thuế, Vận chuyển...',
   `counterparty_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'FK đến counterparties (nếu có)',
   `inventory_item_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'FK đến inventory_items (cho inventory_in/out)',
@@ -33,9 +34,20 @@ CREATE TABLE IF NOT EXISTS `accounting_entries` (
   INDEX `idx_counterparty` (`counterparty_id`),
   INDEX `idx_inventory_item` (`inventory_item_id`),
   INDEX `idx_source` (`source`),
-  INDEX `idx_category` (`category`)
+  INDEX `idx_category` (`category`),
+  INDEX `idx_paymethod` (`payment_method`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Sổ cái universal: chi, thu, công nợ, tồn kho';
+
+-- ============================================================
+-- 1b. BẢNG CẤU HÌNH (key-value): số dư đầu kỳ tiền mặt/ngân hàng...
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `app_settings` (
+  `skey` VARCHAR(64) PRIMARY KEY,
+  `svalue` TEXT,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Cấu hình chung: opening_cash, opening_bank, opening_as_of...';
 
 -- ============================================================
 -- 2. BẢNG ITEMS TỒN KHO
@@ -89,7 +101,7 @@ CREATE TABLE IF NOT EXISTS `api_tokens` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `token` VARCHAR(64) NOT NULL UNIQUE COMMENT 'Token random 32 byte hex',
   `name` VARCHAR(100) NOT NULL COMMENT 'Tên ví dụ: claude-mcp-prod',
-  `scopes` VARCHAR(255) NOT NULL DEFAULT 'entries:write,entries:read,inventory:write,inventory:read'
+  `scopes` VARCHAR(255) NOT NULL DEFAULT 'entries:write,entries:read,inventory:write,inventory:read,reports:read'
     COMMENT 'CSV của scope: entries:write, entries:read, inventory:write, inventory:read, reports:read',
   `last_used_at` TIMESTAMP NULL DEFAULT NULL,
   `last_used_ip` VARCHAR(45) DEFAULT NULL,

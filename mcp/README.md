@@ -20,7 +20,7 @@ ketoan-mcp-pkg/
 │   │       └── reports.php      # Báo cáo summary / by-month / by-category
 │   └── nginx-snippet.conf       # Route Nginx
 ├── 3-mcp-server/
-│   ├── server.py                # FastMCP server (10 tools)
+│   ├── server.py                # FastMCP server (14 tools)
 │   ├── requirements.txt         # Python deps
 │   └── systemd/
 │       └── mcp-ketoan-dali.service
@@ -80,20 +80,31 @@ python3 /tmp/ketoan-mcp-pkg/4-data-migration/import.py
 3. Authentication: Bearer token, dán token từ `/root/.ketoan-mcp-token`
 4. Save → bật connector
 
-Từ giờ trong mọi chat mới, Claude sẽ thấy 10 tool sau:
+Từ giờ trong mọi chat mới, Claude sẽ thấy 14 tool sau:
 
 | Tool | Chức năng |
 |---|---|
-| `add_expense` | Ghi nhận chi phí |
-| `add_income` | Ghi nhận doanh thu |
+| `add_expense` | Ghi nhận chi phí (có `payment_method`; kèm `inventory_item_code`+`quantity` → tự nhập kho) |
+| `add_income` | Ghi nhận doanh thu (có `payment_method`; kèm `inventory_item_code`+`quantity` → tự xuất kho) |
 | `add_receivable` | Ghi công nợ phải thu (KH nợ ta) |
 | `add_payable` | Ghi công nợ phải trả (ta nợ NCC) |
 | `add_inventory_movement` | Nhập/xuất kho |
 | `create_inventory_item` | Tạo item tồn kho mới |
+| `update_entry` | 🆕 Sửa entry đã ghi (ngày/tiền/mô tả/danh mục/payment_method/ghi chú) |
+| `delete_entry` | 🆕 Xóa entry ghi nhầm |
+| `get_cash_position` | 🆕 Số dư tiền mặt + tiền gửi ngân hàng hiện tại |
+| `set_cash_opening` | 🆕 Đặt số dư đầu kỳ tiền mặt/ngân hàng (lấy từ MISA) |
 | `list_recent_entries` | Liệt kê entry gần đây |
 | `get_summary_report` | P&L tóm tắt |
 | `list_outstanding_debts` | Công nợ chưa tất toán |
 | `search_inventory` | Tìm item tồn kho |
+
+> **Nâng cấp 2026-06:** trước khi dùng các tool 🆕, chạy migration:
+> ```bash
+> mysql -u <db_user> -p <db_name> < /var/www/ketoan/mcp/1-database/migration-2026-06-upgrades.sql
+> sudo systemctl restart mcp-ketoan-dali
+> ```
+> Rồi đặt số dư đầu kỳ 1 lần: gọi `set_cash_opening(cash=..., bank=..., as_of="2026-01-01")`.
 
 ## 🧪 Kiểm tra hoạt động
 

@@ -80,6 +80,20 @@ async def _api_get(path: str, params: Optional[dict] = None) -> dict:
         return r.json()
 
 
+async def _api_put(path: str, body: dict) -> dict:
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.put(f"{PARTY_WORLD_API}{path}", json=body, headers=_headers())
+        r.raise_for_status()
+        return r.json()
+
+
+async def _api_delete(path: str) -> dict:
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        r = await client.request("DELETE", f"{PARTY_WORLD_API}{path}", headers=_headers())
+        r.raise_for_status()
+        return r.json()
+
+
 # ============ TOOLS: CHI PHÍ ============
 @mcp.tool()
 async def add_expense(
@@ -88,6 +102,9 @@ async def add_expense(
     amount: float,
     category: Optional[str] = None,
     counterparty_name: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    inventory_item_code: Optional[str] = None,
+    quantity: Optional[float] = None,
     notes: Optional[str] = None,
 ) -> str:
     """
@@ -104,6 +121,11 @@ async def add_expense(
             "Tiện ích" (điện/nước/mạng), "Thiết bị-Sửa chữa", "Phần mềm",
             "Marketing", "Văn phòng phẩm", "Khác"
         counterparty_name: Tên nhà cung cấp / người nhận tiền (nếu có)
+        payment_method: Hình thức chi tiền — "cash" (tiền mặt) hoặc "bank" (chuyển khoản),
+            "ewallet" (ví), "other". Cần khai báo để get_cash_position tính đúng quỹ.
+        inventory_item_code: Mã NVL/hàng đã có trong kho. Nếu khai báo kèm `quantity`,
+            hệ thống TỰ ĐỘNG tạo phiếu NHẬP KHO (inventory_in) liên kết -> tồn kho tăng.
+        quantity: Số lượng nhập kho (dùng cùng inventory_item_code)
         notes: Ghi chú thêm (số HĐ, ảnh, mã giao dịch...)
     """
     body = {
@@ -113,8 +135,12 @@ async def add_expense(
         "amount": amount,
         "category": category,
         "counterparty_name": counterparty_name,
+        "payment_method": payment_method,
         "source": "mcp",
     }
+    if inventory_item_code and quantity:
+        body["inventory_item_code"] = inventory_item_code
+        body["quantity"] = quantity
     if notes:
         body["data"] = {"notes": notes}
     result = await _api_post("/entries", body)
@@ -129,6 +155,9 @@ async def add_income(
     amount: float,
     category: Optional[str] = None,
     counterparty_name: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    inventory_item_code: Optional[str] = None,
+    quantity: Optional[float] = None,
     notes: Optional[str] = None,
 ) -> str:
     """
@@ -142,6 +171,11 @@ async def add_income(
         amount: Số tiền nhận được (VND)
         category: "Shopee", "Fahasa", "Bán lẻ kho", "METIS ART", "Khác"
         counterparty_name: Tên khách hàng (nếu có)
+        payment_method: Hình thức nhận tiền — "cash" (tiền mặt) / "bank" (chuyển khoản) /
+            "ewallet" / "other". Cần khai báo để get_cash_position tính đúng quỹ.
+        inventory_item_code: Mã tranh/hàng đã có trong kho. Nếu khai báo kèm `quantity`,
+            hệ thống TỰ ĐỘNG tạo phiếu XUẤT KHO (inventory_out) liên kết -> tồn kho giảm.
+        quantity: Số lượng bán/xuất kho (dùng cùng inventory_item_code)
         notes: Ghi chú
     """
     body = {
@@ -152,8 +186,12 @@ async def add_income(
         "category": category,
         "counterparty_name": counterparty_name,
         "counterparty_type": "customer",
+        "payment_method": payment_method,
         "source": "mcp",
     }
+    if inventory_item_code and quantity:
+        body["inventory_item_code"] = inventory_item_code
+        body["quantity"] = quantity
     if notes:
         body["data"] = {"notes": notes}
     result = await _api_post("/entries", body)
@@ -295,6 +333,66 @@ async def create_inventory_item(
     return f"✅ Đã tạo item '{code}' - {name} (id={result.get('id')})"
 
 
+# ============ TOOLS: SỬA / XÓA ============
+@mcp.tool()
+async def update_entry(
+    entry_id: int,
+    entry_date: Optional[str] = None,
+    description: Optional[str] = None,
+    amount: Optional[float] = None,
+    category: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> str:
+    """
+    SỬA một entry đã ghi (chi/thu/công nợ/tồn kho). Chỉ truyền trường cần đổi.
+
+    Dùng khi nhập sai ngày, số tiền, mô tả, danh mục, hình thức thanh toán...
+    Tìm entry_id qua list_recent_entries trước.
+
+    Args:
+        entry_id: ID của entry cần sửa (bắt buộc)
+        entry_date: Ngày mới YYYY-MM-DD (nếu đổi)
+        description: Mô tả mới (nếu đổi)
+        amount: Số tiền mới VND (nếu đổi)
+        category: Danh mục mới (nếu đổi)
+        payment_method: Hình thức thanh toán mới: cash/bank/ewallet/other
+        notes: Ghi chú mới (gộp vào data, không xoá các ghi chú cũ)
+    """
+    body = {}
+    if entry_date is not None: body["entry_date"] = entry_date
+    if description is not None: body["description"] = description
+    if amount is not None: body["amount"] = amount
+    if category is not None: body["category"] = category
+    if payment_method is not None: body["payment_method"] = payment_method
+    if notes is not None: body["data"] = {"notes": notes}
+    if not body:
+        return "❌ Không có trường nào để cập nhật. Truyền ít nhất 1 trường (vd amount, entry_date...)."
+    result = await _api_put(f"/entries/{entry_id}", body)
+    n = result.get("updated", 0)
+    return f"✅ Đã cập nhật entry #{entry_id}." if n else f"⚠️ Không tìm thấy / không thay đổi entry #{entry_id}."
+
+
+@mcp.tool()
+async def delete_entry(entry_id: int) -> str:
+    """
+    XÓA một entry khỏi sổ kế toán (không khôi phục được).
+
+    Dùng khi ghi nhầm / trùng. Hệ thống TỰ ĐỘNG hoàn tác ảnh hưởng:
+      - inventory_in/out   -> trả lại current_qty của item;
+      - receivable/payable -> trả lại current_balance của đối tác;
+      - nếu xóa income/expense có liên kết tồn kho tự động thì entry tồn kho con
+        cũng được xóa & hoàn kho theo.
+    Tìm entry_id qua list_recent_entries.
+
+    Args:
+        entry_id: ID của entry cần xóa
+    """
+    result = await _api_delete(f"/entries/{entry_id}")
+    n = result.get("deleted", 0)
+    return f"✅ Đã xóa entry #{entry_id}." if n else f"⚠️ Không tìm thấy entry #{entry_id} để xóa."
+
+
 # ============ TOOLS: QUERY / VERIFICATION ============
 @mcp.tool()
 async def list_recent_entries(
@@ -356,6 +454,65 @@ async def get_summary_report(from_date: Optional[str] = None, to_date: Optional[
 
 
 @mcp.tool()
+async def get_cash_position() -> str:
+    """
+    Xem TÌNH HÌNH TIỀN hiện tại: số dư tiền mặt + tiền gửi ngân hàng (+ ví, khác).
+
+    = Số dư đầu kỳ (đặt bằng set_cash_opening) + tổng tiền vào - tổng tiền ra,
+    tách theo hình thức thanh toán (payment_method) của các khoản thu/chi.
+    Nếu số chưa đúng: kiểm tra các khoản chưa khai payment_method (mục cảnh báo).
+    """
+    result = await _api_get("/reports/cash-position")
+    b = result["balances"]; o = result["opening"]; u = result.get("unclassified", {})
+    lines = [
+        "💵 Tình hình tiền (số dư hiện tại):",
+        f"  • Tiền mặt:        {b['cash']:>16,.0f}đ",
+        f"  • Tiền gửi (NH):   {b['bank']:>16,.0f}đ",
+    ]
+    if b.get("ewallet"): lines.append(f"  • Ví điện tử:      {b['ewallet']:>16,.0f}đ")
+    if b.get("other"):   lines.append(f"  • Khác:            {b['other']:>16,.0f}đ")
+    lines.append("  ──────────────────────────────────")
+    lines.append(f"  • TỔNG QUỸ:        {b['total']:>16,.0f}đ")
+    od = f", từ {o['as_of']}" if o.get("as_of") else ""
+    lines.append(f"  (Số dư đầu kỳ: tiền mặt {o['cash']:,.0f}đ · NH {o['bank']:,.0f}đ{od})")
+    if u.get("income") or u.get("expense"):
+        lines.append(
+            f"  ⚠️ Chưa rõ hình thức TT: thu {u.get('income', 0):,.0f}đ / chi {u.get('expense', 0):,.0f}đ"
+            " — bổ sung payment_method (cash/bank) để tính chính xác."
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def set_cash_opening(
+    cash: Optional[float] = None,
+    bank: Optional[float] = None,
+    as_of: Optional[str] = None,
+) -> str:
+    """
+    Đặt SỐ DƯ ĐẦU KỲ tiền mặt / ngân hàng để get_cash_position tính đúng quỹ thực tế.
+
+    Làm 1 lần khi bắt đầu dùng (vd lấy số từ MISA): cash=833000000, bank=4662000000,
+    as_of="2026-01-01". Sau đó get_cash_position = số dư đầu kỳ + thu - chi (từ ngày as_of).
+
+    Args:
+        cash: Số dư tiền mặt đầu kỳ (VND)
+        bank: Số dư tiền gửi ngân hàng đầu kỳ (VND)
+        as_of: Mốc ngày của số dư đầu kỳ YYYY-MM-DD (dòng tiền tính từ ngày này trở đi)
+    """
+    body = {}
+    if cash is not None: body["cash"] = cash
+    if bank is not None: body["bank"] = bank
+    if as_of is not None: body["as_of"] = as_of
+    if not body:
+        return "❌ Cần ít nhất cash hoặc bank."
+    result = await _api_post("/reports/cash-opening", body)
+    o = result["opening"]
+    od = f" (từ {o['as_of']})" if o.get("as_of") else ""
+    return f"✅ Đã đặt số dư đầu kỳ: tiền mặt {o['cash']:,.0f}đ · ngân hàng {o['bank']:,.0f}đ{od}."
+
+
+@mcp.tool()
 async def list_outstanding_debts() -> str:
     """Liệt kê tất cả công nợ chưa tất toán (phải thu + phải trả)."""
     result = await _api_get("/counterparties/debts")
@@ -403,7 +560,12 @@ async def search_inventory(query: Optional[str] = None, category: Optional[str] 
 def _format_result(result: dict, what: str) -> str:
     if result.get("duplicate"):
         return f"⚠️ Entry '{what}' đã tồn tại (id={result['id']}). Không tạo trùng."
-    return f"✅ Đã ghi nhận {what} (id={result.get('id')})."
+    msg = f"✅ Đã ghi nhận {what} (id={result.get('id')})."
+    mv = result.get("inventory_movement")
+    if mv:
+        kind = "nhập kho" if mv.get("type") == "inventory_in" else "xuất kho"
+        msg += f" + tự động {kind} {mv.get('quantity')} đơn vị (movement id={mv.get('id')})."
+    return msg
 
 
 # ============ EXPOSE ASGI APP ============

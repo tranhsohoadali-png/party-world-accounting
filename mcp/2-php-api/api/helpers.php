@@ -120,6 +120,43 @@ function validate_amount($amount): float {
     return round((float)$amount, 2);
 }
 
+// Hình thức thanh toán: chuẩn hoá tiếng Việt/viết tắt -> enum cash|bank|ewallet|other. '' / null -> null.
+function validate_payment_method($pm): ?string {
+    if ($pm === null || $pm === '') return null;
+    $pm = mb_strtolower(trim((string)$pm));
+    $map = [
+        'cash' => 'cash', 'tiền mặt' => 'cash', 'tien mat' => 'cash', 'tm' => 'cash', 'mặt' => 'cash',
+        'bank' => 'bank', 'chuyển khoản' => 'bank', 'chuyen khoan' => 'bank', 'ck' => 'bank',
+        'ngân hàng' => 'bank', 'ngan hang' => 'bank', 'tiền gửi' => 'bank', 'transfer' => 'bank',
+        'ewallet' => 'ewallet', 'ví' => 'ewallet', 'vi' => 'ewallet', 'momo' => 'ewallet', 'zalopay' => 'ewallet',
+        'other' => 'other', 'khác' => 'other', 'khac' => 'other',
+    ];
+    if (isset($map[$pm])) $pm = $map[$pm];
+    if (!in_array($pm, ['cash', 'bank', 'ewallet', 'other'], true)) {
+        json_error("Invalid payment_method: $pm (dùng cash|bank|ewallet|other)", 422);
+    }
+    return $pm;
+}
+
+// ============ APP SETTINGS (key-value) ============
+function get_setting(string $key): ?string {
+    // Trả null êm nếu bảng app_settings chưa tồn tại (chưa chạy migration) -> không vỡ báo cáo
+    try {
+        $stmt = db()->prepare('SELECT svalue FROM app_settings WHERE skey = ?');
+        $stmt->execute([$key]);
+        $v = $stmt->fetchColumn();
+        return $v === false ? null : $v;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+function set_setting(string $key, string $value): void {
+    $stmt = db()->prepare('INSERT INTO app_settings (skey, svalue) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)');
+    $stmt->execute([$key, $value]);
+}
+
 // ============ AUDIT LOG ============
 function audit_log(?int $token_id, int $response_code, ?int $affected_id = null, ?string $error = null): void {
     try {

@@ -10,16 +10,24 @@ set_cors();
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path_info = trim($_SERVER['PATH_INFO'] ?? '', '/');
-if ($method !== 'GET') json_error('Method not allowed', 405);
-
-$token = require_token('reports:read');
 
 try {
-    switch ($path_info) {
-        case 'summary': report_summary(); break;
-        case 'by-month': report_by_month(); break;
-        case 'by-category': report_by_category(); break;
-        default: json_error('Report not found. Use: summary | by-month | by-category', 404);
+    if ($method === 'GET') {
+        $token = require_token('reports:read');
+        switch ($path_info) {
+            case 'summary': report_summary(); break;
+            case 'by-month': report_by_month(); break;
+            case 'by-category': report_by_category(); break;
+            case 'cash-position': report_cash_position(); break;
+            default: json_error('Report not found. Use: summary | by-month | by-category | cash-position', 404);
+        }
+    } elseif ($method === 'POST') {
+        // Ghi thiết lập (số dư đầu kỳ) — cần quyền ghi
+        $token = require_token('entries:write');
+        if ($path_info === 'cash-opening') set_cash_opening();
+        else json_error('Unknown report action. Use POST cash-opening', 404);
+    } else {
+        json_error('Method not allowed', 405);
     }
 } catch (Throwable $e) {
     json_error('Server error: ' . $e->getMessage(), 500);
@@ -73,6 +81,60 @@ function report_by_month(): void {
         $m['net'] = $m['income'] - $m['expense'];
     }
     json_response(['ok' => true, 'year' => $year, 'months' => array_values($months)]);
+}
+
+// Tình hình tiền: số dư đầu kỳ (app_settings) + dòng tiền vào/ra theo hình thức thanh toán
+function report_cash_position(): void {
+    $opening_cash = (float)(get_setting('opening_cash') ?? 0);
+    $opening_bank = (float)(get_setting('opening_bank') ?? 0);
+    $as_of = get_setting('opening_as_of'); // YYYY-MM-DD hoặc null
+
+    $sql = "SELECT entry_type, COALESCE(payment_method, 'unclassified') AS pm,
+                   COALESCE(SUM(amount), 0) AS total
+            FROM accounting_entries
+            WHERE entry_type IN ('income','expense')";
+    $params = [];
+    if ($as_of) { $sql .= " AND entry_date >= ?"; $params[] = $as_of; }
+    $sql .= " GROUP BY entry_type, pm";
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+
+    $f = [];
+    foreach (['cash','bank','ewallet','other','unclassified'] as $k) $f[$k] = ['income' => 0.0, 'expense' => 0.0];
+    foreach ($stmt->fetchAll() as $r) {
+        $pm = $r['pm'];
+        if (!isset($f[$pm])) $pm = 'other';
+        $f[$pm][$r['entry_type']] = (float)$r['total'];
+    }
+
+    $cash    = $opening_cash + $f['cash']['income']    - $f['cash']['expense'];
+    $bank    = $opening_bank + $f['bank']['income']    - $f['bank']['expense'];
+    $ewallet =                 $f['ewallet']['income'] - $f['ewallet']['expense'];
+    $other   =                 $f['other']['income']   - $f['other']['expense'];
+
+    json_response([
+        'ok' => true,
+        'opening' => ['cash' => $opening_cash, 'bank' => $opening_bank, 'as_of' => $as_of],
+        'flows' => $f,
+        'balances' => [
+            'cash' => $cash, 'bank' => $bank, 'ewallet' => $ewallet, 'other' => $other,
+            'total' => $cash + $bank + $ewallet + $other,
+        ],
+        'unclassified' => $f['unclassified'],
+    ]);
+}
+
+// Đặt số dư đầu kỳ tiền mặt / ngân hàng (và mốc ngày bắt đầu cộng dồn dòng tiền)
+function set_cash_opening(): void {
+    $data = read_json_body();
+    if (array_key_exists('cash', $data)) set_setting('opening_cash', (string)validate_amount($data['cash']));
+    if (array_key_exists('bank', $data)) set_setting('opening_bank', (string)validate_amount($data['bank']));
+    if (!empty($data['as_of'])) set_setting('opening_as_of', validate_date($data['as_of']));
+    json_response(['ok' => true, 'message' => 'Opening balances saved', 'opening' => [
+        'cash' => (float)(get_setting('opening_cash') ?? 0),
+        'bank' => (float)(get_setting('opening_bank') ?? 0),
+        'as_of' => get_setting('opening_as_of'),
+    ]]);
 }
 
 function report_by_category(): void {
