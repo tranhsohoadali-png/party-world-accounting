@@ -566,6 +566,7 @@ M._invoiceExcelExcelJS = async function (si) {
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
   const ch = PW.channel && PW.channel(si.channelId);
   const vatRate = Number(si.vatRate) || 0, paid = Number(si.paid || 0), grand = PW.invoiceGrand(si);
+  const total = PW.invoiceTotal(si), vat = PW.invoiceVat(si);   // dùng làm GIÁ TRỊ ĐÃ TÍNH (cache) cho công thức
   const FN = 'Times New Roman', GREEN = 'FF5A8E2E', HEADBG = 'FFEEF6E1', LINE = 'FFB9C4A8';
   const fnt = o => Object.assign({ name: FN }, o || {});
   const bThin = { style: 'thin', color: { argb: LINE } };
@@ -631,7 +632,7 @@ M._invoiceExcelExcelJS = async function (si) {
         case 'unit': v = p ? p.unit : ''; break;
         case 'qty': v = qty; break;
         case 'price': v = price; break;
-        default: v = { formula: QC + R + '*' + PC + R };
+        default: v = { formula: QC + R + '*' + PC + R, result: qty * price };   // kèm GIÁ TRỊ -> trình xem không tự tính vẫn hiện đúng
       }
       x.value = v; x.font = fnt({ size: 10.5 }); x.border = boxAll;
       if (col[0] === 'stt' || col[0] === 'unit' || col[0] === 'barcode') x.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -640,12 +641,13 @@ M._invoiceExcelExcelJS = async function (si) {
     });
   });
   const LAST = R;
+  const totalQty = si.items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
   // Cộng
   R++;
   merge(R, 1, R, idxOf.qty - 1); cc = ws.getCell(R, 1); cc.value = 'Cộng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'right', vertical: 'middle' };
   for (let k = 1; k <= NC; k++) ws.getCell(R, k).border = boxAll;
-  cc = ws.getCell(R, idxOf.qty); cc.value = { formula: 'SUM(' + QC + FIRST + ':' + QC + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
-  cc = ws.getCell(R, idxOf.amount); cc.value = { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
+  cc = ws.getCell(R, idxOf.qty); cc.value = { formula: 'SUM(' + QC + FIRST + ':' + QC + LAST + ')', result: totalQty }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
+  cc = ws.getCell(R, idxOf.amount); cc.value = { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: total }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
 
   // ---- Tổng (nhãn gộp đến trước cột Thành tiền, giá trị ở cột Thành tiền) ----
   const totalRow = (label, val, big) => {
@@ -655,12 +657,12 @@ M._invoiceExcelExcelJS = async function (si) {
     return R;
   };
   R += 1; // spacer
-  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')' });
+  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: total });
   let vatR = null;
-  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(' + AC + subR + '*' + vatRate + '/100,0)' });
-  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? (AC + subR + '+' + AC + vatR) : (AC + subR) }, true);
+  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(' + AC + subR + '*' + vatRate + '/100,0)', result: vat });
+  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? (AC + subR + '+' + AC + vatR) : (AC + subR), result: grand }, true);
   const paidR = totalRow('Đã thanh toán', paid);
-  totalRow('Còn phải thu', { formula: AC + tongR + '-' + AC + paidR });
+  totalRow('Còn phải thu', { formula: AC + tongR + '-' + AC + paidR, result: grand - paid });
 
   R += 1; merge(R, 1, R, NC); cc = ws.getCell(R, 1);
   cc.value = { richText: [{ font: fnt({ size: 11 }), text: 'Số tiền viết bằng chữ: ' }, { font: fnt({ italic: true, bold: true, size: 11 }), text: U.readMoneyVN(grand) }] };
