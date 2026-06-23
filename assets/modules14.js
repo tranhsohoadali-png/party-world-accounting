@@ -482,6 +482,11 @@ M.consignImport = function (root) {
     { value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' },
   ], 0);
   const noteI = C.input({ placeholder: 'Diễn giải chứng từ (vd: ADC Linh Đàm, đợt ký gửi T6...)' });
+  // Bật/tắt định dạng FAHASA. Bật (mặc định) = tự nhận diện & xử lý ma trận kho + khớp barcode.
+  const fahasaChk = U.el('input', { type: 'checkbox' }); fahasaChk.checked = true;
+  fahasaChk.addEventListener('change', () => { if (ta.value.trim()) doParse(); });
+  const fahasaField = U.el('div', { class: 'field full' },
+    U.el('label', { class: 'radio' }, [fahasaChk, ' 📚 Định dạng FAHASA — tự nhận diện file ma trận nhiều kho (gộp số lượng) & khớp theo mã vạch. Bỏ tích nếu file thường.']));
   const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
   fg.appendChild(C.field('Nhà sách (khách hàng)', cusRow, { required: true }));
@@ -490,6 +495,7 @@ M.consignImport = function (root) {
   fg.appendChild(C.field('Kênh bán', chSel));
   fg.appendChild(C.field('Thuế GTGT (%)', vatSel));
   fg.appendChild(C.field('Diễn giải', noteI, { full: true }));
+  fg.appendChild(fahasaField);
   docCard.appendChild(fg);
   docCard.appendChild(detectLine);
 
@@ -554,6 +560,8 @@ M.consignImport = function (root) {
       const hm = M._ciHeaderMap(hc);
       if (hm.name != null && (hm.qty != null || hm.price != null || hm.qtyFrom != null)) { colMap = hm; headerIdx = i; break; }
     }
+    // Tôn trọng công tắc FAHASA: bỏ tích -> xử lý như bảng thường (không gộp cột kho)
+    if (colMap && colMap.fahasa && !fahasaChk.checked) { delete colMap.fahasa; delete colMap.qtyFrom; }
     const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
     if (colMap && colMap.fahasa) detectLine.innerHTML = (detectLine.innerHTML ? detectLine.innerHTML + '<br>' : '') +
       '📚 Định dạng <b>FAHASA</b> — gộp số lượng tất cả kho, khớp ưu tiên theo <b>mã vạch (barcode)</b>.';

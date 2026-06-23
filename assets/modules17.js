@@ -239,29 +239,50 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     });
     y = Math.max(y, yParty + lh * 3) + 3;
 
-    // ---- Bảng hàng hóa (autotable) ----
-    const sc = CFG.showCode;
-    const head = sc ? [['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'Số lượng', 'Đơn giá', 'Thành tiền']]
-      : [['STT', 'Tên hàng hóa', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền']];
+    // ---- Bảng hàng hóa (autotable) — cột dựng theo vai trò, có cột Mã vạch khi cần (FAHASA) ----
+    const sc = CFG.showCode, showBC = M._anyBarcode(si.items);
+    const colDefs = [{ key: 'stt', label: 'STT', align: 'center', w: 9 }];
+    if (sc) colDefs.push({ key: 'code', label: 'Mã hàng' });
+    if (showBC) colDefs.push({ key: 'barcode', label: 'Mã vạch', align: 'center' });
+    colDefs.push({ key: 'name', label: sc ? 'Tên hàng' : 'Tên hàng hóa' });
+    colDefs.push({ key: 'unit', label: 'ĐVT', align: 'center' });
+    colDefs.push({ key: 'qty', label: sc ? 'Số lượng' : 'SL', align: 'right' });
+    colDefs.push({ key: 'price', label: 'Đơn giá', align: 'right' });
+    colDefs.push({ key: 'amount', label: 'Thành tiền', align: 'right' });
+    const head = [colDefs.map(c => c.label)];
     const body = si.items.map((it, i) => {
       const p = PW.product(it.productId), price = Number(it.price != null ? it.price : it.cost || 0), lt = Number(it.qty) * price;
-      return sc ? [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', U.num(it.qty), U.money(price), U.money(lt)]
-        : [i + 1, p ? ((p.code ? p.code + ' - ' : '') + p.name) : '', p ? p.unit : '', U.num(it.qty), U.money(price), U.money(lt)];
+      return colDefs.map(c => {
+        switch (c.key) {
+          case 'stt': return i + 1;
+          case 'code': return p ? p.code : '';
+          case 'barcode': return p ? (p.barcode || '') : '';
+          case 'name': return p ? (sc ? p.name : ((p.code ? p.code + ' - ' : '') + p.name)) : '';
+          case 'unit': return p ? p.unit : '';
+          case 'qty': return U.num(it.qty);
+          case 'price': return U.money(price);
+          default: return U.money(lt);
+        }
+      });
     });
     const totalQty = si.items.reduce((s, it) => s + Number(it.qty || 0), 0);
-    const span = sc ? 4 : 3;
-    const totSpan = (sc ? 7 : 6) - 1;
+    const qtyIdx = colDefs.findIndex(c => c.key === 'qty');
+    const amountIdx = colDefs.length - 1;
     const foot = [];
-    foot.push([{ content: 'Cộng', colSpan: span, styles: { halign: 'right', fontStyle: 'bold' } },
-      { content: U.num(totalQty), styles: { halign: 'right', fontStyle: 'bold' } }, '',
-      { content: U.money(sub), styles: { halign: 'right', fontStyle: 'bold' } }]);
+    const cong = [{ content: 'Cộng', colSpan: qtyIdx, styles: { halign: 'right', fontStyle: 'bold' } },
+      { content: U.num(totalQty), styles: { halign: 'right', fontStyle: 'bold' } }];
+    for (let k = qtyIdx + 1; k < amountIdx; k++) cong.push('');   // cột đơn giá -> để trống
+    cong.push({ content: U.money(sub), styles: { halign: 'right', fontStyle: 'bold' } });
+    foot.push(cong);
     const totRow = (label, val, big) => foot.push([
-      { content: label, colSpan: totSpan, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } },
+      { content: label, colSpan: amountIdx, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } },
       { content: val, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } }]);
     totRow('Cộng tiền hàng', U.money(sub));
     if (CFG.vatAlways || Number(si.vatRate)) totRow('Tiền thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', U.money(vat));
     totRow(CFG.totalLabel, U.money(grand), true);
     if (type === 'delivery') totRow('Đã thanh toán', U.money(paid));
+    const columnStyles = {};
+    colDefs.forEach((c, i) => { const s = {}; if (c.align) s.halign = c.align; if (c.w) s.cellWidth = c.w; if (Object.keys(s).length) columnStyles[i] = s; });
 
     doc.autoTable({
       startY: y, head: head, body: body, foot: foot, theme: 'grid', showFoot: 'lastPage',
@@ -269,9 +290,7 @@ M.docPdfNative = async function (si, type, size, action, opts) {
       headStyles: { font: 'VN', fontStyle: 'bold', fillColor: [238, 246, 225], textColor: [40, 60, 20], halign: 'center', lineColor: [185, 196, 168] },
       footStyles: { font: 'VN', fillColor: [255, 255, 255], textColor: [55, 55, 55], lineColor: [185, 196, 168] },
       bodyStyles: { lineColor: [185, 196, 168] },
-      columnStyles: sc
-        ? { 0: { halign: 'center', cellWidth: 9 }, 3: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } }
-        : { 0: { halign: 'center', cellWidth: 9 }, 2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+      columnStyles: columnStyles,
       margin: { left: M0, right: M0, top: M0, bottom: M0 },
     });
     y = doc.lastAutoTable.finalY + 6;
@@ -326,6 +345,11 @@ M.docPdfNative = async function (si, type, size, action, opts) {
   }
 };
 
+// Có dòng hàng nào có mã vạch (barcode) không -> hiện cột "Mã vạch" cho FAHASA
+M._anyBarcode = function (items) {
+  return (items || []).some(it => { const p = PW.product(it.productId); return p && p.barcode; });
+};
+
 M._companyHeader = function () {
   const c = M.company();
   return '<div class="ph-head">'
@@ -336,13 +360,15 @@ M._companyHeader = function () {
     + '</div></div>';
 };
 
-// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá, cho phiếu giao gọn)
-M._itemRows = function (doc, showPrice) {
+// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá; showBC -> thêm cột Mã vạch sau STT)
+M._itemRows = function (doc, showPrice, showBC) {
   return doc.items.map((it, i) => {
     const p = PW.product(it.productId);
     const price = Number(it.price != null ? it.price : it.cost || 0);
     const lt = Number(it.qty) * price;
-    return '<tr><td class="c">' + (i + 1) + '</td><td>' + U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '') + '</td>'
+    return '<tr><td class="c">' + (i + 1) + '</td>'
+      + (showBC ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : '')
+      + '<td>' + U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '') + '</td>'
       + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
       + (showPrice ? '<td class="r">' + U.money(price) + '</td><td class="r">' + U.money(lt) + '</td>' : '') + '</tr>';
   }).join('');
@@ -359,7 +385,9 @@ M.printInvoice = function (si, size, action, opts) {
   const grand = sub + vat;
   const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
-  const head = '<th class="c" style="width:34px">STT</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const bc = M._anyBarcode(si.items);
+  const congSpan = bc ? 4 : 3, totSpan = bc ? 6 : 5;   // colspan tfoot tăng 1 khi có cột Mã vạch
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">HÓA ĐƠN BÁN HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date) + '</div>'
@@ -374,12 +402,12 @@ M.printInvoice = function (si, size, action, opts) {
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
     + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
     + '</tr></table>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc) + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="3" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
-    + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
-    + (Number(si.vatRate) ? '<tr><td colspan="5" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
-    + '<tr><td colspan="5" class="r" style="font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
+    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
+    + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
     + '</tfoot></table>'
     + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
     + '<div class="sign"><div>Người mua hàng<br><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán hàng<br><i>(Ký, ghi rõ họ tên)</i></div></div>'
@@ -396,7 +424,9 @@ M.deliveryNote = function (si, size, action, opts) {
   const grand = sub + vat;
   const cod = grand - Number(si.paid || 0);
   const ch = PW.channel(si.channelId);
-  const head = '<th class="c" style="width:34px">STT</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const bc = M._anyBarcode(si.items);
+  const totSpan = bc ? 6 : 5;
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">PHIẾU GIAO HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date)
@@ -404,12 +434,12 @@ M.deliveryNote = function (si, size, action, opts) {
     + '<div class="party"><b>Người nhận:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
     + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + '<br>'
     + '<b>Địa chỉ giao:</b> ' + U.esc(cus ? cus.address : '') + '</div>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc) + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="5" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
-    + (Number(si.vatRate) ? '<tr><td colspan="5" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
-    + '<tr><td colspan="5" class="r" style="font-weight:800;color:#5a8e2e">TỔNG GIÁ TRỊ</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
-    + '<tr><td colspan="5" class="r">Đã thanh toán</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
+    + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG GIÁ TRỊ</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Đã thanh toán</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
     + '</tfoot></table>'
     + (cod > 0
         ? '<div class="cod"><b>TIỀN THU HỘ (COD): ' + U.money(cod) + ' đ</b> — thu của người nhận khi giao.</div>'
@@ -433,10 +463,14 @@ M.warehouseIssueNote = function (si, size, action, opts) {
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const [yy, mm, dd] = (si.date || U.today()).split('-');
 
+  const bc = M._anyBarcode(si.items);
+  const congSpan = bc ? 5 : 4, totSpan = bc ? 7 : 6;   // colspan tfoot tăng 1 khi có cột Mã vạch
   const rows = si.items.map((it, i) => {
     const p = PW.product(it.productId);
     const price = Number(it.price || 0);
-    return '<tr><td class="c">' + (i + 1) + '</td><td>' + U.esc(p ? p.code : '') + '</td><td>' + U.esc(p ? p.name : '') + '</td>'
+    return '<tr><td class="c">' + (i + 1) + '</td><td>' + U.esc(p ? p.code : '') + '</td>'
+      + (bc ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : '')
+      + '<td>' + U.esc(p ? p.name : '') + '</td>'
       + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
       + '<td class="r">' + U.money(price) + '</td><td class="r">' + U.money(Number(it.qty) * price) + '</td></tr>';
   }).join('');
@@ -460,14 +494,15 @@ M.warehouseIssueNote = function (si, size, action, opts) {
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
     + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
     + '</tr></table>'
-    + '<table class="it"><thead><tr><th class="c" style="width:32px">STT</th><th>Mã hàng</th><th>Tên hàng</th>'
+    + '<table class="it"><thead><tr><th class="c" style="width:32px">STT</th><th>Mã hàng</th>'
+    + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng</th>'
     + '<th class="c">Đơn vị</th><th class="r">Số lượng</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th></tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="4" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
-    + '<tr><td colspan="6" class="r"><b>Cộng tiền hàng</b></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
-    + '<tr><td colspan="6" class="r">Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)</td><td class="r">' + U.money(vat) + '</td></tr>'
-    + '<tr><td colspan="6" class="r" style="font-weight:800;color:#5a8e2e">TỔNG TIỀN THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
+    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r"><b>Cộng tiền hàng</b></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)</td><td class="r">' + U.money(vat) + '</td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG TIỀN THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
     + '</tfoot></table>'
     + '<div style="margin-top:8px;font-size:13.5px">Số tiền bằng chữ: <i><b>' + U.readMoneyVN(grand) + '</b></i></div>'
     + '<div style="margin-top:4px;font-size:13px">Số chứng từ gốc kèm theo: .....</div>'
@@ -538,25 +573,34 @@ M._invoiceExcelExcelJS = async function (si) {
   const ws = wb.addWorksheet('HoaDon', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.5, right: 0.4, top: 0.6, bottom: 0.5, header: 0.3, footer: 0.3 } },
   });
-  ws.columns = [{ width: 9 }, { width: 18 }, { width: 46 }, { width: 9 }, { width: 11 }, { width: 15 }, { width: 17 }];
+  // Cấu trúc cột (thêm 'Mã vạch' sau 'Mã hàng' khi có hàng FAHASA có barcode)
+  const showBC = M._anyBarcode(si.items);
+  const colList = showBC
+    ? [['stt', 'STT', 9], ['code', 'Mã hàng', 18], ['barcode', 'Mã vạch', 18], ['name', 'Tên hàng', 46], ['unit', 'ĐVT', 9], ['qty', 'Số lượng', 11], ['price', 'Đơn giá', 15], ['amount', 'Thành tiền', 17]]
+    : [['stt', 'STT', 9], ['code', 'Mã hàng', 18], ['name', 'Tên hàng', 46], ['unit', 'ĐVT', 9], ['qty', 'Số lượng', 11], ['price', 'Đơn giá', 15], ['amount', 'Thành tiền', 17]];
+  const NC = colList.length, idxOf = {};
+  colList.forEach((c, i) => { idxOf[c[0]] = i + 1; });
+  const L = n => { let s = ''; while (n > 0) { s = String.fromCharCode(65 + ((n - 1) % 26)) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const QC = L(idxOf.qty), PC = L(idxOf.price), AC = L(idxOf.amount);
+  ws.columns = colList.map(c => ({ width: c[2] }));
   const merge = (r1, x1, r2, x2) => ws.mergeCells(r1, x1, r2, x2);
   let cc;
 
-  // ---- Header công ty (logo trái + chữ ở B:G) ----
-  merge(1, 2, 1, 7); cc = ws.getCell(1, 2); cc.value = c.name || 'DALI'; cc.font = fnt({ bold: true, size: 14, color: { argb: GREEN } }); cc.alignment = { vertical: 'middle' };
-  merge(2, 2, 2, 7); cc = ws.getCell(2, 2); cc.value = c.address ? 'Địa chỉ: ' + c.address : ''; cc.font = fnt({ size: 10, color: { argb: 'FF555555' } });
-  merge(3, 2, 3, 7); cc = ws.getCell(3, 2); cc.value = [(c.phone ? 'ĐT: ' + c.phone : ''), (c.mst ? 'MST: ' + c.mst : '')].filter(Boolean).join('     ·     '); cc.font = fnt({ size: 10, color: { argb: 'FF555555' } });
+  // ---- Header công ty (logo trái + chữ) ----
+  merge(1, 2, 1, NC); cc = ws.getCell(1, 2); cc.value = c.name || 'DALI'; cc.font = fnt({ bold: true, size: 14, color: { argb: GREEN } }); cc.alignment = { vertical: 'middle' };
+  merge(2, 2, 2, NC); cc = ws.getCell(2, 2); cc.value = c.address ? 'Địa chỉ: ' + c.address : ''; cc.font = fnt({ size: 10, color: { argb: 'FF555555' } });
+  merge(3, 2, 3, NC); cc = ws.getCell(3, 2); cc.value = [(c.phone ? 'ĐT: ' + c.phone : ''), (c.mst ? 'MST: ' + c.mst : '')].filter(Boolean).join('     ·     '); cc.font = fnt({ size: 10, color: { argb: 'FF555555' } });
   ws.getRow(1).height = 18; ws.getRow(2).height = 15; ws.getRow(3).height = 15;
   const logo = await M._logoBase64();
   if (logo) { try { const id = wb.addImage({ base64: logo, extension: 'png' }); ws.addImage(id, { tl: { col: 0.15, row: 0.1 }, ext: { width: 60, height: 54 } }); } catch (e) {} }
 
   // ---- Tiêu đề ----
-  merge(5, 1, 5, 7); cc = ws.getCell(5, 1); cc.value = 'HÓA ĐƠN BÁN HÀNG'; cc.font = fnt({ bold: true, size: 17, color: { argb: 'FF1F2A16' } }); cc.alignment = { horizontal: 'center' }; ws.getRow(5).height = 24;
-  merge(6, 1, 6, 7); cc = ws.getCell(6, 1); cc.value = 'Số: ' + si.code + '          Ngày ' + U.date(si.date); cc.font = fnt({ italic: true, size: 11, color: { argb: 'FF555555' } }); cc.alignment = { horizontal: 'center' };
+  merge(5, 1, 5, NC); cc = ws.getCell(5, 1); cc.value = 'HÓA ĐƠN BÁN HÀNG'; cc.font = fnt({ bold: true, size: 17, color: { argb: 'FF1F2A16' } }); cc.alignment = { horizontal: 'center' }; ws.getRow(5).height = 24;
+  merge(6, 1, 6, NC); cc = ws.getCell(6, 1); cc.value = 'Số: ' + si.code + '          Ngày ' + U.date(si.date); cc.font = fnt({ italic: true, size: 11, color: { argb: 'FF555555' } }); cc.alignment = { horizontal: 'center' };
 
   // ---- Khối người mua (nhãn đậm) ----
   let R = 6;
-  const party = (label, val) => { R++; merge(R, 1, R, 7); const x = ws.getCell(R, 1); x.value = { richText: [{ font: fnt({ bold: true, size: 11 }), text: label }, { font: fnt({ size: 11 }), text: String(val || '') }] }; x.alignment = { vertical: 'middle' }; };
+  const party = (label, val) => { R++; merge(R, 1, R, NC); const x = ws.getCell(R, 1); x.value = { richText: [{ font: fnt({ bold: true, size: 11 }), text: label }, { font: fnt({ size: 11 }), text: String(val || '') }] }; x.alignment = { vertical: 'middle' }; };
   party('Khách hàng: ', cus ? cus.name : '');
   party('Địa chỉ: ', cus ? (cus.address || '') : '');
   party('Điện thoại: ', (cus ? (cus.phone || '') : '') + '          Mã số thuế: ' + (cus ? (cus.taxCode || '') : ''));
@@ -567,60 +611,72 @@ M._invoiceExcelExcelJS = async function (si) {
 
   // ---- Bảng hàng hóa ----
   R += 2; const HEAD = R;
-  ['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'Số lượng', 'Đơn giá', 'Thành tiền'].forEach((t, i) => {
-    const x = ws.getCell(HEAD, i + 1); x.value = t; x.font = fnt({ bold: true, size: 11, color: { argb: 'FF28471A' } });
+  colList.forEach((col, i) => {
+    const x = ws.getCell(HEAD, i + 1); x.value = col[1]; x.font = fnt({ bold: true, size: 11, color: { argb: 'FF28471A' } });
     x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADBG } }; x.border = boxAll; x.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
   });
   ws.getRow(HEAD).height = 18;
   const FIRST = HEAD + 1;
   si.items.forEach((it, i) => {
     R++; const p = PW.product(it.productId), qty = Number(it.qty) || 0, price = Number(it.price || 0);
-    [i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', qty, price, { formula: 'E' + R + '*F' + R }].forEach((v, ci) => {
-      const x = ws.getCell(R, ci + 1); x.value = v; x.font = fnt({ size: 10.5 }); x.border = boxAll;
-      if (ci === 0 || ci === 3) x.alignment = { horizontal: 'center', vertical: 'middle' };
-      else if (ci >= 4) { x.alignment = { horizontal: 'right', vertical: 'middle' }; x.numFmt = '#,##0'; }
+    colList.forEach((col, ci) => {
+      const x = ws.getCell(R, ci + 1); let v;
+      switch (col[0]) {
+        case 'stt': v = i + 1; break;
+        case 'code': v = p ? p.code : ''; break;
+        case 'barcode': v = p ? (p.barcode || '') : ''; break;
+        case 'name': v = p ? p.name : ''; break;
+        case 'unit': v = p ? p.unit : ''; break;
+        case 'qty': v = qty; break;
+        case 'price': v = price; break;
+        default: v = { formula: QC + R + '*' + PC + R };
+      }
+      x.value = v; x.font = fnt({ size: 10.5 }); x.border = boxAll;
+      if (col[0] === 'stt' || col[0] === 'unit' || col[0] === 'barcode') x.alignment = { horizontal: 'center', vertical: 'middle' };
+      else if (col[0] === 'qty' || col[0] === 'price' || col[0] === 'amount') { x.alignment = { horizontal: 'right', vertical: 'middle' }; x.numFmt = '#,##0'; }
       else x.alignment = { vertical: 'middle', wrapText: true };
     });
   });
   const LAST = R;
   // Cộng
-  R++; const congR = R;
-  merge(R, 1, R, 4); cc = ws.getCell(R, 1); cc.value = 'Cộng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'right', vertical: 'middle' };
-  for (let k = 1; k <= 7; k++) ws.getCell(R, k).border = boxAll;
-  cc = ws.getCell(R, 5); cc.value = { formula: 'SUM(E' + FIRST + ':E' + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
-  cc = ws.getCell(R, 7); cc.value = { formula: 'SUM(G' + FIRST + ':G' + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
+  R++;
+  merge(R, 1, R, idxOf.qty - 1); cc = ws.getCell(R, 1); cc.value = 'Cộng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'right', vertical: 'middle' };
+  for (let k = 1; k <= NC; k++) ws.getCell(R, k).border = boxAll;
+  cc = ws.getCell(R, idxOf.qty); cc.value = { formula: 'SUM(' + QC + FIRST + ':' + QC + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
+  cc = ws.getCell(R, idxOf.amount); cc.value = { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')' }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
 
-  // ---- Tổng (nhãn gộp B:F, giá trị ở G) ----
+  // ---- Tổng (nhãn gộp đến trước cột Thành tiền, giá trị ở cột Thành tiền) ----
   const totalRow = (label, val, big) => {
-    R += 1; merge(R, 2, R, 6); const lc = ws.getCell(R, 2);
+    R += 1; merge(R, 2, R, idxOf.amount - 1); const lc = ws.getCell(R, 2);
     lc.value = label; lc.font = fnt({ bold: !!big, size: big ? 12 : 11, color: { argb: big ? GREEN : 'FF333333' } }); lc.alignment = { horizontal: 'right', vertical: 'middle' };
-    const vc = ws.getCell(R, 7); vc.value = val; vc.font = fnt({ bold: !!big, size: big ? 12 : 11, color: { argb: big ? GREEN : 'FF333333' } }); vc.alignment = { horizontal: 'right', vertical: 'middle' }; vc.numFmt = '#,##0';
+    const vc = ws.getCell(R, idxOf.amount); vc.value = val; vc.font = fnt({ bold: !!big, size: big ? 12 : 11, color: { argb: big ? GREEN : 'FF333333' } }); vc.alignment = { horizontal: 'right', vertical: 'middle' }; vc.numFmt = '#,##0';
     return R;
   };
   R += 1; // spacer
-  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(G' + FIRST + ':G' + LAST + ')' });
+  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')' });
   let vatR = null;
-  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(G' + subR + '*' + vatRate + '/100,0)' });
-  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? ('G' + subR + '+G' + vatR) : ('G' + subR) }, true);
+  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(' + AC + subR + '*' + vatRate + '/100,0)' });
+  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? (AC + subR + '+' + AC + vatR) : (AC + subR) }, true);
   const paidR = totalRow('Đã thanh toán', paid);
-  totalRow('Còn phải thu', { formula: 'G' + tongR + '-G' + paidR });
+  totalRow('Còn phải thu', { formula: AC + tongR + '-' + AC + paidR });
 
-  R += 1; merge(R, 1, R, 7); cc = ws.getCell(R, 1);
+  R += 1; merge(R, 1, R, NC); cc = ws.getCell(R, 1);
   cc.value = { richText: [{ font: fnt({ size: 11 }), text: 'Số tiền viết bằng chữ: ' }, { font: fnt({ italic: true, bold: true, size: 11 }), text: U.readMoneyVN(grand) }] };
 
   // ---- Chữ ký ----
-  R += 2; merge(R, 1, R, 3); merge(R, 5, R, 7);
+  const half = Math.floor(NC / 2);
+  R += 2; merge(R, 1, R, half); merge(R, half + 1, R, NC);
   cc = ws.getCell(R, 1); cc.value = 'Người mua hàng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'center' };
-  cc = ws.getCell(R, 5); cc.value = 'Người bán hàng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'center' };
-  R += 1; merge(R, 1, R, 3); merge(R, 5, R, 7);
+  cc = ws.getCell(R, half + 1); cc.value = 'Người bán hàng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'center' };
+  R += 1; merge(R, 1, R, half); merge(R, half + 1, R, NC);
   cc = ws.getCell(R, 1); cc.value = '(Ký, ghi rõ họ tên)'; cc.font = fnt({ italic: true, size: 9.5, color: { argb: 'FF777777' } }); cc.alignment = { horizontal: 'center' };
-  cc = ws.getCell(R, 5); cc.value = '(Ký, ghi rõ họ tên)'; cc.font = fnt({ italic: true, size: 9.5, color: { argb: 'FF777777' } }); cc.alignment = { horizontal: 'center' };
+  cc = ws.getCell(R, half + 1); cc.value = '(Ký, ghi rõ họ tên)'; cc.font = fnt({ italic: true, size: 9.5, color: { argb: 'FF777777' } }); cc.alignment = { horizontal: 'center' };
   const LASTROW = R;
 
   // ---- Freeze + Lọc + Vùng in + Lặp tiêu đề cột ----
   ws.views = [{ state: 'frozen', ySplit: HEAD }];
-  if (LAST >= FIRST) ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: LAST, column: 7 } };
-  ws.pageSetup.printArea = 'A1:G' + LASTROW;
+  if (LAST >= FIRST) ws.autoFilter = { from: { row: HEAD, column: 1 }, to: { row: LAST, column: NC } };
+  ws.pageSetup.printArea = 'A1:' + L(NC) + LASTROW;
   ws.pageSetup.printTitlesRow = HEAD + ':' + HEAD;
 
   const buf = await wb.xlsx.writeBuffer();
