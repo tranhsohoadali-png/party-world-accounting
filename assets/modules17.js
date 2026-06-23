@@ -889,6 +889,38 @@ M.sendZalo = function (si, builderFn, size, fmt) {
 };
 
 /* ---------- Menu In / Xuất khẩu / Gửi Zalo (như MISA) ---------- */
+/* ---------- Xuất file ĐÚNG QUY CÁCH lên PHẦN MỀM THUẾ (HĐĐT) ----------
+   Sheet "SanPham" với 11 cột: STT | Mã sản phẩm | Tên sản phẩm | Đơn vị tính | Số lượng |
+   Đơn giá | Thành tiền | Mức thuế | Ghi chú | Tiền thuế | Thành tiền có thuế.
+   Mỗi dòng = 1 dòng hàng của hóa đơn. Mức thuế ghi dạng "8%" (như mẫu). */
+M._TAX_HEADERS = ['STT', 'Mã sản phẩm', 'Tên sản phẩm', 'Đơn vị tính', 'Số lượng', 'Đơn giá', 'Thành tiền', 'Mức thuế', 'Ghi chú', 'Tiền thuế', 'Thành tiền có thuế'];
+M._taxRows = function (si) {
+  const rate = Number(si.vatRate) || 0;
+  return si.items.map((it, i) => {
+    const p = PW.product(it.productId);
+    const qty = Number(it.qty) || 0, price = Number(it.price || 0);
+    const tien = qty * price, thue = Math.round(tien * rate / 100);
+    return [i + 1, p ? (p.code || '') : '', p ? p.name : '', p ? (p.unit || '') : '', qty, price, tien, rate + '%', '', thue, tien + thue];
+  });
+};
+M.exportTaxUpload = async function (si, fname) {
+  U.toast('Đang tạo file lên phần mềm thuế...');
+  try {
+    await M._ensureXlsxLib();
+    const X = window.XLSX;
+    const aoa = [M._TAX_HEADERS].concat(M._taxRows(si));
+    const ws = X.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 62 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 9 }, { wch: 14 }, { wch: 13 }, { wch: 17 }];
+    // Định dạng số có dấu phân cách cho cột tiền: G(6), J(9), K(10)
+    [6, 9, 10].forEach(col => { for (let r = 1; r < aoa.length; r++) { const ref = X.utils.encode_cell({ r: r, c: col }); if (ws[ref] && typeof ws[ref].v === 'number') ws[ref].z = '#,##0'; } });
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, 'SanPham');   // tên sheet PHẢI là "SanPham"
+    const arr = X.write(wb, { bookType: 'xlsx', type: 'array' });
+    M._download(new Blob([arr], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), (fname || ('FileUpThue-' + si.code)) + '.xlsx');
+    U.toast('Đã xuất file lên thuế: ' + (fname || si.code));
+  } catch (e) { console.error('exportTaxUpload', e); U.toast('Không tạo được file thuế: ' + e.message, 'error'); }
+};
+
 M.printMenu = function (si) {
   const typeSel = C.select([
     { value: 'warehouse', label: 'Phiếu xuất kho bán hàng' },
@@ -911,13 +943,17 @@ M.printMenu = function (si) {
         C.btn('📄 Xuất PDF', () => { const fn = fnOf(), sz = sizeSel.value; M.askFileName('HoaDon-' + si.code, 'pdf', nm => fn(si, sz, 'pdf', { fname: nm })); }),
         C.btn('📊 Xuất Excel', () => { M.askFileName('HoaDon-' + si.code, 'csv', nm => M.exportDocExcel(si, nm)); }),
       ]),
+      U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Hóa đơn điện tử (phần mềm thuế):'),
+      U.el('div', { class: 'pill-row' }, [
+        C.btn('🧾 Xuất file lên phần mềm thuế', () => { M.askFileName('FileUpThue-' + si.code, 'xlsx', nm => M.exportTaxUpload(si, nm)); }, 'primary'),
+      ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách qua Zalo:'),
       U.el('div', { class: 'pill-row' }, [
         C.btn('💬 Gửi Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value, 'pdf'); }, 'primary'),
         C.btn('📊 Gửi Zalo (Excel)', () => { M.sendZalo(si, null, sizeSel.value, 'excel'); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
-        'Xuất PDF/Excel: đặt tên file rồi tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF); máy tính tự tải PDF + copy nội dung + mở Zalo để đính kèm.'),
+        'File lên thuế: đúng quy cách sheet "SanPham" (STT, Mã/Tên SP, ĐVT, SL, Đơn giá, Thành tiền, Mức thuế, Tiền thuế, Thành tiền có thuế) — tải về rồi up thẳng lên phần mềm HĐĐT. Xuất PDF/Excel: đặt tên file rồi tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF).'),
     ]),
   });
 };
