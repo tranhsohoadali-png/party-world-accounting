@@ -36,6 +36,7 @@ M.sales = function (root) {
       { type: 'search', key: 'q', placeholder: 'Tìm số HĐ / khách hàng...' },
     ],
     actions: [
+      C.btn('📚 Nhập đơn nhà sách (FAHASA/AI)', () => App.go('consign-import'), ''),
       C.btn('📊 Xuất Excel', () => doExport(), ''),
       C.btn('+ Lập hóa đơn bán', () => M.salesForm(), 'primary'),
     ],
