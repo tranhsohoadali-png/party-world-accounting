@@ -188,7 +188,7 @@ M.invoiceView = function (si) {
   const showBC = si.items.some(it => { const p = PW.product(it.productId); return p && p.barcode; });
   const rowsHtml = si.items.map((it, i) => {
     const p = PW.product(it.productId); const price = Number(it.price || 0);
-    return `<tr><td class="c">${i + 1}</td>${showBC ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : ''}<td>${U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '')}</td><td class="c">${U.esc(p ? p.unit : '')}</td><td class="r">${U.num(it.qty)}</td><td class="r">${U.money(price)}</td><td class="r">${U.money(Number(it.qty) * price)}</td></tr>`;
+    return `<tr><td class="c">${i + 1}</td>${showBC ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : ''}<td>${U.esc(p ? (p.code || '') : '')}</td><td>${U.esc(p ? p.name : '')}</td><td class="c">${U.esc(p ? p.unit : '')}</td><td class="r">${U.num(it.qty)}</td><td class="r">${U.money(price)}</td><td class="r">${U.money(Number(it.qty) * price)}</td></tr>`;
   }).join('');
   const body = U.el('div', { html:
     `<div style="line-height:1.9;font-size:14px">
@@ -199,7 +199,7 @@ M.invoiceView = function (si) {
       ${si.note ? `<div><b>Diễn giải:</b> ${U.esc(si.note)}</div>` : ''}
     </div>
     <table class="items-tbl" style="margin-top:10px;width:100%;border-collapse:collapse">
-      <thead><tr><th>STT</th>${showBC ? '<th>Mã vạch</th>' : ''}<th>Tên hàng</th><th>ĐVT</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
+      <thead><tr><th>STT</th>${showBC ? '<th>Mã vạch</th>' : ''}<th>Mã hàng</th><th>Tên hàng</th><th>ĐVT</th><th class="num">SL</th><th class="num">Đơn giá</th><th class="num">Thành tiền</th></tr></thead>
       <tbody>${rowsHtml}</tbody></table>
     <div style="margin-top:12px;display:flex;flex-direction:column;gap:5px;align-items:flex-end;font-size:14px">
       <div>Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>

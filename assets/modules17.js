@@ -157,9 +157,9 @@ M._ensurePdfNative = async function () {
   if (!window.PW_VN_FONT) await M._loadScript('assets/vendor/pw-vn-font.js');
 };
 M._PDF_CFG = {
-  invoice: { title: 'HÓA ĐƠN BÁN HÀNG', fname: 'Hóa đơn ', showCode: false, party: 'buyer', acct: true, totalLabel: 'TỔNG THANH TOÁN', vatAlways: false, signs: ['Người mua hàng', 'Người bán hàng'] },
+  invoice: { title: 'HÓA ĐƠN BÁN HÀNG', fname: 'Hóa đơn ', showCode: true, party: 'buyer', acct: true, totalLabel: 'TỔNG THANH TOÁN', vatAlways: false, signs: ['Người mua hàng', 'Người bán hàng'] },
   warehouse: { title: 'PHIẾU XUẤT KHO BÁN HÀNG', fname: 'Phiếu xuất kho ', showCode: true, party: 'buyer', acct: true, totalLabel: 'TỔNG TIỀN THANH TOÁN', vatAlways: true, signs: ['Người mua hàng', 'Kế toán trưởng', 'Giám đốc'] },
-  delivery: { title: 'PHIẾU GIAO HÀNG', fname: 'Phiếu giao hàng ', showCode: false, party: 'receiver', acct: false, totalLabel: 'TỔNG GIÁ TRỊ', vatAlways: false, signs: ['Người giao hàng', 'Người nhận hàng'] },
+  delivery: { title: 'PHIẾU GIAO HÀNG', fname: 'Phiếu giao hàng ', showCode: true, party: 'receiver', acct: false, totalLabel: 'TỔNG GIÁ TRỊ', vatAlways: false, signs: ['Người giao hàng', 'Người nhận hàng'] },
 };
 M.docPdfNative = async function (si, type, size, action, opts) {
   U.toast('Đang tạo PDF...');
@@ -360,15 +360,17 @@ M._companyHeader = function () {
     + '</div></div>';
 };
 
-// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá; showBC -> thêm cột Mã vạch sau STT)
-M._itemRows = function (doc, showPrice, showBC) {
+// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá; showBC -> cột Mã vạch; showCode -> tách cột Mã hàng)
+M._itemRows = function (doc, showPrice, showBC, showCode) {
   return doc.items.map((it, i) => {
     const p = PW.product(it.productId);
     const price = Number(it.price != null ? it.price : it.cost || 0);
     const lt = Number(it.qty) * price;
+    const nameCell = showCode ? (p ? p.name : '') : (p ? (p.code ? p.code + ' - ' : '') + p.name : '');
     return '<tr><td class="c">' + (i + 1) + '</td>'
       + (showBC ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : '')
-      + '<td>' + U.esc(p ? (p.code ? p.code + ' - ' : '') + p.name : '') + '</td>'
+      + (showCode ? '<td>' + U.esc(p ? (p.code || '') : '') + '</td>' : '')
+      + '<td>' + U.esc(nameCell) + '</td>'
       + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
       + (showPrice ? '<td class="r">' + U.money(price) + '</td><td class="r">' + U.money(lt) + '</td>' : '') + '</tr>';
   }).join('');
@@ -386,8 +388,8 @@ M.printInvoice = function (si, size, action, opts) {
   const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const bc = M._anyBarcode(si.items);
-  const congSpan = bc ? 4 : 3, totSpan = bc ? 6 : 5;   // colspan tfoot tăng 1 khi có cột Mã vạch
-  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const congSpan = (bc ? 5 : 4), totSpan = (bc ? 7 : 6);   // có cột Mã hàng (+1) và Mã vạch (+1 khi có)
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">HÓA ĐƠN BÁN HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date) + '</div>'
@@ -402,7 +404,7 @@ M.printInvoice = function (si, size, action, opts) {
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
     + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
     + '</tr></table>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true) + '</tbody>'
     + '<tfoot>'
     + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
     + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
@@ -425,8 +427,8 @@ M.deliveryNote = function (si, size, action, opts) {
   const cod = grand - Number(si.paid || 0);
   const ch = PW.channel(si.channelId);
   const bc = M._anyBarcode(si.items);
-  const totSpan = bc ? 6 : 5;
-  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const totSpan = bc ? 7 : 6;   // có cột Mã hàng (+1) và Mã vạch (+1 khi có)
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">PHIẾU GIAO HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date)
@@ -434,7 +436,7 @@ M.deliveryNote = function (si, size, action, opts) {
     + '<div class="party"><b>Người nhận:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
     + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + '<br>'
     + '<b>Địa chỉ giao:</b> ' + U.esc(cus ? cus.address : '') + '</div>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true) + '</tbody>'
     + '<tfoot>'
     + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
     + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
