@@ -32,6 +32,17 @@ if (count($messages) > 60) json_out(['error' => 'Hội thoại quá dài'], 400)
 if (!is_array($tools) || count($tools) > 16) json_out(['error' => 'Tools không hợp lệ'], 400);
 if (strlen($system) > 12000) $system = substr($system, 0, 12000);
 
+// FIX: json_decode(..., true) biến {} rỗng thành [] (mảng); json_encode lại ra "[]" khiến
+// Anthropic báo 'input_schema.properties: Input should be an object'. Ép properties rỗng về object.
+foreach ($tools as &$t) {
+  if (is_array($t) && isset($t['input_schema']) && is_array($t['input_schema'])) {
+    if (!isset($t['input_schema']['properties']) || $t['input_schema']['properties'] === []) {
+      $t['input_schema']['properties'] = new stdClass();
+    }
+  }
+}
+unset($t);
+
 $payload = ['model' => $model, 'max_tokens' => 2500, 'messages' => $messages];
 if ($system !== '') $payload['system'] = $system;
 if (count($tools)) $payload['tools'] = $tools;
