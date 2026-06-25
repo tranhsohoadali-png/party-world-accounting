@@ -235,10 +235,14 @@ function handle_list(): void {
     $cnt->execute($params);
     $total = (int)$cnt->fetchColumn();
 
-    // Sum amount cho filter hiện tại — LOẠI inventory_in/out (đó là định giá tồn kho,
-    // không phải dòng tiền) để 'tổng' không bị thổi phồng/trùng với income/expense.
-    $sum = db()->prepare("SELECT COALESCE(SUM(CASE WHEN entry_type IN ('inventory_in','inventory_out') THEN 0 ELSE amount END),0)
-        FROM accounting_entries $where_sql");
+    // Tổng tiền cho filter hiện tại:
+    //  - Lọc 1 loại cụ thể -> tổng đúng loại đó (trừ inventory = định giá kho, không phải tiền).
+    //  - Không lọc loại (hỗn hợp) -> NET dòng tiền = thu − chi (receivable/payable/inventory KHÔNG cộng),
+    //    tránh cộng lẫn công nợ + thổi phồng/vô nghĩa.
+    $sumExpr = !empty($_GET['type'])
+        ? "COALESCE(SUM(CASE WHEN entry_type IN ('inventory_in','inventory_out') THEN 0 ELSE amount END),0)"
+        : "COALESCE(SUM(CASE WHEN entry_type='income' THEN amount WHEN entry_type='expense' THEN -amount ELSE 0 END),0)";
+    $sum = db()->prepare("SELECT $sumExpr FROM accounting_entries $where_sql");
     $sum->execute($params);
     $total_amount = (float)$sum->fetchColumn();
 
@@ -334,6 +338,19 @@ function handle_update(array $token, int $id): void {
         $params[] = $id;
         $stmt = db()->prepare('UPDATE accounting_entries SET ' . implode(', ', $sets) . ' WHERE id = ?');
         $stmt->execute($params);
+        // Đồng bộ phiếu NHẬP KHO auto-link khi sửa CHI (giá trị nhập = số tiền chi) -> tránh lệch định giá
+        if ($row['entry_type'] === 'expense' && (array_key_exists('amount', $data) || array_key_exists('entry_date', $data))) {
+            $ch = db()->prepare("SELECT id, entry_date, amount, description FROM accounting_entries
+                WHERE entry_type='inventory_in' AND CAST(JSON_EXTRACT(data, '$.auto_from_entry_id') AS UNSIGNED) = ?");
+            $ch->execute([(int)$id]);
+            $child = $ch->fetch();
+            if ($child) {
+                $cAmt = array_key_exists('amount', $data) ? $data['amount'] : (float)$child['amount'];
+                $cDate = array_key_exists('entry_date', $data) ? $data['entry_date'] : $child['entry_date'];
+                $cu = db()->prepare('UPDATE accounting_entries SET amount = ?, entry_date = ?, dedup_hash = ? WHERE id = ?');
+                $cu->execute([$cAmt, $cDate, dedup_hash('inventory_in', $cDate, $cAmt, $child['description']), (int)$child['id']]);
+            }
+        }
         db()->commit();
     } catch (PDOException $e) {
         if (db()->inTransaction()) db()->rollBack();

@@ -241,23 +241,27 @@ PW.comboCost = function (p, to) {
   return p.components.reduce((s, c) => { const m = PW.product(c.productId); return s + Number(c.qty || 0) * PW.unitCost(m, to); }, 0);
 };
 
-PW.stockOf = function (productId) {
+// Tồn kho. asOf (yyyy-mm-dd, tùy chọn) -> chỉ tính chứng từ có date <= asOf (tồn TẠI thời điểm đó).
+PW.stockOf = function (productId, asOf) {
   const p = PW.product(productId);
   if (!p) return 0;
+  const ok = d => !asOf || (d || '') <= asOf;   // lọc theo mốc thời gian
   // Dịch vụ: không có tồn kho
   if (p.kind === 'dichvu') return 0;
   // Combo: tồn = số bộ tối đa lắp được từ thành phần
   if (p.kind === 'combo') {
     if (!p.components || !p.components.length) return 0;
     let n = Infinity;
-    p.components.forEach(c => { const cq = Number(c.qty || 0); if (cq > 0) n = Math.min(n, Math.floor(PW.stockOf(c.productId) / cq)); });
+    p.components.forEach(c => { const cq = Number(c.qty || 0); if (cq > 0) n = Math.min(n, Math.floor(PW.stockOf(c.productId, asOf) / cq)); });
     return n === Infinity ? 0 : n;
   }
   let qty = Number(p.openingStock || 0);
   PW.data.purchases.forEach(pu => {
+    if (!ok(pu.date)) return;
     pu.items.forEach(it => { if (it.productId === productId) qty += Number(it.qty); });
   });
   PW.data.salesInvoices.forEach(si => {
+    if (!ok(si.date)) return;
     si.items.forEach(it => {
       if (it.productId === productId) qty -= Number(it.qty);
       // Bán combo -> trừ kho từng thành phần
@@ -267,7 +271,7 @@ PW.stockOf = function (productId) {
   });
   // Trả lại hàng bán -> hàng nhập lại kho (BỎ QUA phiếu "thất lạc" noRestock: hàng không về)
   PW.data.salesReturns.forEach(sr => {
-    if (sr.noRestock) return;
+    if (sr.noRestock || !ok(sr.date)) return;
     sr.items.forEach(it => {
       if (it.productId === productId) qty += Number(it.qty);
       else { const cp = PW.product(it.productId); if (cp && cp.kind === 'combo' && cp.components)
@@ -276,15 +280,18 @@ PW.stockOf = function (productId) {
   });
   // Trả lại hàng mua -> xuất khỏi kho trả nhà cung cấp
   PW.data.purchaseReturns.forEach(pr => {
+    if (!ok(pr.date)) return;
     pr.items.forEach(it => { if (it.productId === productId) qty -= Number(it.qty); });
   });
   // Sản xuất: thành phẩm nhập kho (+), NVL tiêu hao (-)
   PW.data.productionOrders.forEach(po => {
+    if (!ok(po.date)) return;
     if (po.productId === productId) qty += Number(po.qty);
     (po.materials || []).forEach(m => { if (m.productId === productId) qty -= Number(m.qty); });
   });
   // Điều chỉnh kiểm kê (delta + hoặc -)
   PW.data.stockAdjustments.forEach(ad => {
+    if (!ok(ad.date)) return;
     (ad.items || []).forEach(it => { if (it.productId === productId) qty += Number(it.delta || 0); });
   });
   return qty;
@@ -351,11 +358,11 @@ PW.productionTotalCost = function (po) {
 
 // Tổng giá trị 1 phiếu trả lại hàng bán (theo giá bán)
 PW.returnTotal = function (sr) {
-  return sr.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0);
+  return sr.items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
 };
 // Tổng giá trị 1 phiếu trả lại hàng mua (theo giá nhập)
 PW.purchaseReturnTotal = function (pr) {
-  return pr.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0);
+  return pr.items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.cost || 0), 0);
 };
 // Giá vốn hàng trả lại
 PW.returnCost = function (sr) {
@@ -367,7 +374,7 @@ PW.returnCost = function (sr) {
 
 // Tổng tiền 1 hóa đơn bán
 PW.invoiceTotal = function (si) {
-  const sub = si.items.reduce((s, it) => s + Number(it.qty) * Number(it.price), 0);
+  const sub = si.items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.price || 0), 0);
   return sub - Number(si.discount || 0);
 };
 
@@ -391,7 +398,7 @@ PW.sellingFees = function (from, to) {
 
 // Tổng tiền 1 phiếu nhập mua
 PW.purchaseTotal = function (pu) {
-  return pu.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0);
+  return pu.items.reduce((s, it) => s + Number(it.qty || 0) * Number(it.cost || 0), 0);
 };
 
 /* ---------- Tiền có THUẾ (khách/NCC trả gồm thuế) — dùng cho TỔNG phải thu/trả, công nợ ----------
@@ -478,12 +485,27 @@ PW.balanceAsOf = function (accountId, toYmd) {
   return bal;
 };
 
+// Còn phải thu của 1 hóa đơn = gồm thuế − đã thu − trả lại (gắn HĐ) − giảm giá (gắn HĐ)
+PW.invoiceRemaining = function (si) {
+  let rem = PW.invoiceGrand(si) - Number(si.paid || 0);
+  PW.data.salesReturns.forEach(sr => { if (sr.invoiceId === si.id) rem -= PW.returnGrand(sr); });
+  PW.data.salesDiscounts.forEach(g => { if (g.invoiceId === si.id) rem -= PW.discountGrand(g); });
+  return rem;
+};
+// Còn phải trả của 1 phiếu nhập = gồm thuế − đã trả − trả lại (gắn PN) − giảm giá (gắn PN)
+PW.purchaseRemaining = function (pu) {
+  let rem = PW.purchaseGrand(pu) - Number(pu.paid || 0);
+  PW.data.purchaseReturns.forEach(pr => { if ((pr.purchaseId || pr.invoiceId) === pu.id) rem -= PW.purchaseReturnGrand(pr); });
+  PW.data.purchaseDiscounts.forEach(g => { if ((g.purchaseId || g.invoiceId) === pu.id) rem -= PW.discountGrand(g); });
+  return rem;
+};
+
 // Khoản phải THU đến hạn trong khoảng (dự báo dòng tiền vào)
 PW.dueReceivables = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   const out = [];
   PW.data.salesInvoices.forEach(si => {
-    const rem = PW.invoiceGrand(si) - Number(si.paid || 0);
+    const rem = PW.invoiceRemaining(si);
     if (rem <= 0) return;
     const due = si.dueDate || si.date;
     if (inR(due)) out.push({ party: PW.customer(si.customerId), code: si.code, due: due, remaining: rem });
@@ -496,7 +518,7 @@ PW.duePayables = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   const out = [];
   PW.data.purchases.forEach(pu => {
-    const rem = PW.purchaseGrand(pu) - Number(pu.paid || 0);
+    const rem = PW.purchaseRemaining(pu);
     if (rem <= 0) return;
     const due = pu.dueDate || pu.date;
     if (inR(due)) out.push({ party: PW.supplier(pu.supplierId), code: pu.code, due: due, remaining: rem });
@@ -565,7 +587,7 @@ PW.agingReceivable = function (todayYmd) {
   const today = todayYmd || PW.todayStr();
   let overdue = 0;
   PW.data.salesInvoices.forEach(si => {
-    const rem = PW.invoiceGrand(si) - Number(si.paid || 0);
+    const rem = PW.invoiceRemaining(si);
     if (rem > 0 && si.dueDate && si.dueDate < today) overdue += rem;
   });
   const total = PW.totalReceivable();
@@ -578,7 +600,7 @@ PW.agingPayable = function (todayYmd) {
   const today = todayYmd || PW.todayStr();
   let overdue = 0;
   PW.data.purchases.forEach(pu => {
-    const rem = PW.purchaseGrand(pu) - Number(pu.paid || 0);
+    const rem = PW.purchaseRemaining(pu);
     if (rem > 0 && pu.dueDate && pu.dueDate < today) overdue += rem;
   });
   const total = PW.totalPayable();
@@ -591,9 +613,10 @@ PW.todayStr = function () {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-// Giá trị tồn kho (theo giá vốn)
+// Giá trị tồn kho (theo giá vốn). Dùng unitCost (NVL/giá vốn trống -> giá mua bình quân, khớp COGS);
+// BỎ combo (giá trị đã tính ở thành phần -> tránh đếm trùng) và dịch vụ (không có tồn).
 PW.inventoryValue = function () {
-  return PW.data.products.reduce((s, p) => s + PW.stockOf(p.id) * Number(p.cost || 0), 0);
+  return PW.data.products.reduce((s, p) => (p.kind === 'combo' || p.kind === 'dichvu') ? s : s + PW.stockOf(p.id) * PW.unitCost(p), 0);
 };
 
 // Doanh thu thuần trong khoảng (đã trừ trả lại & giảm giá hàng bán)

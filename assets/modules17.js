@@ -178,6 +178,7 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     const ch = PW.channel && PW.channel(si.channelId);
     const sub = PW.invoiceTotal(si), vat = Math.round(sub * Number(si.vatRate || 0) / 100), grand = sub + vat;
     const paid = Number(si.paid || 0), cod = grand - paid;
+    const disc = Number(si.discount || 0), gross = sub + disc;
     const bcMode = opts && opts.bcMode;
     const accD = c.accDebit || '131', accC = c.accCredit || '5111';
     const GREEN = [90, 142, 46], A5 = size === 'A5';
@@ -273,12 +274,13 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     const cong = [{ content: 'Cộng', colSpan: qtyIdx, styles: { halign: 'right', fontStyle: 'bold' } },
       { content: U.num(totalQty), styles: { halign: 'right', fontStyle: 'bold' } }];
     for (let k = qtyIdx + 1; k < amountIdx; k++) cong.push('');   // cột đơn giá -> để trống
-    cong.push({ content: U.money(sub), styles: { halign: 'right', fontStyle: 'bold' } });
+    cong.push({ content: U.money(gross), styles: { halign: 'right', fontStyle: 'bold' } });
     foot.push(cong);
     const totRow = (label, val, big) => foot.push([
       { content: label, colSpan: amountIdx, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } },
       { content: val, styles: { halign: 'right', fontStyle: big ? 'bold' : 'normal', textColor: big ? GREEN : [55, 55, 55] } }]);
-    totRow('Cộng tiền hàng', U.money(sub));
+    totRow('Cộng tiền hàng', U.money(gross));
+    if (disc > 0) totRow('Giảm giá', '-' + U.money(disc));
     if (CFG.vatAlways || Number(si.vatRate)) totRow('Tiền thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', U.money(vat));
     totRow(CFG.totalLabel, U.money(grand), true);
     if (type === 'delivery') totRow('Đã thanh toán', U.money(paid));
@@ -399,6 +401,7 @@ M.printInvoice = function (si, size, action, opts) {
   const sub = PW.invoiceTotal(si);
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
   const grand = sub + vat;
+  const disc = Number(si.discount || 0), gross = sub + disc;   // gross = tiền hàng TRƯỚC giảm giá (khớp cột Thành tiền)
   const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const bcMode = opts && opts.bcMode;
@@ -421,8 +424,9 @@ M.printInvoice = function (si, size, action, opts) {
     + '</tr></table>'
     + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true, bcMode) + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
-    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(gross) + '</b></td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(gross) + '</td></tr>'
+    + (disc > 0 ? '<tr><td colspan="' + totSpan + '" class="r">Giảm giá</td><td class="r">-' + U.money(disc) + '</td></tr>' : '')
     + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
     + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
     + '</tfoot></table>'
@@ -440,6 +444,7 @@ M.deliveryNote = function (si, size, action, opts) {
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
   const grand = sub + vat;
   const cod = grand - Number(si.paid || 0);
+  const disc = Number(si.discount || 0), gross = sub + disc;
   const ch = PW.channel(si.channelId);
   const bcMode = opts && opts.bcMode;
   const bc = M._anyBarcode(si.items, bcMode);
@@ -454,7 +459,8 @@ M.deliveryNote = function (si, size, action, opts) {
     + '<b>Địa chỉ giao:</b> ' + U.esc(cus ? cus.address : '') + '</div>'
     + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true, bcMode) + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(gross) + '</td></tr>'
+    + (disc > 0 ? '<tr><td colspan="' + totSpan + '" class="r">Giảm giá</td><td class="r">-' + U.money(disc) + '</td></tr>' : '')
     + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
     + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG GIÁ TRỊ</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
     + '<tr><td colspan="' + totSpan + '" class="r">Đã thanh toán</td><td class="r">' + U.money(si.paid || 0) + '</td></tr>'
@@ -477,6 +483,7 @@ M.warehouseIssueNote = function (si, size, action, opts) {
   const sub = PW.invoiceTotal(si);
   const vat = Math.round(sub * Number(si.vatRate || 0) / 100);
   const grand = sub + vat;
+  const disc = Number(si.discount || 0), gross = sub + disc;
   const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const [yy, mm, dd] = (si.date || U.today()).split('-');
@@ -518,8 +525,9 @@ M.warehouseIssueNote = function (si, size, action, opts) {
     + '<th class="c">Đơn vị</th><th class="r">Số lượng</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th></tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '<tfoot>'
-    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
-    + '<tr><td colspan="' + totSpan + '" class="r"><b>Cộng tiền hàng</b></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
+    + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(gross) + '</b></td></tr>'
+    + '<tr><td colspan="' + totSpan + '" class="r"><b>Cộng tiền hàng</b></td><td class="r"><b>' + U.money(gross) + '</b></td></tr>'
+    + (disc > 0 ? '<tr><td colspan="' + totSpan + '" class="r">Giảm giá</td><td class="r">-' + U.money(disc) + '</td></tr>' : '')
     + '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)</td><td class="r">' + U.money(vat) + '</td></tr>'
     + '<tr><td colspan="' + totSpan + '" class="r" style="font-weight:800;color:#5a8e2e">TỔNG TIỀN THANH TOÁN</td><td class="r" style="font-weight:800;color:#5a8e2e">' + U.money(grand) + '</td></tr>'
     + '</tfoot></table>'
@@ -557,10 +565,12 @@ M._invoiceAoa = function (si) {
   // Bảng hàng hóa
   rows.push(['STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'SL', 'Đơn giá', 'Thành tiền']);
   si.items.forEach((it, i) => { const p = PW.product(it.productId); rows.push([i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]); });
-  rows.push(['', '', 'Cộng', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', PW.invoiceTotal(si)]);
+  const _disc = Number(si.discount || 0), _gross = PW.invoiceTotal(si) + _disc;
+  rows.push(['', '', 'Cộng', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', _gross]);
   rows.push([]);
   // Tổng
-  rows.push(['', '', '', '', '', 'Cộng tiền hàng', PW.invoiceTotal(si)]);
+  rows.push(['', '', '', '', '', 'Cộng tiền hàng', _gross]);
+  if (_disc > 0) rows.push(['', '', '', '', '', 'Giảm giá', -_disc]);
   if (PW.invoiceVat(si)) rows.push(['', '', '', '', '', 'Thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', PW.invoiceVat(si)]);
   rows.push(['', '', '', '', '', 'TỔNG THANH TOÁN', grand]);
   rows.push(['', '', '', '', '', 'Đã thu', Number(si.paid || 0)]);
@@ -584,6 +594,7 @@ M._invoiceExcelExcelJS = async function (si, bcMode) {
   const ch = PW.channel && PW.channel(si.channelId);
   const vatRate = Number(si.vatRate) || 0, paid = Number(si.paid || 0), grand = PW.invoiceGrand(si);
   const total = PW.invoiceTotal(si), vat = PW.invoiceVat(si);   // dùng làm GIÁ TRỊ ĐÃ TÍNH (cache) cho công thức
+  const disc = Number(si.discount || 0), gross = total + disc;  // gross = tiền hàng trước giảm giá
   const FN = 'Times New Roman', GREEN = 'FF5A8E2E', HEADBG = 'FFEEF6E1', LINE = 'FFB9C4A8';
   const fnt = o => Object.assign({ name: FN }, o || {});
   const bThin = { style: 'thin', color: { argb: LINE } };
@@ -664,7 +675,7 @@ M._invoiceExcelExcelJS = async function (si, bcMode) {
   merge(R, 1, R, idxOf.qty - 1); cc = ws.getCell(R, 1); cc.value = 'Cộng'; cc.font = fnt({ bold: true, size: 11 }); cc.alignment = { horizontal: 'right', vertical: 'middle' };
   for (let k = 1; k <= NC; k++) ws.getCell(R, k).border = boxAll;
   cc = ws.getCell(R, idxOf.qty); cc.value = { formula: 'SUM(' + QC + FIRST + ':' + QC + LAST + ')', result: totalQty }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
-  cc = ws.getCell(R, idxOf.amount); cc.value = { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: total }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
+  cc = ws.getCell(R, idxOf.amount); cc.value = { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: gross }; cc.font = fnt({ bold: true }); cc.alignment = { horizontal: 'right' }; cc.numFmt = '#,##0';
 
   // ---- Tổng (nhãn gộp đến trước cột Thành tiền, giá trị ở cột Thành tiền) ----
   const totalRow = (label, val, big) => {
@@ -674,10 +685,16 @@ M._invoiceExcelExcelJS = async function (si, bcMode) {
     return R;
   };
   R += 1; // spacer
-  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: total });
+  const subR = totalRow('Cộng tiền hàng', { formula: 'SUM(' + AC + FIRST + ':' + AC + LAST + ')', result: gross });
+  // Giảm giá -> dòng riêng; "baseR" = tiền hàng sau giảm (để VAT & TỔNG khớp công thức ↔ kết quả cache)
+  let baseR = subR;
+  if (disc > 0) {
+    const discR = totalRow('Giảm giá', -disc);   // số âm, không công thức
+    baseR = totalRow('Tiền hàng sau giảm', { formula: AC + subR + '+' + AC + discR, result: total });
+  }
   let vatR = null;
-  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(' + AC + subR + '*' + vatRate + '/100,0)', result: vat });
-  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? (AC + subR + '+' + AC + vatR) : (AC + subR), result: grand }, true);
+  if (vatRate) vatR = totalRow('Tiền thuế GTGT (' + vatRate + '%)', { formula: 'ROUND(' + AC + baseR + '*' + vatRate + '/100,0)', result: vat });
+  const tongR = totalRow('TỔNG THANH TOÁN', { formula: vatR ? (AC + baseR + '+' + AC + vatR) : (AC + baseR), result: grand }, true);
   const paidR = totalRow('Đã thanh toán', paid);
   totalRow('Còn phải thu', { formula: AC + tongR + '-' + AC + paidR, result: grand - paid });
 
@@ -737,11 +754,13 @@ M._invoiceExcelSheetJS = async function (si) {
       rows.push([i + 1, p ? p.code : '', p ? p.name : '', p ? p.unit : '', Number(it.qty), Number(it.price || 0), Number(it.qty) * Number(it.price || 0)]);
       money.push([r, 5], [r, 6]);
     });
-    { const r = rows.length; rows.push(['', 'Cộng', '', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', total]); merges.push({ s: { r, c: 1 }, e: { r, c: 3 } }); money.push([r, 6]); }
+    const _disc = Number(si.discount || 0), _gross = total + _disc;
+    { const r = rows.length; rows.push(['', 'Cộng', '', '', si.items.reduce((s, it) => s + Number(it.qty || 0), 0), '', _gross]); merges.push({ s: { r, c: 1 }, e: { r, c: 3 } }); money.push([r, 6]); }
     rows.push([]);
     // Tổng — nhãn gộp B:F (rộng, không cắt), giá trị ở G
     const tot = (label, val) => { const r = rows.length; rows.push(['', label, '', '', '', '', val]); merges.push({ s: { r, c: 1 }, e: { r, c: 5 } }); money.push([r, 6]); };
-    tot('Cộng tiền hàng', total);
+    tot('Cộng tiền hàng', _gross);
+    if (_disc > 0) tot('Giảm giá', -_disc);
     if (vat) tot('Tiền thuế GTGT (' + (Number(si.vatRate) || 0) + '%)', vat);
     tot('TỔNG THANH TOÁN', grand);
     tot('Đã thanh toán', Number(si.paid || 0));

@@ -300,29 +300,27 @@ M.reportInventory = function (host) {
 };
 
 M.reportInOut = function (host, from, to) {
-  // Tồn đầu kỳ = openingStock + nhập trước 'from' - xuất trước 'from' + trả lại trước 'from'
-  function qtyBefore(pid) {
-    const p = PW.product(pid);
-    let q = Number(p.openingStock || 0);
-    PW.data.purchases.forEach(pu => { if (pu.date < from) pu.items.forEach(it => { if (it.productId === pid) q += Number(it.qty); }); });
-    PW.data.salesInvoices.forEach(si => { if (si.date < from) si.items.forEach(it => { if (it.productId === pid) q -= Number(it.qty); }); });
-    PW.data.salesReturns.forEach(sr => { if (sr.date < from) sr.items.forEach(it => { if (it.productId === pid) q += Number(it.qty); }); });
-    return q;
-  }
-  function qtyInRange(rows, pid, kind) {
+  // Ngày liền trước 'from' (để lấy Tồn đầu = tồn TẠI cuối ngày trước kỳ)
+  function prevDay(ymd) { const d = new Date(ymd + 'T00:00:00'); d.setDate(d.getDate() - 1); const p = x => String(x).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
+  const beforeFrom = from ? prevDay(from) : null;
+  // Tổng SL trong kỳ (lọc theo doc.date trong [from,to]); skip cho phép loại dòng (vd trả lại thất lạc)
+  function inRange(rowsArr, pid, skip) {
     let q = 0;
-    rows.forEach(doc => {
-      if (doc.date >= from && doc.date <= to) doc.items.forEach(it => { if (it.productId === pid) q += Number(it.qty); });
+    rowsArr.forEach(doc => {
+      if (skip && skip(doc)) return;
+      if ((!from || doc.date >= from) && (!to || doc.date <= to)) (doc.items || []).forEach(it => { if (it.productId === pid) q += Number(it.qty || 0); });
     });
     return q;
   }
-  const rows = PW.data.products.map(p => {
-    const dau = qtyBefore(p.id);
-    const nhap = qtyInRange(PW.data.purchases, p.id);
-    const tralai = qtyInRange(PW.data.salesReturns, p.id);
-    const xuat = qtyInRange(PW.data.salesInvoices, p.id);
-    const cuoi = dau + nhap + tralai - xuat;
-    return { p, dau, nhap, tralai, xuat, cuoi, val: cuoi * PW.unitCost(p, to) };
+  const rows = PW.data.products.filter(p => p.kind !== 'dichvu').map(p => {
+    // Tồn đầu & Tồn cuối lấy từ CHÍNH stockOf (đã gồm SX/trả NCC/kiểm kê/combo) -> luôn khớp báo cáo Tồn kho
+    const dau = beforeFrom ? PW.stockOf(p.id, beforeFrom) : 0;
+    const cuoi = PW.stockOf(p.id, to || undefined);
+    const nhap = inRange(PW.data.purchases, p.id);
+    const tralai = inRange(PW.data.salesReturns, p.id, sr => sr.noRestock);   // bỏ phiếu thất lạc
+    const xuat = inRange(PW.data.salesInvoices, p.id);
+    const khac = cuoi - dau - nhap - tralai + xuat;   // SX + trả NCC + kiểm kê + combo... (để dòng cân)
+    return { p, dau, nhap, tralai, xuat, khac, cuoi, val: cuoi * PW.unitCost(p, to) };
   });
   const tot = rows.reduce((s, r) => s + r.val, 0);
   host.appendChild(C.table(rows, [
@@ -333,10 +331,11 @@ M.reportInOut = function (host, from, to) {
     { label: 'Nhập', num: true, render: r => `<span class="text-green">${U.num(r.nhap)}</span>` },
     { label: 'Khách trả', num: true, render: r => U.num(r.tralai) },
     { label: 'Xuất bán', num: true, render: r => `<span class="text-red">${U.num(r.xuat)}</span>` },
+    { label: 'SX/Khác', num: true, render: r => r.khac ? U.num(r.khac) : '' },
     { label: 'Tồn cuối', num: true, render: r => `<b class="${r.cuoi <= 0 ? 'text-red' : ''}">${U.num(r.cuoi)}</b>` },
     { label: 'Giá trị tồn', num: true, render: r => U.money(r.val) },
   ], { footer: [
-    { html: 'TỔNG GIÁ TRỊ TỒN CUỐI KỲ', colspan: 8 },
+    { html: 'TỔNG GIÁ TRỊ TỒN CUỐI KỲ', colspan: 9 },
     { html: U.money(tot), num: true },
   ] }));
 };
