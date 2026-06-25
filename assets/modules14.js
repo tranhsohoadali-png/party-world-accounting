@@ -57,29 +57,30 @@ M._ciSplitCells = function (raw) {
     : (raw.indexOf('|') >= 0 ? raw.split('|')
     : (raw.split(';').length > 2 ? raw.split(';') : null));
 };
-// Đọc dòng TIÊU ĐỀ -> bản đồ cột { name, qty, price, code, barcode, qtyFrom, fahasa } theo tên cột
+// Đọc dòng TIÊU ĐỀ -> bản đồ cột { name, qty, price, code, barcode, qtyCols, fahasa } theo tên cột
 M._ciHeaderMap = function (cells) {
   const map = {};
-  let fahasaCols = 0, priceIdx = -1, firstStore = -1;
+  const storeCols = [];
   (cells || []).forEach((c, i) => {
     const n = M._ciNorm(c);
     if (!n) return;
-    // Cột kho FAHASA: "XTNSBD - NS FAHASA Bình Định" / mã "xtns..." -> đếm để nhận dạng ma trận
-    const isStore = /fahasa/.test(n) || /^xtns/.test(n.replace(/\s+/g, ''));
-    if (isStore) { fahasaCols++; if (firstStore < 0) firstStore = i; }
+    const compact = n.replace(/\s+/g, '');
+    // Cột KHO/CHI NHÁNH FAHASA: chứa "fahasa" hoặc mã kho (XTNS/PNNS/TTPN), vd
+    // "XTNSBD - NS FAHASA Bình Định", "NS FAHASA Gia Lai - PNNSGL".
+    const isStore = /fahasa/.test(n) || /(xtns|pnns|ttpn)/.test(compact);
+    // Cột TỔNG/giá trị (KHÔNG phải kho) -> TUYỆT ĐỐI không cộng vào SL: "Tổng SL sản phẩm",
+    // "Tổng cộng", "Thành tiền", "Giá ...", "Số tiền"... (tránh đếm trùng/gấp đôi số lượng).
+    const isAggregate = /(tong|^cong |^cong$|thanh tien|so tien|thanh toan)/.test(n) || /^gia/.test(n);
     if (map.barcode == null && /(ma vach|barcode)/.test(n)) map.barcode = i;
-    if (isStore) return;   // không để cột kho lọt vào name/qty/price
+    if (isStore && !isAggregate) { storeCols.push(i); return; }   // gom cột kho, không để lọt vào name/qty/price
     if (map.name == null && /(ten hang|ten san pham|ten sp|hang hoa|mat hang|dien giai|noi dung|san pham|^ten)/.test(n)) map.name = i;
     else if (map.qty == null && /(so luong dat|so luong|sl dat|^sl|qty|number)/.test(n)) map.qty = i;
-    else if (map.price == null && /(don gia|gia ban|gia nhap|gia von|gia bia|gia ban le|unit price|^gia$|^gia )/.test(n)) { map.price = i; priceIdx = i; }   // KHÔNG nhận 'thành tiền'
+    else if (map.price == null && /(don gia|gia ban|gia nhap|gia von|gia bia|gia ban le|unit price|^gia$|^gia )/.test(n)) map.price = i;   // KHÔNG nhận 'thành tiền'
     else if (map.code == null && /(ma vach|barcode|ma hang|ma sp|sku|^ma)/.test(n)) map.code = i;
   });
-  // FAHASA: bảng phân phối nhiều cột kho -> tổng SL = cộng các cột kho (từ sau cột Giá bìa)
-  if (fahasaCols >= 2) {
-    map.fahasa = true;
-    map.qtyFrom = priceIdx >= 0 ? priceIdx + 1 : (firstStore >= 0 ? firstStore : (map.name != null ? map.name + 1 : 0));
-  }
-  return map;   // hợp lệ khi có name + (qty | price | qtyFrom) -> người gọi tự kiểm
+  // FAHASA: bảng phân phối nhiều cột kho -> tổng SL = cộng ĐÚNG các cột kho (bỏ cột "Tổng SL"/giá trị)
+  if (storeCols.length >= 2) { map.fahasa = true; map.qtyCols = storeCols; }
+  return map;   // hợp lệ khi có name + (qty | price | qtyCols) -> người gọi tự kiểm
 };
 
 // Tách 1 dòng đơn hàng -> { raw, name, codeKey, sizeKey, qty, price }. colMap (tùy chọn) = bản đồ cột theo tiêu đề.
@@ -98,9 +99,9 @@ M._ciParseLine = function (line, colMap) {
     text = nameCell;
     if (colMap.barcode != null) barcodeCell = M._ciBarcode(cells[colMap.barcode]);
     if (colMap.qty != null) { const q = parseInt(String(cells[colMap.qty] || '').replace(/[^\d]/g, ''), 10); if (q > 0) qtyCell = q; }
-    else if (colMap.qtyFrom != null) {   // FAHASA: tổng SL = cộng tất cả cột kho
+    else if (colMap.qtyCols) {   // FAHASA: tổng SL = cộng ĐÚNG các cột kho (KHÔNG cộng cột "Tổng SL"/giá trị)
       let s = 0;
-      for (let i = colMap.qtyFrom; i < cells.length; i++) { const v = parseInt(String(cells[i] || '').replace(/[^\d]/g, ''), 10); if (v > 0) s += v; }
+      colMap.qtyCols.forEach(ci => { const v = parseInt(String(cells[ci] || '').replace(/[^\d]/g, ''), 10); if (v > 0) s += v; });
       if (s > 0) qtyCell = s;
     }
     if (colMap.price != null) { const pr = Number(String(cells[colMap.price] || '').replace(/[.,\s]/g, '')); if (pr > 0) priceCell = pr; }
@@ -558,10 +559,10 @@ M.consignImport = function (root) {
       const hc = M._ciSplitCells(lines[i]);
       if (!hc) continue;
       const hm = M._ciHeaderMap(hc);
-      if (hm.name != null && (hm.qty != null || hm.price != null || hm.qtyFrom != null)) { colMap = hm; headerIdx = i; break; }
+      if (hm.name != null && (hm.qty != null || hm.price != null || hm.qtyCols)) { colMap = hm; headerIdx = i; break; }
     }
     // Tôn trọng công tắc FAHASA: bỏ tích -> xử lý như bảng thường (không gộp cột kho)
-    if (colMap && colMap.fahasa && !fahasaChk.checked) { delete colMap.fahasa; delete colMap.qtyFrom; }
+    if (colMap && colMap.fahasa && !fahasaChk.checked) { delete colMap.fahasa; delete colMap.qtyCols; }
     const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
     if (colMap && colMap.fahasa) detectLine.innerHTML = (detectLine.innerHTML ? detectLine.innerHTML + '<br>' : '') +
       '📚 Định dạng <b>FAHASA</b> — gộp số lượng tất cả kho, khớp ưu tiên theo <b>mã vạch (barcode)</b>.';
