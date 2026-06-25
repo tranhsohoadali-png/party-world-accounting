@@ -795,3 +795,126 @@ M._ciOcr = function (file, onLines, kind) {
   };
   img.src = url;
 };
+
+/* ============================================================
+   ĐỐI SOÁT KÝ GỬI NHÀ SÁCH
+   Theo từng nhà sách (khách hàng): SL đã giao (hóa đơn bán) − SL trả lại = SL còn (nhà sách
+   đang giữ/đã bán); giá trị đã giao (trước thuế) + công nợ còn (PW.customerDebt, gồm thuế).
+   Mặc định kỳ "Tất cả" -> số CÒN là số dư ký gửi luỹ kế. Bấm 1 dòng -> chi tiết theo mặt hàng.
+   ============================================================ */
+M.consignReport = function (root) {
+  const card = U.el('div', { class: 'card' });
+  const host = U.el('div');
+  const fb = M.filterBar({
+    storageKey: 'consignReport',
+    onChange: draw,
+    fields: [
+      { type: 'period', key: 'period', label: 'Kỳ', default: 'all', presets: ['thisMonth', 'lastMonth', 'thisQuarter', 'ytd', 'thisYear', 'all', 'custom'] },
+      { type: 'select', key: 'customerId', label: 'Nhà sách / Khách', source: 'customers' },
+      { type: 'select', key: 'channelId', label: 'Kênh bán', source: () => (PW.data.channels || []).map(c => ({ value: c.id, label: c.name })) },
+      { type: 'search', key: 'q', placeholder: 'Tìm tên nhà sách...' },
+    ],
+    actions: [C.btn('📊 Xuất Excel', () => doExport())],
+  });
+  card.appendChild(fb.el);
+  card.appendChild(host);
+  root.appendChild(card);
+  const detailHost = U.el('div');
+  root.appendChild(detailHost);
+
+  // Gom theo nhà sách: đã giao (hóa đơn) − trả lại; kèm chi tiết theo mặt hàng.
+  function aggregate(st) {
+    const inv = M.applyFilter(PW.data.salesInvoices || [], st, {
+      date: x => x.date, customerId: x => x.customerId, channelId: x => x.channelId || '',
+      text: x => { const c = PW.customer(x.customerId); return c ? c.name : ''; },
+    });
+    const ret = M.applyFilter(PW.data.salesReturns || [], st, {
+      date: x => x.date, customerId: x => x.customerId,
+      text: x => { const c = PW.customer(x.customerId); return c ? c.name : ''; },
+    });
+    const by = {};
+    const row = cid => by[cid] || (by[cid] = { customerId: cid, giaoQty: 0, traQty: 0, giaoVal: 0, prods: {} });
+    const prod = (r, pid, price) => r.prods[pid] || (r.prods[pid] = { giao: 0, tra: 0, price: Number(price) || 0 });
+    inv.forEach(si => { const r = row(si.customerId); (si.items || []).forEach(it => { const q = Number(it.qty) || 0; r.giaoQty += q; r.giaoVal += q * Number(it.price || 0); const p = prod(r, it.productId, it.price); p.giao += q; if (Number(it.price)) p.price = Number(it.price); }); });
+    ret.forEach(sr => { const r = row(sr.customerId); (sr.items || []).forEach(it => { const q = Number(it.qty) || 0; r.traQty += q; prod(r, it.productId, it.price).tra += q; }); });
+    const list = Object.keys(by).map(cid => { const r = by[cid]; r.conQty = r.giaoQty - r.traQty; r.debt = PW.customerDebt(cid); return r; });
+    list.sort((a, b) => b.giaoVal - a.giaoVal);
+    return list;
+  }
+
+  function draw() {
+    const rows = aggregate(fb.getState());
+    host.innerHTML = '';
+    const sum = k => rows.reduce((s, r) => s + r[k], 0);
+    host.appendChild(C.table(rows, [
+      { label: 'Nhà sách / Khách hàng', render: r => { const c = PW.customer(r.customerId); return c ? U.esc(c.name) : '(không rõ)'; } },
+      { label: 'SL đã giao', num: true, render: r => U.num(r.giaoQty) },
+      { label: 'SL trả lại', num: true, render: r => U.num(r.traQty) },
+      { label: 'SL còn (NS giữ/bán)', num: true, render: r => U.num(r.conQty) },
+      { label: 'Giá trị đã giao', num: true, render: r => U.money(r.giaoVal) },
+      { label: 'Công nợ còn', num: true, render: r => '<span class="' + (r.debt > 0 ? 'text-red' : 'text-green') + '">' + U.money(r.debt) + '</span>' },
+    ], {
+      empty: 'Chưa có dữ liệu ký gửi phù hợp bộ lọc', onRowClick: r => showDetail(r), selectFirst: true,
+      footer: [
+        { html: 'TỔNG (' + rows.length + ' nhà sách)' },
+        { num: true, html: U.num(sum('giaoQty')) }, { num: true, html: U.num(sum('traQty')) }, { num: true, html: U.num(sum('conQty')) },
+        { num: true, html: U.money(sum('giaoVal')) }, { num: true, html: U.money(sum('debt')) },
+      ],
+    }));
+    if (rows.length) showDetail(rows[0]); else detailHost.innerHTML = '';
+  }
+
+  function detailRows(r) {
+    return Object.keys(r.prods).map(pid => {
+      const p = PW.product(pid), d = r.prods[pid], con = d.giao - d.tra;
+      return { code: p ? p.code : '', name: p ? p.name : '(không rõ)', giao: d.giao, tra: d.tra, con: con, price: d.price, conVal: con * d.price };
+    }).sort((a, b) => b.con - a.con);
+  }
+  function showDetail(r) {
+    const c = PW.customer(r.customerId);
+    const items = detailRows(r);
+    const sum = k => items.reduce((s, x) => s + x[k], 0);
+    detailHost.innerHTML = '';
+    const card2 = U.el('div', { class: 'card', style: 'margin-top:12px' });
+    card2.appendChild(U.el('div', { class: 'card-title', style: 'font-size:14px' }, '📋 Chi tiết ký gửi: ' + (c ? c.name : '')));
+    card2.appendChild(C.table(items, [
+      { label: 'Mã hàng', render: x => U.esc(x.code) },
+      { label: 'Tên hàng', render: x => U.esc(x.name) },
+      { label: 'SL giao', num: true, render: x => U.num(x.giao) },
+      { label: 'SL trả', num: true, render: x => U.num(x.tra) },
+      { label: 'SL còn', num: true, render: x => U.num(x.con) },
+      { label: 'Đơn giá', num: true, render: x => U.money(x.price) },
+      { label: 'Giá trị còn', num: true, render: x => U.money(x.conVal) },
+    ], {
+      empty: 'Không có dòng hàng', footer: [
+        { colspan: 2, html: 'Cộng' },
+        { num: true, html: U.num(sum('giao')) }, { num: true, html: U.num(sum('tra')) }, { num: true, html: U.num(sum('con')) },
+        { html: '' }, { num: true, html: U.money(sum('conVal')) },
+      ],
+    }));
+    detailHost.appendChild(card2);
+  }
+
+  function doExport() {
+    const st = fb.getState(), rows = aggregate(st);
+    if (!rows.length) return U.toast('Không có dữ liệu để xuất', 'error');
+    const columns = [
+      { header: 'Nhà sách / Khách hàng', width: 34 },
+      { header: 'SL đã giao', width: 12, money: true },
+      { header: 'SL trả lại', width: 12, money: true },
+      { header: 'SL còn', width: 12, money: true },
+      { header: 'Giá trị đã giao', width: 16, money: true },
+      { header: 'Công nợ còn', width: 16, money: true },
+    ];
+    const data = rows.map(r => { const c = PW.customer(r.customerId); return [c ? c.name : '', r.giaoQty, r.traQty, r.conQty, r.giaoVal, r.debt]; });
+    const sum = k => rows.reduce((s, r) => s + r[k], 0);
+    M.exportListExcel({
+      title: 'ĐỐI SOÁT KÝ GỬI NHÀ SÁCH', subtitle: M._reportSubtitle(st), fname: 'DoiSoatKyGui',
+      columns: columns, rows: data,
+      totals: [null, sum('giaoQty'), sum('traQty'), sum('conQty'), sum('giaoVal'), sum('debt')],
+      totalsLabel: 'TỔNG (' + rows.length + ' nhà sách)', totalsLabelSpan: 1,
+    });
+  }
+
+  draw();
+};

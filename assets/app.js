@@ -25,6 +25,7 @@ App.menu = [
     { id: 'discounts', label: 'Giảm giá hàng bán', icon: 'tag', title: 'Giảm giá hàng bán' },
     { id: 'reconcile', label: 'Đối soát sàn', icon: 'scale', title: 'Đối soát sàn TMĐT', roles: ['admin', 'ketoan'] },
     { id: 'consign-import', label: 'Làm việc với AI', icon: 'wand', title: 'Làm việc với AI — Gom đơn ký gửi, tự khớp mã hàng' },
+    { id: 'consign-report', label: 'Đối soát ký gửi', icon: 'scale', title: 'Đối soát ký gửi nhà sách — Đã giao / Trả lại / Còn tồn / Công nợ' },
     { id: 'crm', label: 'CRM khách hàng', icon: 'crown', title: 'CRM — Chân dung khách hàng', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'VẬN HÀNH KHO', items: [
@@ -178,6 +179,7 @@ App.refresh = function () {
     case 'discounts': return M.discounts(root);
     case 'reconcile': return M.reconcile(root);
     case 'consign-import': return M.consignImport(root);
+    case 'consign-report': return M.consignReport(root);
     case 'tax-sync': return M.taxSync(root);
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
