@@ -494,7 +494,8 @@ M.productForm = function (p, opts) {
     kind: C.select((M.PRODUCT_KINDS || [{ kind: 'hanghoa', label: 'Hàng hóa' }]).map(k => ({ value: k.kind, label: k.label })), p.kind || 'hanghoa'),
     code: C.input({ value: p.code }),
     name: C.input({ value: p.name }),
-    barcode: C.input({ value: p.barcode || '', placeholder: 'mã vạch EAN (vd nhà sách FAHASA)' }),
+    barcode: C.input({ value: p.barcode || '', placeholder: 'mã vạch FAHASA (EAN)' }),
+    barcodePN: C.input({ value: p.barcodePN || '', placeholder: 'mã vạch Phương Nam (EAN)' }),
     group: C.input({ value: p.group || '', list: groupDLId }),
     unit: C.input({ value: p.unit, list: 'dl-punits' }),
     cost: C.input({ type: 'number', value: p.cost, min: 0 }),
@@ -654,7 +655,8 @@ M.productForm = function (p, opts) {
       C.field('Tính chất', f.kind),
       C.field('Mã hàng', f.code, { required: true }),
       C.field('Tên hàng hóa', f.name, { required: true, full: true }),
-      C.field('Mã vạch (Barcode)', f.barcode),
+      C.field('Mã vạch FAHASA', f.barcode),
+      C.field('Mã vạch Phương Nam', f.barcodePN),
       C.field('Nhóm hàng', groupWrap),
       C.field('Đơn vị tính', f.unit),
       C.field('Tồn kho đầu kỳ', f.stock),
@@ -680,7 +682,7 @@ M.productForm = function (p, opts) {
     }
     const obj = {
       id: p.id || PW.uid(), code: f.code.value.trim(), name: f.name.value.trim(),
-      barcode: f.barcode.value.trim(),
+      barcode: f.barcode.value.trim(), barcodePN: f.barcodePN.value.trim(),
       kind: f.kind.value,
       group: f.group.value.trim(), unit: f.unit.value.trim() || 'Cái',
       cost: Number(f.cost.value) || 0, price: Number(f.price.value) || 0,

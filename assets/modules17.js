@@ -178,6 +178,7 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     const ch = PW.channel && PW.channel(si.channelId);
     const sub = PW.invoiceTotal(si), vat = Math.round(sub * Number(si.vatRate || 0) / 100), grand = sub + vat;
     const paid = Number(si.paid || 0), cod = grand - paid;
+    const bcMode = opts && opts.bcMode;
     const accD = c.accDebit || '131', accC = c.accCredit || '5111';
     const GREEN = [90, 142, 46], A5 = size === 'A5';
     const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
@@ -240,10 +241,10 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     y = Math.max(y, yParty + lh * 3) + 3;
 
     // ---- Bảng hàng hóa (autotable) — cột dựng theo vai trò, có cột Mã vạch khi cần (FAHASA) ----
-    const sc = CFG.showCode, showBC = M._anyBarcode(si.items);
+    const sc = CFG.showCode, showBC = M._anyBarcode(si.items, bcMode);
     const colDefs = [{ key: 'stt', label: 'STT', align: 'center', w: 9 }];
     if (sc) colDefs.push({ key: 'code', label: 'Mã hàng' });
-    if (showBC) colDefs.push({ key: 'barcode', label: 'Mã vạch', align: 'center' });
+    if (showBC) colDefs.push({ key: 'barcode', label: M._barcodeLabel(bcMode), align: 'center' });
     colDefs.push({ key: 'name', label: sc ? 'Tên hàng' : 'Tên hàng hóa' });
     colDefs.push({ key: 'unit', label: 'ĐVT', align: 'center' });
     colDefs.push({ key: 'qty', label: sc ? 'Số lượng' : 'SL', align: 'right' });
@@ -256,7 +257,7 @@ M.docPdfNative = async function (si, type, size, action, opts) {
         switch (c.key) {
           case 'stt': return i + 1;
           case 'code': return p ? p.code : '';
-          case 'barcode': return p ? (p.barcode || '') : '';
+          case 'barcode': return M._barcodeVal(p, bcMode);
           case 'name': return p ? (sc ? p.name : ((p.code ? p.code + ' - ' : '') + p.name)) : '';
           case 'unit': return p ? p.unit : '';
           case 'qty': return U.num(it.qty);
@@ -345,9 +346,22 @@ M.docPdfNative = async function (si, type, size, action, opts) {
   }
 };
 
-// Có dòng hàng nào có mã vạch (barcode) không -> hiện cột "Mã vạch" cho FAHASA
-M._anyBarcode = function (items) {
-  return (items || []).some(it => { const p = PW.product(it.productId); return p && p.barcode; });
+// Mã vạch theo HỆ THỐNG: 'fahasa' -> product.barcode ; 'pn' (Phương Nam) -> product.barcodePN ;
+// 'none' -> rỗng ; mặc định/'any' -> ưu tiên FAHASA, không có thì Phương Nam.
+M._barcodeVal = function (p, mode) {
+  if (!p) return '';
+  if (mode === 'none') return '';
+  if (mode === 'pn') return p.barcodePN || '';
+  if (mode === 'fahasa') return p.barcode || '';
+  return p.barcode || p.barcodePN || '';
+};
+M._barcodeLabel = function (mode) {
+  return mode === 'pn' ? 'Mã vạch Phương Nam' : (mode === 'fahasa' ? 'Mã vạch FAHASA' : 'Mã vạch');
+};
+// Có dòng hàng nào có mã vạch (theo mode) không -> để hiện/ẩn cột "Mã vạch"
+M._anyBarcode = function (items, mode) {
+  if (mode === 'none') return false;
+  return (items || []).some(it => M._barcodeVal(PW.product(it.productId), mode));
 };
 
 M._companyHeader = function () {
@@ -360,15 +374,15 @@ M._companyHeader = function () {
     + '</div></div>';
 };
 
-// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá; showBC -> cột Mã vạch; showCode -> tách cột Mã hàng)
-M._itemRows = function (doc, showPrice, showBC, showCode) {
+// Bảng hàng hóa dùng chung (showPrice=false -> ẩn cột giá; showBC -> cột Mã vạch theo bcMode; showCode -> tách cột Mã hàng)
+M._itemRows = function (doc, showPrice, showBC, showCode, bcMode) {
   return doc.items.map((it, i) => {
     const p = PW.product(it.productId);
     const price = Number(it.price != null ? it.price : it.cost || 0);
     const lt = Number(it.qty) * price;
     const nameCell = showCode ? (p ? p.name : '') : (p ? (p.code ? p.code + ' - ' : '') + p.name : '');
     return '<tr><td class="c">' + (i + 1) + '</td>'
-      + (showBC ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : '')
+      + (showBC ? '<td class="c">' + U.esc(M._barcodeVal(p, bcMode)) + '</td>' : '')
       + (showCode ? '<td>' + U.esc(p ? (p.code || '') : '') + '</td>' : '')
       + '<td>' + U.esc(nameCell) + '</td>'
       + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
@@ -387,9 +401,10 @@ M.printInvoice = function (si, size, action, opts) {
   const grand = sub + vat;
   const accD = c.accDebit || '131';   // Nợ: phải thu khách hàng
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
-  const bc = M._anyBarcode(si.items);
+  const bcMode = opts && opts.bcMode;
+  const bc = M._anyBarcode(si.items, bcMode);
   const congSpan = (bc ? 5 : 4), totSpan = (bc ? 7 : 6);   // có cột Mã hàng (+1) và Mã vạch (+1 khi có)
-  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">' + M._barcodeLabel(bcMode) + '</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">HÓA ĐƠN BÁN HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date) + '</div>'
@@ -404,7 +419,7 @@ M.printInvoice = function (si, size, action, opts) {
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px;width:200px">'
     + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
     + '</tr></table>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true, bcMode) + '</tbody>'
     + '<tfoot>'
     + '<tr><td colspan="' + congSpan + '" class="r"><b>Cộng</b></td><td class="r"><b>' + U.num(si.items.reduce((s, it) => s + Number(it.qty || 0), 0)) + '</b></td><td></td><td class="r"><b>' + U.money(sub) + '</b></td></tr>'
     + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
@@ -426,9 +441,10 @@ M.deliveryNote = function (si, size, action, opts) {
   const grand = sub + vat;
   const cod = grand - Number(si.paid || 0);
   const ch = PW.channel(si.channelId);
-  const bc = M._anyBarcode(si.items);
+  const bcMode = opts && opts.bcMode;
+  const bc = M._anyBarcode(si.items, bcMode);
   const totSpan = bc ? 7 : 6;   // có cột Mã hàng (+1) và Mã vạch (+1 khi có)
-  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
+  const head = '<th class="c" style="width:34px">STT</th>' + (bc ? '<th class="c">' + M._barcodeLabel(bcMode) + '</th>' : '') + '<th>Mã hàng</th><th>Tên hàng hóa</th><th class="c">ĐVT</th><th class="r">SL</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th>';
   const inner = M._companyHeader()
     + '<h1 class="doc-title">PHIẾU GIAO HÀNG</h1>'
     + '<div class="doc-sub">Số: ' + U.esc(si.code) + ' &nbsp;·&nbsp; Ngày ' + U.date(si.date)
@@ -436,7 +452,7 @@ M.deliveryNote = function (si, size, action, opts) {
     + '<div class="party"><b>Người nhận:</b> ' + U.esc(cus ? cus.name : '') + '<br>'
     + '<b>Điện thoại:</b> ' + U.esc(cus ? cus.phone : '') + '<br>'
     + '<b>Địa chỉ giao:</b> ' + U.esc(cus ? cus.address : '') + '</div>'
-    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true) + '</tbody>'
+    + '<table class="it"><thead><tr>' + head + '</tr></thead><tbody>' + M._itemRows(si, true, bc, true, bcMode) + '</tbody>'
     + '<tfoot>'
     + '<tr><td colspan="' + totSpan + '" class="r">Cộng tiền hàng</td><td class="r">' + U.money(sub) + '</td></tr>'
     + (Number(si.vatRate) ? '<tr><td colspan="' + totSpan + '" class="r">Thuế GTGT (' + si.vatRate + '%)</td><td class="r">' + U.money(vat) + '</td></tr>' : '')
@@ -465,13 +481,14 @@ M.warehouseIssueNote = function (si, size, action, opts) {
   const accC = c.accCredit || '5111';  // Có: doanh thu bán hàng
   const [yy, mm, dd] = (si.date || U.today()).split('-');
 
-  const bc = M._anyBarcode(si.items);
+  const bcMode = opts && opts.bcMode;
+  const bc = M._anyBarcode(si.items, bcMode);
   const congSpan = bc ? 5 : 4, totSpan = bc ? 7 : 6;   // colspan tfoot tăng 1 khi có cột Mã vạch
   const rows = si.items.map((it, i) => {
     const p = PW.product(it.productId);
     const price = Number(it.price || 0);
     return '<tr><td class="c">' + (i + 1) + '</td><td>' + U.esc(p ? p.code : '') + '</td>'
-      + (bc ? '<td class="c">' + U.esc(p ? (p.barcode || '') : '') + '</td>' : '')
+      + (bc ? '<td class="c">' + U.esc(M._barcodeVal(p, bcMode)) + '</td>' : '')
       + '<td>' + U.esc(p ? p.name : '') + '</td>'
       + '<td class="c">' + U.esc(p ? p.unit : '') + '</td><td class="r">' + U.num(it.qty) + '</td>'
       + '<td class="r">' + U.money(price) + '</td><td class="r">' + U.money(Number(it.qty) * price) + '</td></tr>';
@@ -497,7 +514,7 @@ M.warehouseIssueNote = function (si, size, action, opts) {
     + 'Nợ: ' + U.esc(accD) + '<br>Có: ' + U.esc(accC) + '<br>Loại tiền: VND</td>'
     + '</tr></table>'
     + '<table class="it"><thead><tr><th class="c" style="width:32px">STT</th><th>Mã hàng</th>'
-    + (bc ? '<th class="c">Mã vạch</th>' : '') + '<th>Tên hàng</th>'
+    + (bc ? '<th class="c">' + M._barcodeLabel(bcMode) + '</th>' : '') + '<th>Tên hàng</th>'
     + '<th class="c">Đơn vị</th><th class="r">Số lượng</th><th class="r">Đơn giá</th><th class="r">Thành tiền</th></tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '<tfoot>'
@@ -553,13 +570,13 @@ M._invoiceAoa = function (si) {
 };
 // Trả về { blob, ext }. Ưu tiên Excel ĐẸP (ExcelJS: viền/đậm/font/in/freeze/lọc/SUM/logo);
 // lỗi -> bản thường (SheetJS) -> CSV.
-M._invoiceExcelBlob = async function (si) {
-  try { return await M._invoiceExcelExcelJS(si); }
+M._invoiceExcelBlob = async function (si, bcMode) {
+  try { return await M._invoiceExcelExcelJS(si, bcMode); }
   catch (e) { console.warn('Excel đẹp (ExcelJS) lỗi -> bản thường:', e); }
   return M._invoiceExcelSheetJS(si);
 };
-/* ===== Excel ĐẸP như MISA (ExcelJS) ===== */
-M._invoiceExcelExcelJS = async function (si) {
+/* ===== Excel ĐẸP như MISA (ExcelJS) — bcMode: 'none'|'fahasa'|'pn' ===== */
+M._invoiceExcelExcelJS = async function (si, bcMode) {
   await M._ensureExcelJsLib();
   const EJS = window.ExcelJS;
   const c = M.company(), cus = PW.customer(si.customerId);
@@ -576,10 +593,10 @@ M._invoiceExcelExcelJS = async function (si) {
   const ws = wb.addWorksheet('HoaDon', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.5, right: 0.4, top: 0.6, bottom: 0.5, header: 0.3, footer: 0.3 } },
   });
-  // Cấu trúc cột (thêm 'Mã vạch' sau 'Mã hàng' khi có hàng FAHASA có barcode)
-  const showBC = M._anyBarcode(si.items);
+  // Cấu trúc cột (thêm 'Mã vạch' theo bcMode khi chọn FAHASA/Phương Nam)
+  const showBC = M._anyBarcode(si.items, bcMode);
   const colList = showBC
-    ? [['stt', 'STT', 9], ['code', 'Mã hàng', 18], ['barcode', 'Mã vạch', 18], ['name', 'Tên hàng', 46], ['unit', 'ĐVT', 9], ['qty', 'Số lượng', 11], ['price', 'Đơn giá', 15], ['amount', 'Thành tiền', 17]]
+    ? [['stt', 'STT', 9], ['code', 'Mã hàng', 18], ['barcode', M._barcodeLabel(bcMode), 18], ['name', 'Tên hàng', 46], ['unit', 'ĐVT', 9], ['qty', 'Số lượng', 11], ['price', 'Đơn giá', 15], ['amount', 'Thành tiền', 17]]
     : [['stt', 'STT', 9], ['code', 'Mã hàng', 18], ['name', 'Tên hàng', 46], ['unit', 'ĐVT', 9], ['qty', 'Số lượng', 11], ['price', 'Đơn giá', 15], ['amount', 'Thành tiền', 17]];
   const NC = colList.length, idxOf = {};
   colList.forEach((c, i) => { idxOf[c[0]] = i + 1; });
@@ -627,7 +644,7 @@ M._invoiceExcelExcelJS = async function (si) {
       switch (col[0]) {
         case 'stt': v = i + 1; break;
         case 'code': v = p ? p.code : ''; break;
-        case 'barcode': v = p ? (p.barcode || '') : ''; break;
+        case 'barcode': v = M._barcodeVal(p, bcMode); break;
         case 'name': v = p ? p.name : ''; break;
         case 'unit': v = p ? p.unit : ''; break;
         case 'qty': v = qty; break;
@@ -743,9 +760,9 @@ M._invoiceExcelSheetJS = async function (si) {
     return { blob: new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), ext: 'csv' };
   }
 };
-M.exportDocExcel = async function (si, fname) {
+M.exportDocExcel = async function (si, fname, bcMode) {
   U.toast('Đang tạo Excel...');
-  const { blob, ext } = await M._invoiceExcelBlob(si);
+  const { blob, ext } = await M._invoiceExcelBlob(si, bcMode);
   M._download(blob, (fname || 'HoaDon-' + si.code) + '.' + ext);
   U.toast('Đã xuất Excel: ' + (fname || si.code));
 };
@@ -857,7 +874,7 @@ M._listExcelExcelJS = async function (opts) {
 /* ---------- Gửi chứng từ qua Zalo ----------
    Ưu tiên đính kèm FILE PDF (builderFn tạo PDF). Điện thoại: Web Share -> chọn Zalo.
    Máy tính: tải tệp + copy nội dung + mở Zalo để đính kèm. (Gửi PDF tự động tới từng KH cần Zalo OA.) */
-M.sendZalo = function (si, builderFn, size, fmt) {
+M.sendZalo = function (si, builderFn, size, fmt, bcMode) {
   const c = M.company(), cus = PW.customer(si.customerId);
   const grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
   const lines = si.items.map(it => { const p = PW.product(it.productId); return '• ' + (p ? p.name : '') + '  x' + U.num(it.qty) + ' = ' + U.money(Number(it.qty) * Number(it.price || 0)) + 'đ'; }).join('\n');
@@ -879,13 +896,13 @@ M.sendZalo = function (si, builderFn, size, fmt) {
     }
   }
   function sendExcel() {
-    M._invoiceExcelBlob(si).then(({ blob, ext }) => {
+    M._invoiceExcelBlob(si, bcMode).then(({ blob, ext }) => {
       let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.' + ext, { type: blob.type }); } catch (e) {}
       shareFile(f);
     });
   }
   if (fmt === 'excel' || !builderFn) return sendExcel();   // gửi Excel (.xlsx)
-  builderFn(si, size || 'A4', 'pdf-blob', { then: (blob) => {   // gửi PDF
+  builderFn(si, size || 'A4', 'pdf-blob', { bcMode: bcMode, then: (blob) => {   // gửi PDF
     if (!blob) return sendExcel();
     let f = null; try { f = new File([blob], 'HoaDon-' + si.code + '.pdf', { type: 'application/pdf' }); } catch (e) {}
     shareFile(f);
@@ -936,16 +953,23 @@ M.printMenu = function (si) {
     { value: 'A5', label: 'Khổ A5 (nửa trang)' },
     { value: '80', label: 'Khổ 80mm (máy in nhiệt)' },
   ], M.company().printSize || 'A4');
+  // Cột mã vạch trên chứng từ/file: Không có / FAHASA / Phương Nam
+  const bcSel = C.select([
+    { value: 'none', label: 'Không có mã vạch' },
+    { value: 'fahasa', label: 'Mã vạch FAHASA' },
+    { value: 'pn', label: 'Mã vạch Phương Nam' },
+  ], 'none');
   const fnOf = () => ({ warehouse: M.warehouseIssueNote, invoice: M.printInvoice, delivery: M.deliveryNote }[typeSel.value] || M.warehouseIssueNote);
+  const bcSuffix = () => ({ fahasa: '-FAHASA', pn: '-PhuongNam' }[bcSel.value] || '');
   C.modal({
     title: 'In / Xuất / Gửi — ' + si.code,
     body: U.el('div', null, [
-      U.el('div', { class: 'form-grid' }, [C.field('Loại chứng từ', typeSel), C.field('Khổ giấy', sizeSel)]),
+      U.el('div', { class: 'form-grid' }, [C.field('Loại chứng từ', typeSel), C.field('Khổ giấy', sizeSel), C.field('Cột mã vạch', bcSel)]),
       U.el('p', { class: 'section-sub', style: 'margin:12px 0 6px;font-weight:600' }, 'In / Xuất file:'),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('🖨 In', () => { const fn = fnOf(); C.closeModal(); fn(si, sizeSel.value); }, 'primary'),
-        C.btn('📄 Xuất PDF', () => { const fn = fnOf(), sz = sizeSel.value; M.askFileName('HoaDon-' + si.code, 'pdf', nm => fn(si, sz, 'pdf', { fname: nm })); }),
-        C.btn('📊 Xuất Excel', () => { M.askFileName('HoaDon-' + si.code, 'csv', nm => M.exportDocExcel(si, nm)); }),
+        C.btn('🖨 In', () => { const fn = fnOf(); C.closeModal(); fn(si, sizeSel.value, 'print', { bcMode: bcSel.value }); }, 'primary'),
+        C.btn('📄 Xuất PDF', () => { const fn = fnOf(), sz = sizeSel.value, bm = bcSel.value; M.askFileName('HoaDon-' + si.code + bcSuffix(), 'pdf', nm => fn(si, sz, 'pdf', { fname: nm, bcMode: bm })); }),
+        C.btn('📊 Xuất Excel', () => { const bm = bcSel.value; M.askFileName('HoaDon-' + si.code + bcSuffix(), 'xlsx', nm => M.exportDocExcel(si, nm, bm)); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Hóa đơn điện tử (phần mềm thuế):'),
       U.el('div', { class: 'pill-row' }, [
@@ -953,8 +977,8 @@ M.printMenu = function (si) {
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách qua Zalo:'),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('💬 Gửi Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value, 'pdf'); }, 'primary'),
-        C.btn('📊 Gửi Zalo (Excel)', () => { M.sendZalo(si, null, sizeSel.value, 'excel'); }),
+        C.btn('💬 Gửi Zalo (PDF)', () => { M.sendZalo(si, fnOf(), sizeSel.value, 'pdf', bcSel.value); }, 'primary'),
+        C.btn('📊 Gửi Zalo (Excel)', () => { M.sendZalo(si, null, sizeSel.value, 'excel', bcSel.value); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:6px 0 0;font-size:11.5px' },
         'File lên thuế: đúng quy cách sheet "SanPham" (STT, Mã/Tên SP, ĐVT, SL, Đơn giá, Thành tiền, Mức thuế, Tiền thuế, Thành tiền có thuế) — tải về rồi up thẳng lên phần mềm HĐĐT. Xuất PDF/Excel: đặt tên file rồi tải về máy. Gửi Zalo: điện thoại mở khay chia sẻ chọn Zalo (kèm PDF).'),
