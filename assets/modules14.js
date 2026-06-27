@@ -60,6 +60,24 @@ M._ciSplitCells = function (raw) {
 // Đọc dòng TIÊU ĐỀ -> bản đồ cột { name, qty, price, code, barcode, qtyCols, fahasa } theo tên cột
 M._ciHeaderMap = function (cells) {
   const map = {};
+  // ── PHƯƠNG NAM (PNC): tiêu đề chia 2 dòng, cột kho chỉ ghi "BS" (tên chi nhánh ở dòng
+  // TRÊN). Nhận diện bằng "BARCODE PNC" / "GIÁ NHẬP TRƯỚC VAT" + "Tổng BS". KHÁC FAHASA:
+  // KHÔNG gộp cột kho — số lượng lấy THẲNG từ cột "Tổng BS"; mã vạch là PNC (barcodePN) riêng.
+  const norm = (cells || []).map(c => M._ciNorm(c));
+  const isPN = norm.some(n => /barcode pnc/.test(n)) ||
+    (norm.some(n => /gia nhap truoc vat/.test(n)) && norm.some(n => /\btong bs\b/.test(n)));
+  if (isPN) {
+    const pm = { pn: true };
+    norm.forEach((n, i) => {
+      if (!n) return;
+      if (pm.barcodePN == null && /(barcode pnc|barcode|ma vach)/.test(n)) pm.barcodePN = i;
+      else if (pm.name == null && /(ten hang|ten san pham|ten sp|hang hoa|san pham|^ten)/.test(n)) pm.name = i;
+      else if (pm.qty == null && /(tong bs|tong sl|tong so luong|tong cong sl|^tong$)/.test(n)) pm.qty = i;
+      else if (pm.price == null && /(gia nhap|don gia|gia ban|gia bia|^gia$|^gia )/.test(n)) pm.price = i;
+    });
+    if (pm.barcodePN != null) pm.barcode = pm.barcodePN;   // để _ciParseLine đọc ô barcode như cột thường
+    return pm;   // hợp lệ khi có name + qty (Tổng BS) -> KHÔNG đụng nhánh FAHASA/bảng thường
+  }
   const storeCols = [];
   (cells || []).forEach((c, i) => {
     const n = M._ciNorm(c);
@@ -156,6 +174,7 @@ M._ciParseLine = function (line, colMap) {
     aliasKey: aliasKey.replace(/[\s\-_.:|,]+/g, ' ').trim(),
     codeKey: code ? code.key : '', sizeKey: size ? size.key : '',
     barcode: barcodeCell || '',
+    bcKind: (colMap && colMap.pn) ? 'pn' : 'fahasa',   // học mã vạch vào đúng trường (barcode / barcodePN)
     qty: qty || 1, price: price || 0,
   };
 };
@@ -321,7 +340,7 @@ M._ciDetectMeta = function (text) {
 /* ---------- Chỉ mục sản phẩm & khớp ---------- */
 
 M._ciProductIndex = function () {
-  const idx = { full: {}, code: {}, all: [], barcode: {} };
+  const idx = { full: {}, code: {}, all: [], barcode: {}, barcodePN: {} };
   PW.data.products.forEach(p => {
     const source = M._ciNorm((p.code || '') + ' ' + (p.name || ''));
     const size = M._ciSize(source);
@@ -336,6 +355,8 @@ M._ciProductIndex = function () {
     }
     const bc = M._ciBarcode(p.barcode);
     if (bc) idx.barcode[bc] = ent;   // mã vạch -> định danh mạnh nhất (FAHASA)
+    const bcPN = M._ciBarcode(p.barcodePN);
+    if (bcPN) idx.barcodePN[bcPN] = ent;   // mã vạch PNC (Phương Nam)
   });
   return idx;
 };
@@ -349,9 +370,11 @@ M._ciMatch = function (parsed, idx, customerId) {
   const sizeOk = id => !parsed.sizeKey || !(ent[id] || {}).sizeKey || ent[id].sizeKey === parsed.sizeKey;
   const codeOk = id => !parsed.codeKey || !(ent[id] || {}).codeKey || ent[id].codeKey === parsed.codeKey;
 
-  // 0) MÃ VẠCH (barcode) — định danh mạnh nhất, dùng cho nhà sách FAHASA
-  if (parsed.barcode && idx.barcode && idx.barcode[parsed.barcode]) {
-    return { productId: idx.barcode[parsed.barcode].p.id, status: 'code' };
+  // 0) MÃ VẠCH (barcode) — định danh mạnh nhất. Thử CẢ hệ FAHASA lẫn PNC (Phương Nam):
+  // 2 namespace riêng nên tra thêm là an toàn, không gây khớp nhầm.
+  if (parsed.barcode) {
+    const bcHit = (idx.barcode && idx.barcode[parsed.barcode]) || (idx.barcodePN && idx.barcodePN[parsed.barcode]);
+    if (bcHit) return { productId: bcHit.p.id, status: 'code' };
   }
 
   // 1) Bí danh đã học — CHỈ nhận nếu khớp cả MÃ và KÍCH THƯỚC
@@ -483,11 +506,15 @@ M.consignImport = function (root) {
     { value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' },
   ], 0);
   const noteI = C.input({ placeholder: 'Diễn giải chứng từ (vd: ADC Linh Đàm, đợt ký gửi T6...)' });
-  // Bật/tắt định dạng FAHASA. Bật (mặc định) = tự nhận diện & xử lý ma trận kho + khớp barcode.
-  const fahasaChk = U.el('input', { type: 'checkbox' }); fahasaChk.checked = true;
-  fahasaChk.addEventListener('change', () => { if (ta.value.trim()) doParse(); });
-  const fahasaField = U.el('div', { class: 'field full' },
-    U.el('label', { class: 'radio' }, [fahasaChk, ' 📚 Định dạng FAHASA — tự nhận diện file ma trận nhiều kho (gộp số lượng) & khớp theo mã vạch. Bỏ tích nếu file thường.']));
+  // Định dạng nhập — tự động nhận diện FAHASA / Phương Nam / bảng thường; có thể ép tay.
+  const fmtSel = C.select([
+    { value: 'auto', label: '🔎 Tự động nhận diện (FAHASA / Phương Nam / bảng thường)' },
+    { value: 'fahasa', label: '📚 FAHASA — ma trận nhiều kho, gộp số lượng, khớp mã vạch' },
+    { value: 'pn', label: '📗 Phương Nam — số lượng từ cột "Tổng BS", mã vạch PNC' },
+    { value: 'plain', label: '📄 Bảng thường — không gộp cột kho' },
+  ], 'auto');
+  fmtSel.addEventListener('change', () => { if (ta.value.trim()) doParse(); });
+  const fahasaField = C.field('Định dạng nhập', fmtSel, { full: true });
   const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
   fg.appendChild(C.field('Nhà sách (khách hàng)', cusRow, { required: true }));
@@ -561,11 +588,18 @@ M.consignImport = function (root) {
       const hm = M._ciHeaderMap(hc);
       if (hm.name != null && (hm.qty != null || hm.price != null || hm.qtyCols)) { colMap = hm; headerIdx = i; break; }
     }
-    // Tôn trọng công tắc FAHASA: bỏ tích -> xử lý như bảng thường (không gộp cột kho)
-    if (colMap && colMap.fahasa && !fahasaChk.checked) { delete colMap.fahasa; delete colMap.qtyCols; }
+    // Ép định dạng theo lựa chọn (auto = giữ kết quả tự nhận diện)
+    const fmt = fmtSel.value;
+    if (colMap) {
+      if (fmt === 'plain') { delete colMap.fahasa; delete colMap.qtyCols; delete colMap.pn; }
+      else if (fmt === 'fahasa') { delete colMap.pn; }   // không áp luồng Phương Nam
+      else if (fmt === 'pn') { delete colMap.fahasa; delete colMap.qtyCols; }   // không gộp cột kho
+    }
     const dataLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
     if (colMap && colMap.fahasa) detectLine.innerHTML = (detectLine.innerHTML ? detectLine.innerHTML + '<br>' : '') +
       '📚 Định dạng <b>FAHASA</b> — gộp số lượng tất cả kho, khớp ưu tiên theo <b>mã vạch (barcode)</b>.';
+    else if (colMap && colMap.pn) detectLine.innerHTML = (detectLine.innerHTML ? detectLine.innerHTML + '<br>' : '') +
+      '📗 Định dạng <b>Phương Nam</b> — số lượng lấy từ cột <b>"Tổng BS"</b>, khớp ưu tiên theo <b>mã vạch PNC</b>.';
     state.rows = [];
     dataLines.forEach(l => {
       const parsed = M._ciParseLine(l, colMap);
@@ -667,12 +701,15 @@ M.consignImport = function (root) {
       if (exists) { exists.productId = r.productId; return; }
       PW.data.productAliases.push({ id: PW.uid(), customerId: cusSel.ppValue(), alias: aliasKey, productId: r.productId });
     });
-    // Học MÃ VẠCH (barcode) cho sản phẩm — lần sau file FAHASA tự khớp ngay
+    // Học MÃ VẠCH cho sản phẩm — FAHASA -> p.barcode, Phương Nam -> p.barcodePN (lần sau tự khớp ngay)
     let learnedBC = 0;
     valid.forEach(r => {
       if (!r.barcode) return;
       const p = PW.product(r.productId);
-      if (p && !M._ciBarcode(p.barcode)) { p.barcode = r.barcode; learnedBC++; }
+      if (!p) return;
+      if (r.bcKind === 'pn') {
+        if (!M._ciBarcode(p.barcodePN)) { p.barcodePN = r.barcode; learnedBC++; }
+      } else if (!M._ciBarcode(p.barcode)) { p.barcode = r.barcode; learnedBC++; }
     });
 
     const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));

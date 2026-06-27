@@ -1,10 +1,10 @@
-/* ============================================================
+﻿/* ============================================================
    sw.js — Service worker cho PWA DALI Kế toán
    Chiến lược: NETWORK-FIRST cho asset cùng nguồn (tôn trọng ?v= chống cache),
    rớt mạng thì lấy bản đã cache → app vẫn mở được khi offline.
    KHÔNG đụng tới /api/ (luôn đi thẳng mạng — giữ nguyên CSRF/đăng nhập/lưu).
    ============================================================ */
-const CACHE = 'dali-pwa-v20260622l';
+const CACHE = 'dali-pwa-v20260622m';
 
 self.addEventListener('install', () => {
   self.skipWaiting();   // kích hoạt SW mới ngay
