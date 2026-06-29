@@ -950,12 +950,64 @@ M._taxRows = function (si) {
     return [i + 1, p ? (p.code || '') : '', p ? p.name : '', p ? (p.unit || '') : '', qty, price, tien, rate + '%', '', thue, tien + thue];
   });
 };
-M.exportTaxUpload = async function (si, fname) {
+// Đọc KÍCH THƯỚC của 1 sản phẩm — CHỈ cho hàng là TRANH (để không gắn nhãn/gộp nhầm
+// khung tranh, vật tư... có số kiểu "40x50" trong tên). Quy tắc:
+//  (a) group LÀ kích thước (do import ký gửi đặt) -> chắc chắn là tranh nhóm theo size;
+//  (b) group không phải size -> chỉ nhận nếu tên BẮT ĐẦU bằng "tranh" và KHÔNG thuộc
+//      nhóm khung/vật tư/dịch vụ (loại "Khung tranh gỗ 40x50", "Bộ màu...", dịch vụ, NVL).
+M._prodSize = function (p) {
+  if (!p) return null;
+  const byGroup = M._ciSize(M._ciNorm(p.group || ''));
+  if (byGroup) return byGroup;
+  if (p.kind === 'dichvu' || p.kind === 'nvl') return null;
+  const nm = M._ciNorm(p.name || '');
+  const tag = nm + ' ' + M._ciNorm(p.group || '');
+  if (/(khung|vat tu|vat lieu|nguyen lieu|phu kien|phu lieu|cong cu|dung cu|dich vu)/.test(tag)) return null;
+  if (!/^tranh\b/.test(nm)) return null;   // không phải tranh -> không gộp theo size
+  return M._ciSize(M._ciNorm((p.code || '') + ' ' + nm));
+};
+// Hóa đơn này có phải nhà sách Phương Nam? (tên KH chứa "Phương Nam" hoặc có cửa hàng con)
+M._isPhuongNam = function (si) {
+  const cus = PW.customer(si.customerId);
+  return /phuong nam/.test(M._ciNorm(cus ? cus.name : '')) || !!si.subStore;
+};
+// GỘP dòng hàng theo KÍCH THƯỚC (luồng Phương Nam): mỗi (size + đơn giá) -> 1 dòng
+// "Tranh tô màu số hóa {size}", ĐVT "Tranh", SL = tổng. SP không đọc được size -> giữ 1 dòng riêng.
+M._taxRowsBySize = function (si) {
+  const rate = Number(si.vatRate) || 0;
+  const groups = new Map();   // key: sizeKey|price -> { sizeDisp, qty, price }
+  const loose = [];           // SP không có size -> giữ nguyên
+  (si.items || []).forEach(it => {
+    const p = PW.product(it.productId);
+    const qty = Number(it.qty) || 0, price = Number(it.price || 0);
+    const sz = M._prodSize(p);
+    if (!sz) { loose.push({ p: p, qty: qty, price: price }); return; }
+    const key = sz.key + '|' + price;
+    const g = groups.get(key) || { sizeDisp: sz.key.toLowerCase(), qty: 0, price: price };
+    g.qty += qty;
+    groups.set(key, g);
+  });
+  const rows = [];
+  let i = 0;
+  Array.from(groups.values())
+    .sort((a, b) => a.sizeDisp.localeCompare(b.sizeDisp) || a.price - b.price)
+    .forEach(g => {
+      const tien = g.qty * g.price, thue = Math.round(tien * rate / 100);
+      rows.push([++i, g.sizeDisp.toUpperCase(), 'Tranh tô màu số hóa ' + g.sizeDisp, 'Tranh', g.qty, g.price, tien, rate + '%', '', thue, tien + thue]);
+    });
+  loose.forEach(x => {
+    const tien = x.qty * x.price, thue = Math.round(tien * rate / 100);
+    rows.push([++i, x.p ? (x.p.code || '') : '', x.p ? x.p.name : '', x.p ? (x.p.unit || 'Tranh') : 'Tranh', x.qty, x.price, tien, rate + '%', '', thue, tien + thue]);
+  });
+  return rows;
+};
+M.exportTaxUpload = async function (si, fname, opts) {
+  opts = opts || {};
   U.toast('Đang tạo file lên phần mềm thuế...');
   try {
     await M._ensureXlsxLib();
     const X = window.XLSX;
-    const aoa = [M._TAX_HEADERS].concat(M._taxRows(si));
+    const aoa = [M._TAX_HEADERS].concat(opts.groupBySize ? M._taxRowsBySize(si) : M._taxRows(si));
     const ws = X.utils.aoa_to_sheet(aoa);
     ws['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 62 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 9 }, { wch: 14 }, { wch: 13 }, { wch: 17 }];
     // Định dạng số có dấu phân cách cho cột tiền: G(6), J(9), K(10)
@@ -987,6 +1039,9 @@ M.printMenu = function (si) {
   ], 'none');
   const fnOf = () => ({ warehouse: M.warehouseIssueNote, invoice: M.printInvoice, delivery: M.deliveryNote }[typeSel.value] || M.warehouseIssueNote);
   const bcSuffix = () => ({ fahasa: '-FAHASA', pn: '-PhuongNam' }[bcSel.value] || '');
+  // Phương Nam: gộp dòng hàng theo kích thước khi xuất file thuế (tự bật nếu là hóa đơn Phương Nam)
+  const groupSizeChk = U.el('input', { type: 'checkbox' });
+  groupSizeChk.checked = M._isPhuongNam(si);
   C.modal({
     title: 'In / Xuất / Gửi — ' + si.code,
     body: U.el('div', null, [
@@ -998,8 +1053,10 @@ M.printMenu = function (si) {
         C.btn('📊 Xuất Excel', () => { const bm = bcSel.value; M.askFileName('HoaDon-' + si.code + bcSuffix(), 'xlsx', nm => M.exportDocExcel(si, nm, bm)); }),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Hóa đơn điện tử (phần mềm thuế):'),
+      U.el('div', { style: 'margin:0 0 8px' },
+        U.el('label', { class: 'radio', style: 'font-size:12px' }, [groupSizeChk, ' Gộp theo kích thước (Phương Nam) — gộp các tranh cùng size thành 1 dòng "Tranh tô màu số hóa {size}"'])),
       U.el('div', { class: 'pill-row' }, [
-        C.btn('🧾 Xuất file lên phần mềm thuế', () => { M.askFileName('FileUpThue-' + si.code, 'xlsx', nm => M.exportTaxUpload(si, nm)); }, 'primary'),
+        C.btn('🧾 Xuất file lên phần mềm thuế', () => { const gb = groupSizeChk.checked; M.askFileName('FileUpThue-' + si.code, 'xlsx', nm => M.exportTaxUpload(si, nm, { groupBySize: gb })); }, 'primary'),
       ]),
       U.el('p', { class: 'section-sub', style: 'margin:14px 0 6px;font-weight:600' }, 'Gửi cho khách qua Zalo:'),
       U.el('div', { class: 'pill-row' }, [
