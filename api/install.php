@@ -45,6 +45,15 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS app_data (
 // Khởi tạo dòng dữ liệu rỗng (id=1) nếu chưa có
 $pdo->exec("INSERT IGNORE INTO app_data (id, data, version) VALUES (1, NULL, 0)");
 
+// Bảng LỊCH SỬ: lưu bản trước mỗi lần ghi đè app_data (để rollback khi mất dữ liệu)
+$pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  data LONGTEXT,
+  version INT,
+  updated_by VARCHAR(50) DEFAULT '',
+  saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
 // Tạo admin mặc định nếu chưa có user nào
 $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 $created = null;

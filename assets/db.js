@@ -118,26 +118,31 @@ PW.load = async function () {
 };
 
 /* ---------- Lưu dữ liệu ---------- */
-PW.save = function () {
+PW.save = function (force) {
   if (PW.mode === 'server') {
     // Gộp nhiều thay đổi liên tiếp, lưu sau 600ms
     clearTimeout(PW._saveTimer);
-    PW._saveTimer = setTimeout(() => { PW.saveNow(); }, 600);
+    PW._saveTimer = setTimeout(() => { PW.saveNow(force); }, 600);
     return;
   }
   localStorage.setItem(PW.KEY, JSON.stringify(PW.data));
 };
 
-// Lưu ngay lên server (chế độ server)
-PW.saveNow = async function () {
+// Lưu ngay lên server (chế độ server). force=true -> bỏ qua lớp chắn mất dữ liệu (chỉ dùng cho xóa/khôi phục có xác nhận)
+PW.saveNow = async function (force) {
   if (PW.mode !== 'server') return;
   clearTimeout(PW._saveTimer);
   const r = await PW.api('data.php?action=save', {
     method: 'POST',
-    body: JSON.stringify({ data: PW.data, version: PW._version }),
+    body: JSON.stringify({ data: PW.data, version: PW._version, force: !!force }),
   });
   if (r.status === 200 && r.data && r.data.ok) {
     PW._version = r.data.version;
+  } else if (r.status === 409 && r.data && r.data.error === 'data_loss_guard') {
+    // Server chặn vì bản mới làm mất nhiều dữ liệu. Lúc này PW.data trên máy đang LỆCH (chưa lưu được);
+    // mọi lần lưu sau cũng sẽ bị chặn -> TẢI LẠI để đồng bộ về bản tốt trên máy chủ (tránh kẹt + RAM hỏng).
+    if (typeof U !== 'undefined') U.toast((r.data.message || 'Lưu bị chặn để tránh mất dữ liệu.') + ' Đang tải lại bản trên máy chủ...', 'error');
+    setTimeout(() => location.reload(), 3000);
   } else if (r.status === 409) {
     // Người khác vừa cập nhật -> tải lại để tránh mất dữ liệu
     if (typeof U !== 'undefined') U.toast('Dữ liệu vừa được người khác cập nhật, đang tải lại...', 'error');
@@ -152,6 +157,7 @@ PW.saveNow = async function () {
   } else if (typeof U !== 'undefined') {
     U.toast('Lỗi lưu dữ liệu lên server', 'error');
   }
+  return r;
 };
 
 /* ---------- Sinh mã / id ---------- */
@@ -660,16 +666,32 @@ PW.expenses = function (fromYmd, toYmd) {
 /* ---------- Xóa & nạp lại dữ liệu mẫu ---------- */
 PW.reset = function () {
   PW.data = PW.seed();
-  PW.save();
+  PW.save(true);   // xóa cố ý -> qua lớp chắn mất dữ liệu
 };
 
 /* ---------- Xuất / nhập dữ liệu (sao lưu) ---------- */
 PW.exportJSON = function () {
   return JSON.stringify(PW.data, null, 2);
 };
-PW.importJSON = function (text) {
-  PW.data = JSON.parse(text);
-  PW.save();
+// Nhập file sao lưu. KIỂM TRA cấu trúc để tránh nhập nhầm file (vd file xuất 1 danh mục)
+// làm mất sạch dữ liệu như sự cố trước. Việc cảnh báo "mất bao nhiêu" do giao diện lo.
+PW.importJSON = function (text, opts) {
+  opts = opts || {};
+  const obj = JSON.parse(text);
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj))
+    throw new Error('File không phải dữ liệu sao lưu hợp lệ.');
+  const markers = ['meta', 'products', 'customers', 'salesInvoices', 'cashAccounts', 'suppliers', 'purchases'];
+  if (markers.filter(k => k in obj).length < 2)
+    throw new Error('File này KHÔNG giống bản sao lưu đầy đủ (thiếu cấu trúc dữ liệu). Đã hủy để tránh mất dữ liệu.');
+  // TỰ kiểm mất dữ liệu (KHÔNG phụ thuộc giao diện) — bảo vệ cả chế độ offline & mọi caller (vd gọi qua console)
+  const big = ['salesInvoices', 'customers', 'products', 'purchases', 'payments', 'employees', 'suppliers', 'salesOrders'];
+  const cur = PW.data || {};
+  const loss = big.filter(k => (cur[k] || []).length >= 3 && (!Array.isArray(obj[k]) || obj[k].length === 0));
+  if (loss.length && !opts.allowLoss)
+    throw new Error('File thiếu dữ liệu ở các mục đang có: ' + loss.join(', ') + '. Đã hủy để tránh mất dữ liệu.');
+  PW.data = obj;
+  PW._normalize();
+  PW.save(loss.length > 0);   // chỉ bỏ qua lớp chắn server khi THỰC SỰ mất & đã được xác nhận; không mất -> để guard bảo vệ
 };
 
 /* ============================================================

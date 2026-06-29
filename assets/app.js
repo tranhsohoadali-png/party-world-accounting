@@ -271,11 +271,23 @@ App.settings = function (root) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
+      let obj;
+      try { obj = JSON.parse(reader.result); }
+      catch (err) { U.toast('File không đọc được (JSON hỏng).', 'error'); importInput.value = ''; return; }
+      // CẢNH BÁO nếu phục hồi sẽ LÀM MẤT dữ liệu đang có (chống nhập nhầm file -> xóa trắng như sự cố trước)
+      const big = ['salesInvoices', 'customers', 'products', 'purchases', 'payments', 'employees'];
+      const loss = big.filter(k => (PW.data[k] || []).length >= 3 && (!obj || !Array.isArray(obj[k]) || obj[k].length === 0));
+      let msg = 'Phục hồi sẽ THAY THẾ TOÀN BỘ dữ liệu hiện tại bằng nội dung file.';
+      if (loss.length) msg += '\n\n⚠️ CẢNH BÁO: file thiếu/không có dữ liệu ở các mục bạn đang có: ' + loss.join(', ')
+        + '.\nNếu tiếp tục, các mục này sẽ MẤT. Hãy chắc đây đúng là file sao lưu ĐẦY ĐỦ (không phải file xuất một danh mục).';
+      msg += '\n\nTiếp tục phục hồi?';
+      if (!U.confirm(msg)) { U.toast('Đã hủy phục hồi'); importInput.value = ''; return; }
       try {
-        PW.importJSON(reader.result);
+        PW.importJSON(reader.result, { allowLoss: loss.length > 0 });   // người dùng đã xác nhận mất dữ liệu ở trên
         U.toast('Đã phục hồi dữ liệu');
         App.refresh();
-      } catch (err) { U.toast('File không hợp lệ', 'error'); }
+      } catch (err) { U.toast(err.message || 'File không hợp lệ', 'error'); }
+      importInput.value = '';
     };
     reader.readAsText(file);
   });
@@ -302,7 +314,7 @@ App.settings = function (root) {
         employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
         payrolls: [], productionOrders: [], channels: [], stockAdjustments: [], activityLog: [],
       };
-      PW.save(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
+      PW.save(true); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
     }
   });
 

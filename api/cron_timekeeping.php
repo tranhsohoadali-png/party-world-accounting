@@ -40,6 +40,10 @@ $row = $pdo->query('SELECT data, version FROM app_data WHERE id=1')->fetch(PDO::
 $version = (int)($row['version'] ?? 0);
 $data = ($row && $row['data']) ? json_decode($row['data'], true) : null;
 if (!is_array($data)) { logmsg('Chưa có dữ liệu app (chưa ai dùng app lần nào)'); exit(0); }
+// AN TOÀN: nếu blob đọc lên thiếu HẲN các mục cốt lõi -> coi như đang hỏng, KHÔNG ghi đè (khỏi lan rộng).
+foreach (['salesInvoices', 'customers'] as $coreK) {
+  if (!array_key_exists($coreK, $data)) { logmsg("CẢNH BÁO: app_data thiếu '$coreK' — có thể đang hỏng. BỎ QUA ghi để không lan rộng."); exit(0); }
+}
 $data['employees'] = $data['employees'] ?? [];
 $data['payrolls'] = $data['payrolls'] ?? [];
 
@@ -90,8 +94,19 @@ if (!$changed) { logmsg("Không có thay đổi (đã khớp $matched NV)."); ex
 $json = json_encode($data, JSON_UNESCAPED_UNICODE);
 $st = $pdo->prepare('UPDATE app_data SET data=?, version=version+1, updated_by=\'cron\' WHERE id=1 AND version=?');
 $st->execute([$json, $version]);
-if ($st->rowCount() > 0) logmsg("OK: cập nhật chấm công $matched NV tháng $month" . ($created ? ' (đã tạo bảng lương)' : '') . '.');
-else logmsg('Bỏ qua: dữ liệu vừa được người khác cập nhật, để lần chạy sau.');
+if ($st->rowCount() > 0) {
+  // CHỈ khi đã thực sự ghi đè -> lưu BẢN CŨ ($row['data'], đọc ở trên) vào lịch sử để rollback được.
+  try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (id INT AUTO_INCREMENT PRIMARY KEY, data LONGTEXT, version INT, updated_by VARCHAR(50) DEFAULT '', saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    if (!empty($row['data'])) {
+      $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by) VALUES (?,?,?)")->execute([$row['data'], $version, 'cron-before']);
+      $pdo->exec("DELETE FROM app_data_history WHERE id <= (SELECT m FROM (SELECT MAX(id) - 80 AS m FROM app_data_history) t)");
+    }
+  } catch (Throwable $e) { logmsg('Luu lich su that bai: ' . $e->getMessage()); }
+  logmsg("OK: cập nhật chấm công $matched NV tháng $month" . ($created ? ' (đã tạo bảng lương)' : '') . '.');
+} else {
+  logmsg('Bỏ qua: dữ liệu vừa được người khác cập nhật, để lần chạy sau.');
+}
 
 /* ---------------- Hàm phụ ---------------- */
 function norm($s) { return strtolower(trim((string)$s)); }

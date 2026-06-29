@@ -118,6 +118,43 @@ function pw_changed_top_keys($old, $new): array {
   return $changed;
 }
 
+/* ---------- AN TOÀN DỮ LIỆU: lịch sử (rollback) + chặn mất dữ liệu ----------
+   app_data chỉ có 1 dòng (ghi đè). Để không bao giờ mất trắng như sự cố import
+   nhầm file, ta: (1) lưu BẢN HIỆN TẠI vào app_data_history trước mỗi lần ghi;
+   (2) CHẶN ghi nếu payload mới làm mất phần lớn các mục lớn (trừ khi force). */
+function pw_ensure_history_table(PDO $pdo): void {
+  // CREATE TABLE auto-commit -> phải gọi NGOÀI transaction.
+  $pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    data LONGTEXT,
+    version INT,
+    updated_by VARCHAR(50) DEFAULT '',
+    saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+}
+// Lưu bản hiện tại (chuỗi JSON) vào lịch sử; giữ tối đa $keep bản gần nhất.
+function pw_snapshot_history(PDO $pdo, ?string $curJson, int $curVersion, string $by, int $keep = 80): void {
+  if ($curJson === null || $curJson === '') return;   // không có gì để lưu
+  $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by) VALUES (?,?,?)")
+      ->execute([$curJson, $curVersion, $by]);
+  $pdo->exec("DELETE FROM app_data_history WHERE id <= (SELECT m FROM (SELECT MAX(id) - $keep AS m FROM app_data_history) t)");
+}
+// So sánh dữ liệu MỚI với HIỆN TẠI: trả danh sách mục lớn bị mất/tụt mạnh ([] = an toàn).
+function pw_data_loss_check($curData, $newData): array {
+  if (!is_array($curData)) return [];                 // chưa có dữ liệu cũ (seed lần đầu) -> không chặn
+  if (!is_array($newData)) return ['payload rỗng/không hợp lệ'];
+  $big = ['salesInvoices','customers','products','suppliers','purchases','receipts','payments',
+          'employees','payrolls','salesOrders','salesReturns','quotations','productionOrders','cashAccounts','stockAdjustments'];
+  $drop = [];
+  foreach ($big as $k) {
+    $c = (isset($curData[$k]) && is_array($curData[$k])) ? count($curData[$k]) : 0;
+    $n = (isset($newData[$k]) && is_array($newData[$k])) ? count($newData[$k]) : 0;
+    if ($c >= 3 && $n === 0) $drop[] = "$k: $c→0";                 // mất sạch một mục đang có dữ liệu
+    elseif ($c >= 25 && $n < $c * 0.5) $drop[] = "$k: $c→$n";      // tụt quá nửa ở mục lớn
+  }
+  return $drop;
+}
+
 /* ---------- Chống CSRF (giả mạo yêu cầu từ trang khác) ----------
    Chỉ áp dụng cho request THAY ĐỔI dữ liệu (POST/PUT/PATCH/DELETE).
    Request đọc (GET/HEAD) và lệnh chạy nền (CLI/cron, không có REQUEST_METHOD)

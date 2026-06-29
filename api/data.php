@@ -24,8 +24,11 @@ if ($action === 'save') {
   $b = body();
   if (!array_key_exists('data', $b)) json_out(['error' => 'Thiếu dữ liệu'], 400);
   $clientVersion = (int)($b['version'] ?? -1);
+  // force = bỏ qua lớp chắn mất dữ liệu — CHỈ admin/ketoan (UI gate là client-side, server phải tự chặn nhanvien giả request)
+  $force = !empty($b['force']) && in_array($user['role'], ['admin', 'ketoan'], true);
 
   $pdo = pdo();
+  pw_ensure_history_table($pdo);   // tạo bảng lịch sử (NGOÀI transaction — CREATE auto-commit)
   $pdo->beginTransaction();
   // Lấy cả data + version trong 1 truy vấn (vẫn FOR UPDATE để khóa dòng)
   $row = $pdo->query('SELECT data, version FROM app_data WHERE id = 1 FOR UPDATE')->fetch();
@@ -35,24 +38,39 @@ if ($action === 'save') {
     $pdo->rollBack();
     json_out(['error' => 'conflict', 'message' => 'Dữ liệu đã được người khác cập nhật. Hãy tải lại.', 'version' => $cur], 409);
   }
+  $curData = (isset($row['data']) && $row['data'] !== null) ? json_decode($row['data'], true) : null;
 
   /* ----- Phân quyền GHI theo section (chỉ với vai trò bị giới hạn) ----- */
   $allowed = pw_allowed_sections($user['role']);
-  if ($allowed !== null) {                 // null = admin/ketoan: bỏ qua
-    $curData = (isset($row['data']) && $row['data'] !== null) ? json_decode($row['data'], true) : null;
-    if ($curData !== null) {                // bỏ qua lần khởi tạo seed đầu tiên (data=NULL)
-      $changed = pw_changed_top_keys($curData, $b['data']);
-      $violations = array_values(array_diff($changed, $allowed));
-      if ($violations) {
-        $pdo->rollBack();
-        json_out([
-          'error' => 'forbidden_sections',
-          'message' => 'Tài khoản của bạn không được phép sửa: ' . implode(', ', $violations),
-          'sections' => $violations,
-        ], 403);
-      }
+  if ($allowed !== null && $curData !== null) {   // null = admin/ketoan: bỏ qua; curData=null = seed đầu
+    $changed = pw_changed_top_keys($curData, $b['data']);
+    $violations = array_values(array_diff($changed, $allowed));
+    if ($violations) {
+      $pdo->rollBack();
+      json_out([
+        'error' => 'forbidden_sections',
+        'message' => 'Tài khoản của bạn không được phép sửa: ' . implode(', ', $violations),
+        'sections' => $violations,
+      ], 403);
     }
   }
+
+  /* ----- CHẶN MẤT DỮ LIỆU: payload mới làm mất phần lớn mục lớn -> từ chối (trừ khi force) ----- */
+  if (!$force) {
+    $loss = pw_data_loss_check($curData, $b['data']);
+    if ($loss) {
+      $pdo->rollBack();
+      json_out([
+        'error' => 'data_loss_guard',
+        'message' => 'Lưu bị CHẶN để tránh mất dữ liệu — bản mới làm mất phần lớn: ' . implode('; ', $loss)
+          . '. Hãy tải lại trang rồi thử lại. Nếu thực sự muốn xóa, dùng chức năng có xác nhận.',
+        'dropped' => $loss,
+      ], 409);
+    }
+  }
+
+  /* ----- Lưu BẢN HIỆN TẠI vào lịch sử trước khi ghi đè (để luôn rollback được) ----- */
+  pw_snapshot_history($pdo, isset($row['data']) ? $row['data'] : null, $cur, $user['username']);
 
   $newVersion = $cur + 1;
   $json = json_encode($b['data'], JSON_UNESCAPED_UNICODE);
