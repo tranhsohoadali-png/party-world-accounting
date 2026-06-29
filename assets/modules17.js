@@ -221,11 +221,13 @@ M.docPdfNative = async function (si, type, size, action, opts) {
     const lines = [];
     if (CFG.party === 'receiver') {
       lines.push(['Người nhận: ', cus ? cus.name : '', true]);
+      if (si.subStore) lines.push(['Cửa hàng con (giao tại): ', si.subStore, true]);
       lines.push(['Điện thoại: ', cus ? (cus.phone || '') : '', false]);
       lines.push(['Địa chỉ giao: ', cus ? (cus.address || '') : '', false]);
       if (si.note) lines.push(['Diễn giải: ', si.note, false]);
     } else {
       lines.push(['Tên khách hàng: ', cus ? cus.name : '', true]);
+      if (si.subStore) lines.push(['Cửa hàng con (giao tại): ', si.subStore, true]);
       lines.push(['Địa chỉ: ', cus ? (cus.address || '') : '', false]);
       lines.push(['Điện thoại: ', cus ? (cus.phone || '') : '', false]);
       lines.push(['Mã số thuế: ', cus ? (cus.taxCode || '') : '', false]);
@@ -414,6 +416,7 @@ M.printInvoice = function (si, size, action, opts) {
     + '<table style="width:100%"><tr>'
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px">'
     + 'Người mua:<br>Tên khách hàng: <b>' + U.esc(cus ? cus.name : '') + '</b><br>'
+    + (si.subStore ? 'Cửa hàng con (giao tại): <b>' + U.esc(si.subStore) + '</b><br>' : '')
     + 'Địa chỉ: ' + U.esc(cus ? (cus.address || '') : '') + '<br>'
     + 'Điện thoại: ' + U.esc(cus ? (cus.phone || '') : '') + '<br>'
     + 'Mã số thuế: ' + U.esc(cus ? (cus.taxCode || '') : '') + '<br>'
@@ -512,6 +515,7 @@ M.warehouseIssueNote = function (si, size, action, opts) {
     + '<table style="width:100%"><tr>'
     + '<td style="vertical-align:top;line-height:1.9;font-size:13px">'
     + 'Người mua:<br>Tên khách hàng: <b>' + U.esc(cus ? cus.name : '') + '</b><br>'
+    + (si.subStore ? 'Cửa hàng con (giao tại): <b>' + U.esc(si.subStore) + '</b><br>' : '')
     + 'Địa chỉ: ' + U.esc(cus ? cus.address : '') + '<br>'
     + 'Điện thoại: ' + U.esc(cus ? cus.phone : '') + '<br>'
     + 'Mã số thuế: ' + U.esc(cus ? (cus.taxCode || '') : '') + '<br>'
@@ -555,6 +559,7 @@ M._invoiceAoa = function (si) {
   rows.push(['Số chứng từ:', si.code, '', 'Ngày:', U.date(si.date)]);
   // Khối NGƯỜI MUA (đầy đủ như bản in)
   rows.push(['Khách hàng:', cus ? cus.name : '']);
+  if (si.subStore) rows.push(['Cửa hàng con (giao tại):', si.subStore]);
   rows.push(['Địa chỉ:', cus ? (cus.address || '') : '']);
   rows.push(['Điện thoại:', cus ? (cus.phone || '') : '', '', 'Mã số thuế:', cus ? (cus.taxCode || '') : '']);
   if (ch) rows.push(['Kênh bán:', ch.name]);
@@ -633,6 +638,7 @@ M._invoiceExcelExcelJS = async function (si, bcMode) {
   let R = 6;
   const party = (label, val) => { R++; merge(R, 1, R, NC); const x = ws.getCell(R, 1); x.value = { richText: [{ font: fnt({ bold: true, size: 11 }), text: label }, { font: fnt({ size: 11 }), text: String(val || '') }] }; x.alignment = { vertical: 'middle' }; };
   party('Khách hàng: ', cus ? cus.name : '');
+  if (si.subStore) party('Cửa hàng con (giao tại): ', si.subStore);
   party('Địa chỉ: ', cus ? (cus.address || '') : '');
   party('Điện thoại: ', (cus ? (cus.phone || '') : '') + '          Mã số thuế: ' + (cus ? (cus.taxCode || '') : ''));
   if (ch) party('Kênh bán: ', ch.name);
@@ -740,6 +746,7 @@ M._invoiceExcelSheetJS = async function (si) {
     wide('HÓA ĐƠN BÁN HÀNG');
     wide('Số: ' + si.code + '          Ngày ' + U.date(si.date));
     wide('Khách hàng: ' + (cus ? cus.name : ''));
+    if (si.subStore) wide('Cửa hàng con (giao tại): ' + si.subStore);
     wide('Địa chỉ: ' + (cus ? (cus.address || '') : ''));
     wide('Điện thoại: ' + (cus ? (cus.phone || '') : '') + '          Mã số thuế: ' + (cus ? (cus.taxCode || '') : ''));
     if (ch) wide('Kênh bán: ' + ch.name);

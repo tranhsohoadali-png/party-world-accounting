@@ -515,6 +515,14 @@ M.consignImport = function (root) {
   ], 'auto');
   fmtSel.addEventListener('change', () => { if (ta.value.trim()) doParse(); });
   const fahasaField = C.field('Định dạng nhập', fmtSel, { full: true });
+  // Phạm vi tạo — Phương Nam nhiều cửa hàng con: tách riêng mỗi cửa hàng 1 chứng từ
+  // NHƯNG công nợ vẫn dồn về nhà sách (customerId không đổi); cửa hàng con chỉ là nhãn "Giao tại".
+  const scopeSel = C.select([
+    { value: 'one', label: 'Gộp 1 chứng từ (toàn đơn)' },
+    { value: 'perstore', label: 'Tách riêng từng cửa hàng con — công nợ vẫn về nhà sách' },
+  ], 'one');
+  scopeSel.addEventListener('change', () => { if (state.rows.length) draw(); });
+  const scopeField = C.field('Phạm vi tạo (Phương Nam nhiều cửa hàng)', scopeSel, { full: true });
   const detectLine = U.el('div', { class: 'section-sub', style: 'min-height:16px;margin:6px 0 0' });
   const fg = U.el('div', { class: 'form-grid' });
   fg.appendChild(C.field('Nhà sách (khách hàng)', cusRow, { required: true }));
@@ -524,6 +532,7 @@ M.consignImport = function (root) {
   fg.appendChild(C.field('Thuế GTGT (%)', vatSel));
   fg.appendChild(C.field('Diễn giải', noteI, { full: true }));
   fg.appendChild(fahasaField);
+  fg.appendChild(scopeField);
   docCard.appendChild(fg);
   docCard.appendChild(detectLine);
 
@@ -600,6 +609,18 @@ M.consignImport = function (root) {
       '📚 Định dạng <b>FAHASA</b> — gộp số lượng tất cả kho, khớp ưu tiên theo <b>mã vạch (barcode)</b>.';
     else if (colMap && colMap.pn) detectLine.innerHTML = (detectLine.innerHTML ? detectLine.innerHTML + '<br>' : '') +
       '📗 Định dạng <b>Phương Nam</b> — số lượng lấy từ cột <b>"Tổng BS"</b>, khớp ưu tiên theo <b>mã vạch PNC</b>.';
+    // Phương Nam: cột CỬA HÀNG CON (tên nằm ở DÒNG TRÊN header, các cột sau "Tổng BS") -> để tách hóa đơn
+    state.pnStores = null;
+    if (colMap && colMap.pn && headerIdx >= 1) {
+      const nameRow = M._ciSplitCells(lines[headerIdx - 1]) || [];
+      const qtyCol = colMap.qty != null ? colMap.qty : 0;
+      const stores = [];
+      nameRow.forEach((nm, ci) => {
+        const name = String(nm || '').trim();
+        if (ci > qtyCol && name) stores.push({ col: ci, name: name });
+      });
+      if (stores.length) state.pnStores = stores;
+    }
     state.rows = [];
     dataLines.forEach(l => {
       const parsed = M._ciParseLine(l, colMap);
@@ -608,6 +629,15 @@ M.consignImport = function (root) {
       const row = Object.assign(parsed, m);
       if (row.price > 0) row.priceTouched = true;   // file có sẵn đơn giá -> giữ nguyên, không tự đè
       else if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.ppValue(), chSel.value);  // giá gần nhất của KH
+      // SL theo từng cửa hàng con (đọc đúng cột) -> dùng khi tách hóa đơn per-store
+      if (state.pnStores) {
+        const cells = M._ciSplitCells(l) || [];
+        row._storeQty = {};
+        state.pnStores.forEach(s => {
+          const v = parseInt(String(cells[s.col] || '').replace(/[^\d]/g, ''), 10);
+          if (v > 0) row._storeQty[s.col] = v;
+        });
+      }
       state.rows.push(row);
     });
     draw();
@@ -631,6 +661,11 @@ M.consignImport = function (root) {
     const bad = state.rows.filter(r => !r.manual && r.status === 'none').length;
     sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
+    if (scopeSel.value === 'perstore' && state.pnStores && state.pnStores.length) {
+      const nWithQty = state.pnStores.filter(s => state.rows.some(r => r.productId && r._storeQty && r._storeQty[s.col] > 0)).length;
+      sumDiv.innerHTML += '<br>🏬 Sẽ tách thành <b>' + nWithQty + '</b> chứng từ cho <b>' + nWithQty +
+        '</b> cửa hàng con (công nợ vẫn về nhà sách). Cột "SL" dưới đây là <i>tổng toàn đơn</i>; mỗi chứng từ lấy SL riêng của cửa hàng đó.';
+    }
     host.appendChild(C.table(state.rows, [
       { label: '#', width: '36px', render: r => String(state.rows.indexOf(r) + 1) },
       { label: 'Dòng gốc', render: r => U.esc(r.raw) },
@@ -712,37 +747,64 @@ M.consignImport = function (root) {
       } else if (!M._ciBarcode(p.barcode)) { p.barcode = r.barcode; learnedBC++; }
     });
 
-    const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
-    let code, mucXem;
+    const cusId = cusSel.ppValue();
     const isReturn = typeSel.value === 'return';
-    const note = noteI.value.trim() || (isReturn ? 'Nhà sách trả hàng (gom tự động)' : 'Gom đơn ký gửi tự động');
-    if (typeSel.value === 'order') {
-      code = PW.nextCode('DH'); mucXem = 'Đơn đặt hàng';
-      PW.data.salesOrders.push({
-        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
-        items: items, discount: 0, status: 'open', note: note,
+    const isOrder = typeSel.value === 'order';
+    const baseNote = noteI.value.trim();
+
+    // Tạo 1 chứng từ cho 1 nhóm items; subStore = cửa hàng con (chỉ là nhãn "Giao tại",
+    // customerId VẪN là nhà sách -> công nợ dồn về nhà sách). Trả về { code, mucXem }.
+    function buildDoc(items, subStore) {
+      const note = (baseNote || (isReturn ? 'Nhà sách trả hàng (gom tự động)' : 'Gom đơn ký gửi tự động')) +
+        (subStore ? ' — ' + subStore : '');
+      if (isOrder) {
+        const code = PW.nextCode('DH');
+        PW.data.salesOrders.push({ id: PW.uid(), code: code, date: dateI.value, customerId: cusId,
+          subStore: subStore || '', items: items, discount: 0, status: 'open', note: note });
+        return { code: code, mucXem: 'Đơn đặt hàng' };
+      }
+      if (isReturn) {
+        const code = PW.nextCode('TL');
+        PW.data.salesReturns.push({ id: PW.uid(), code: code, date: dateI.value, customerId: cusId,
+          subStore: subStore || '', invoiceId: null, vatRate: Number(vatSel.value) || 0, items: items, note: note });
+        PW.logActivity('create', 'salesReturn', code, items.length + ' mặt hàng — gom AI' + (subStore ? ' (' + subStore + ')' : ''));
+        return { code: code, mucXem: 'Trả lại hàng bán' };
+      }
+      const code = PW.nextCode('HD');
+      PW.data.salesInvoices.push({ id: PW.uid(), code: code, date: dateI.value, customerId: cusId,
+        subStore: subStore || '', channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0,
+        items: items, discount: 0, paid: 0, paidAccountId: null, note: note });
+      return { code: code, mucXem: 'Hóa đơn bán' };
+    }
+
+    const splitPN = scopeSel.value === 'perstore' && state.pnStores && state.pnStores.length;
+    const created = [];
+    if (splitPN) {
+      state.pnStores.forEach(s => {
+        const items = valid
+          .filter(r => r._storeQty && r._storeQty[s.col] > 0)
+          .map(r => ({ productId: r.productId, qty: Number(r._storeQty[s.col]), price: Number(r.price) || 0 }));
+        if (items.length) created.push(Object.assign(buildDoc(items, s.name), { store: s.name, n: items.length }));
       });
-    } else if (isReturn) {
-      code = PW.nextCode('TL'); mucXem = 'Trả lại hàng bán';
-      PW.data.salesReturns.push({
-        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
-        invoiceId: null, vatRate: Number(vatSel.value) || 0, items: items, note: note,
-      });
-      PW.logActivity('create', 'salesReturn', code, items.length + ' mặt hàng — gom AI');
+      if (!created.length) { U.toast('Không có cửa hàng con nào có số lượng', 'error'); return; }
     } else {
-      code = PW.nextCode('HD'); mucXem = 'Hóa đơn bán';
-      PW.data.salesInvoices.push({
-        id: PW.uid(), code: code, date: dateI.value, customerId: cusSel.ppValue(),
-        channelId: chSel.value || null, vatRate: Number(vatSel.value) || 0, items: items, discount: 0,
-        paid: 0, paidAccountId: null, note: note,
-      });
+      const items = valid.map(r => ({ productId: r.productId, qty: Number(r.qty), price: Number(r.price) || 0 }));
+      created.push(Object.assign(buildDoc(items, ''), { n: items.length }));
     }
     PW.save();
-    U.toast('Đã tạo ' + code + ' (' + items.length + ' mặt hàng) + nhớ ' + valid.length + ' bí danh');
+
+    const mucXem = created[0].mucXem;
     state.rows = [];
     ta.value = '';
     draw();
-    sumDiv.innerHTML = 'Đã tạo chứng từ <b>' + U.esc(code) + '</b>. Xem ở mục ' + mucXem + '.';
+    if (created.length === 1) {
+      U.toast('Đã tạo ' + created[0].code + ' (' + created[0].n + ' mặt hàng) + nhớ ' + valid.length + ' bí danh');
+      sumDiv.innerHTML = 'Đã tạo chứng từ <b>' + U.esc(created[0].code) + '</b>. Xem ở mục ' + mucXem + '.';
+    } else {
+      U.toast('Đã tạo ' + created.length + ' ' + mucXem + ' cho ' + created.length + ' cửa hàng con (công nợ về nhà sách)');
+      sumDiv.innerHTML = 'Đã tạo <b>' + created.length + '</b> ' + mucXem + ' theo cửa hàng con (công nợ dồn về nhà sách):<br>' +
+        created.map(c => '• <b>' + U.esc(c.code) + '</b> — ' + U.esc(c.store) + ' (' + c.n + ' mặt hàng)').join('<br>');
+    }
   }
 
   root.appendChild(srcCard);

@@ -55,7 +55,7 @@ M.sales = function (root) {
       channelId: si => si.channelId || '',
       amount: si => PW.invoiceGrand(si),
       paymentStatus: si => (PW.invoiceGrand(si) - (si.paid || 0) > 0 ? 'no' : 'paid'),
-      text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : ''].join(' '); },
+      text: si => { const c = PW.customer(si.customerId); return [si.code, c ? c.name : '', si.subStore || ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
   }
 
@@ -108,7 +108,7 @@ M.sales = function (root) {
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: si => U.date(si.date) },
       { label: 'Số HĐ', render: si => U.el('a', { href: '#', style: 'font-weight:700;color:var(--teal-d);text-decoration:underline', title: 'Xem chi tiết hóa đơn', onclick: e => { e.preventDefault(); M.invoiceView(si); } }, si.code) },
-      { label: 'Khách hàng', render: si => { const c = PW.customer(si.customerId); return c ? U.esc(c.name) : ''; } },
+      { label: 'Khách hàng', render: si => { const c = PW.customer(si.customerId); return (c ? U.esc(c.name) : '') + (si.subStore ? '<div class="text-muted" style="font-size:11px">🏬 ' + U.esc(si.subStore) + '</div>' : ''); } },
       { label: 'Diễn giải', render: si => U.esc(si.note || '') },
       { label: 'Tổng tiền hàng', num: true, render: si => U.money(PW.invoiceTotal(si)) },
       { label: 'Tiền thuế GTGT', num: true, render: si => U.money(PW.invoiceVat(si)) },
@@ -174,7 +174,7 @@ M.docDetailPanel = function (doc, kind) {
     { num: true, html: U.num(totQty) }, { html: '' }, { num: true, html: U.money(totTien) }, { html: '' }, { num: true, html: U.money(totThue) },
   ] });
   return U.el('div', { class: 'card', style: 'margin-top:12px' }, [
-    U.el('div', { class: 'card-title', style: 'font-size:14px' }, '📋 Chi tiết: ' + doc.code + (party ? ' — ' + party.name : '')),
+    U.el('div', { class: 'card-title', style: 'font-size:14px' }, '📋 Chi tiết: ' + doc.code + (party ? ' — ' + party.name : '') + (doc.subStore ? ' · 🏬 ' + doc.subStore : '')),
     table,
   ]);
 };
@@ -194,6 +194,7 @@ M.invoiceView = function (si) {
     `<div style="line-height:1.9;font-size:14px">
       <div><b>Số HĐ:</b> ${U.esc(si.code)} &nbsp;·&nbsp; <b>Ngày:</b> ${U.date(si.date)}${ch ? ' &nbsp;·&nbsp; <b>Kênh:</b> ' + U.esc(ch.name) : ''}${si.dueDate ? ' &nbsp;·&nbsp; <b>Hạn TT:</b> ' + U.date(si.dueDate) : ''}</div>
       <div><b>Khách hàng:</b> ${U.esc(cus ? cus.name : '')}</div>
+      ${si.subStore ? '<div><b>Cửa hàng con (giao tại):</b> ' + U.esc(si.subStore) + '</div>' : ''}
       <div><b>Địa chỉ:</b> ${U.esc(cus ? (cus.address || '') : '')} &nbsp; <b>Điện thoại:</b> ${U.esc(cus ? (cus.phone || '') : '')}${cus && cus.taxCode ? ' &nbsp; <b>MST:</b> ' + U.esc(cus.taxCode) : ''}</div>
       ${emp ? `<div><b>Nhân viên bán:</b> ${U.esc(emp.name)}</div>` : ''}
       ${si.note ? `<div><b>Diễn giải:</b> ${U.esc(si.note)}</div>` : ''}
