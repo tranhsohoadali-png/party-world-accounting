@@ -371,8 +371,8 @@ M.reportCashbook = function (host, from, to) {
   PW.data.receipts.filter(r => r.date >= from && r.date <= to).forEach(r => rows.push({ kind: 'thu', ...r }));
   PW.data.payments.filter(p => p.date >= from && p.date <= to).forEach(p => rows.push({ kind: 'chi', ...p }));
   // Cộng dòng tiền từ hóa đơn / phiếu nhập có thanh toán ngay
-  PW.data.salesInvoices.filter(si => si.date >= from && si.date <= to && (si.paid > 0)).forEach(si =>
-    rows.push({ kind: 'thu', date: si.date, code: si.code, accountId: si.paidAccountId, amount: si.paid, reason: 'Thu tiền bán hàng' }));
+  PW.data.salesInvoices.filter(si => si.date >= from && si.date <= to && (PW.invoiceCashPaid(si) > 0)).forEach(si =>
+    rows.push({ kind: 'thu', date: si.date, code: si.code, accountId: si.paidAccountId, amount: PW.invoiceCashPaid(si), reason: 'Thu tiền bán hàng' }));
   PW.data.purchases.filter(pu => pu.date >= from && pu.date <= to && (pu.paid > 0)).forEach(pu =>
     rows.push({ kind: 'chi', date: pu.date, code: pu.code, accountId: pu.paidAccountId, amount: pu.paid, reason: 'Chi tiền mua hàng' }));
   rows.sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code));
@@ -407,7 +407,7 @@ M.reportCashflow = function (host, from, to) {
     let b = a ? Number(a.opening || 0) : 0;
     PW.data.receipts.forEach(r => { if (r.accountId === accId && r.date < from) b += Number(r.amount || 0); });
     PW.data.payments.forEach(p => { if (p.accountId === accId && p.date < from) b -= Number(p.amount || 0); });
-    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accId && si.date < from) b += Number(si.paid || 0); });
+    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accId && si.date < from) b += PW.invoiceCashPaid(si); });
     PW.data.purchases.forEach(pu => { if (pu.paidAccountId === accId && pu.date < from) b -= Number(pu.paid || 0); });
     return b;
   }
@@ -415,7 +415,7 @@ M.reportCashflow = function (host, from, to) {
   // Phân nhóm dòng tiền trong kỳ
   const IN = { ban: 0, thuNo: 0, khac: 0 };
   const OUT = { mua: 0, traNo: 0, luong: 0, khac: 0 };
-  PW.data.salesInvoices.forEach(si => { if (inR(si.date) && Number(si.paid) > 0) IN.ban += Number(si.paid); });
+  PW.data.salesInvoices.forEach(si => { const cp = PW.invoiceCashPaid(si); if (inR(si.date) && cp > 0) IN.ban += cp; });
   PW.data.receipts.forEach(r => { if (inR(r.date)) { if (r.customerId) IN.thuNo += Number(r.amount || 0); else IN.khac += Number(r.amount || 0); } });
   PW.data.purchases.forEach(pu => { if (inR(pu.date) && Number(pu.paid) > 0) OUT.mua += Number(pu.paid); });
   PW.data.payments.forEach(p => {
@@ -459,7 +459,7 @@ M.reportCashflow = function (host, from, to) {
     const dau = balanceBefore(a.id);
     let vao = 0, ra = 0;
     PW.data.receipts.forEach(r => { if (r.accountId === a.id && inR(r.date)) vao += Number(r.amount || 0); });
-    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === a.id && inR(si.date)) vao += Number(si.paid || 0); });
+    PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === a.id && inR(si.date)) vao += PW.invoiceCashPaid(si); });
     PW.data.payments.forEach(p => { if (p.accountId === a.id && inR(p.date)) ra += Number(p.amount || 0); });
     PW.data.purchases.forEach(pu => { if (pu.paidAccountId === a.id && inR(pu.date)) ra += Number(pu.paid || 0); });
     return { a, dau, vao, ra, cuoi: dau + vao - ra };
@@ -488,7 +488,7 @@ M.reportDailyCash = function (host, from, to) {
   function add(date, i, o) { if (!inR(date)) return; if (!days[date]) days[date] = { in: 0, out: 0 }; days[date].in += i; days[date].out += o; }
   PW.data.receipts.forEach(r => add(r.date, Number(r.amount || 0), 0));
   PW.data.payments.forEach(p => add(p.date, 0, Number(p.amount || 0)));
-  PW.data.salesInvoices.forEach(si => { if (Number(si.paid) > 0) add(si.date, Number(si.paid), 0); });
+  PW.data.salesInvoices.forEach(si => { const cp = PW.invoiceCashPaid(si); if (cp > 0) add(si.date, cp, 0); });
   PW.data.purchases.forEach(pu => { if (Number(pu.paid) > 0) add(pu.date, 0, Number(pu.paid)); });
   const opening = PW.data.cashAccounts.reduce((s, a) => s + PW.balanceAsOf(a.id, U.addDays(from, -1)), 0);
   let bal = opening;

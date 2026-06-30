@@ -215,6 +215,15 @@ PW.product = id => PW.data.products.find(p => p.id === id);
 PW.customer = id => PW.data.customers.find(c => c.id === id);
 PW.supplier = id => PW.data.suppliers.find(s => s.id === id);
 PW.account = id => PW.data.cashAccounts.find(a => a.id === id);
+PW.salesInvoice = id => PW.data.salesInvoices.find(si => si.id === id);
+
+// Phần "đã thu" của hóa đơn ĐƯỢC tính là DÒNG TIỀN VÀO QUỸ qua chính hóa đơn (không qua phiếu thu).
+// si.paid = tiền trả ngay trên form (cũ) + tiền thu qua phiếu-thu-gắn-hóa-đơn (si.paidViaReceipt).
+// Tiền thu qua phiếu thu đã vào quỹ qua receipts[] -> phải trừ ra để KHÔNG cộng đôi vào quỹ/dòng tiền.
+// Hóa đơn cũ không có paidViaReceipt (undefined -> 0) => invoiceCashPaid === si.paid như trước (an toàn ngược).
+PW.invoiceCashPaid = function (si) {
+  return Number(si.paid || 0) - Number(si.paidViaReceipt || 0);
+};
 
 /* ---------- Tính toán số dư / công nợ / tồn kho ---------- */
 
@@ -443,7 +452,7 @@ PW.accountBalance = function (accountId) {
   PW.data.receipts.forEach(r => { if (r.accountId === accountId) bal += Number(r.amount); });
   PW.data.payments.forEach(p => { if (p.accountId === accountId) bal -= Number(p.amount); });
   PW.data.salesInvoices.forEach(si => {
-    if (si.paidAccountId === accountId) bal += Number(si.paid || 0);
+    if (si.paidAccountId === accountId) bal += PW.invoiceCashPaid(si);   // trừ phần thu qua phiếu thu (đã vào quỹ qua receipts)
   });
   PW.data.purchases.forEach(pu => {
     if (pu.paidAccountId === accountId) bal -= Number(pu.paid || 0);
@@ -465,7 +474,7 @@ PW.cashIn = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   let s = 0;
   PW.data.receipts.forEach(r => { if (inR(r.date)) s += Number(r.amount); });
-  PW.data.salesInvoices.forEach(si => { if (inR(si.date)) s += Number(si.paid || 0); });
+  PW.data.salesInvoices.forEach(si => { if (inR(si.date)) s += PW.invoiceCashPaid(si); });   // tránh cộng đôi với phiếu thu gắn HĐ
   return s;
 };
 
@@ -486,7 +495,7 @@ PW.balanceAsOf = function (accountId, toYmd) {
   const le = d => (!toYmd || d <= toYmd);
   PW.data.receipts.forEach(r => { if (r.accountId === accountId && le(r.date)) bal += Number(r.amount || 0); });
   PW.data.payments.forEach(p => { if (p.accountId === accountId && le(p.date)) bal -= Number(p.amount || 0); });
-  PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accountId && le(si.date)) bal += Number(si.paid || 0); });
+  PW.data.salesInvoices.forEach(si => { if (si.paidAccountId === accountId && le(si.date)) bal += PW.invoiceCashPaid(si); });   // tránh cộng đôi với phiếu thu gắn HĐ
   PW.data.purchases.forEach(pu => { if (pu.paidAccountId === accountId && le(pu.date)) bal -= Number(pu.paid || 0); });
   return bal;
 };
@@ -542,9 +551,12 @@ PW.customerDebt = function (customerId) {
       debt += PW.invoiceGrand(si) - Number(si.paid || 0);   // gồm thuế GTGT
     }
   });
-  // Phiếu thu gắn với khách hàng (thu nợ)
+  // Phiếu thu gắn với khách hàng (thu nợ).
+  // CHỈ trừ phiếu thu KHÔNG gắn hóa đơn (!r.invoiceId): phiếu thu thu-cho-1-hóa-đơn
+  // đã được phản ánh qua si.paid ở trên (dòng debt += grand - paid) -> trừ thêm sẽ nhân đôi.
+  // Phiếu thu CŨ (data cũ) không có thuộc tính invoiceId (undefined) nên vẫn được trừ như trước => an toàn ngược.
   PW.data.receipts.forEach(r => {
-    if (r.customerId === customerId) debt -= Number(r.amount);
+    if (r.customerId === customerId && !r.invoiceId) debt -= Number(r.amount);
   });
   // Trả lại hàng bán -> giảm công nợ phải thu (gồm thuế theo HĐ gốc)
   PW.data.salesReturns.forEach(sr => {

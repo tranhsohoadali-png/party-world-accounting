@@ -1124,7 +1124,10 @@ M.debtLedgerData = function (kind, id) {
   if (isCus) {
     PW.data.salesInvoices.filter(si => si.customerId === id).forEach(si =>
       rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0) }));
-    PW.data.receipts.filter(r => r.customerId === id).forEach(r =>
+    // CHỈ liệt kê phiếu thu KHÔNG gắn hóa đơn: phiếu thu thu-cho-1-hóa-đơn đã được
+    // tính vào cột "Đã thu" của dòng hóa đơn gốc (qua si.paid) -> liệt kê lại sẽ trừ 2 lần,
+    // lệch với PW.customerDebt (đã sửa ở db.js). Phiếu thu cũ không có invoiceId vẫn hiện như trước.
+    PW.data.receipts.filter(r => r.customerId === id && !r.invoiceId).forEach(r =>
       rows.push({ date: r.date, code: r.code, desc: r.reason || 'Thu tiền', tang: 0, giam: Number(r.amount) }));
     PW.data.salesReturns.filter(sr => sr.customerId === id).forEach(sr =>
       rows.push({ date: sr.date, code: sr.code, desc: 'Trả lại hàng bán', tang: 0, giam: PW.returnGrand(sr) }));
@@ -1303,8 +1306,12 @@ M._cashLedgerTab = function () {
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa phiếu ' + x.code + '?')) {
                 PW.logActivity('delete', x.kind === 'thu' ? 'receipt' : 'payment', x.code, U.money(x.amount) + ' đ');
-                if (x.kind === 'thu') PW.data.receipts = PW.data.receipts.filter(y => y.id !== x.id);
-                else PW.data.payments = PW.data.payments.filter(y => y.id !== x.id);
+                if (x.kind === 'thu') {
+                  // Phiếu thu gắn hóa đơn -> hoàn lại si.paid trước khi xóa (tránh hóa đơn "đã thu" sai)
+                  const orig = PW.data.receipts.find(y => y.id === x.id);
+                  M._revertReceiptFromInvoice(orig);
+                  PW.data.receipts = PW.data.receipts.filter(y => y.id !== x.id);
+                } else PW.data.payments = PW.data.payments.filter(y => y.id !== x.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
             } },
@@ -1462,9 +1469,38 @@ M._cashForecastTab = function () {
   return wrap;
 };
 
-M.receiptForm = function (r, presetCustomerId) {
+/* ----- Phiếu thu gắn hóa đơn (Model 2, an toàn ngược) -----
+   Khi 1 phiếu thu có invoiceId, ngoài việc nằm trong receipts[], nó còn TĂNG si.paid của hóa đơn
+   để trạng thái "Đã thu/Còn nợ", tuổi nợ, công nợ tự đúng. Phần tăng này được lưu riêng vào
+   si.paidViaReceipt để KHÔNG cộng đôi tiền vào quỹ (xem PW.invoiceCashPaid).
+   _applyReceiptToInvoice: cộng delta (số tiền mới - số tiền cũ) vào si.paid & si.paidViaReceipt.
+   _revertReceiptFromInvoice: hoàn lại khi xóa phiếu thu. */
+M._applyReceiptToInvoice = function (invoiceId, delta) {
+  const si = PW.salesInvoice(invoiceId);
+  if (!si || !delta) return;
+  si.paid = Math.max(0, Number(si.paid || 0) + delta);
+  si.paidViaReceipt = Math.max(0, Number(si.paidViaReceipt || 0) + delta);
+};
+M._revertReceiptFromInvoice = function (receipt) {
+  if (!receipt || !receipt.invoiceId) return;
+  M._applyReceiptToInvoice(receipt.invoiceId, -Number(receipt.amount || 0));
+};
+
+M.receiptForm = function (r, presetCustomerId, presetInvoiceId) {
   const isNew = !r;
-  r = r || { code: PW.nextCode('PT'), date: U.today(), accountId: PW.data.cashAccounts[0].id, customerId: presetCustomerId || '', amount: 0, reason: 'Thu tiền', note: '' };
+  // Khi sửa: danh sách sổ thu chi truyền vào BẢN SAO (Object.assign) -> lấy lại bản GỐC trong mảng
+  // để Object.assign ghi đúng vào dữ liệu lưu trữ (và để delta si.paid chính xác).
+  if (r && r.id) { const orig = PW.data.receipts.find(y => y.id === r.id); if (orig) r = orig; }
+  // Khi sửa phiếu thu đã gắn hóa đơn -> giữ liên kết hóa đơn của phiếu đó
+  const invoiceId = presetInvoiceId || (r && r.invoiceId) || null;
+  const si = invoiceId ? PW.salesInvoice(invoiceId) : null;
+  const oldAmt = isNew ? 0 : Number(r.amount || 0);   // số tiền cũ của phiếu (để tính chênh lệch khi sửa)
+  // Khi gắn hóa đơn: khóa khách theo hóa đơn; còn nợ hiện tại = invoiceRemaining + phần phiếu này đã thu (để sửa lại không bị trừ chính nó)
+  const remForInvoice = si ? PW.invoiceRemaining(si) + (invoiceId === (r && r.invoiceId) ? oldAmt : 0) : 0;
+  const lockedCustomerId = si ? si.customerId : (presetCustomerId || (r && r.customerId) || '');
+  r = r || { code: PW.nextCode('PT'), date: U.today(), accountId: PW.data.cashAccounts[0].id,
+    customerId: lockedCustomerId || '', amount: si ? Math.max(0, remForInvoice) : 0,
+    reason: si ? ('Thu tiền HĐ ' + si.code) : 'Thu tiền', note: '' };
   const f = {
     code: C.input({ value: r.code }),
     date: C.input({ type: 'date', value: r.date }),
@@ -1473,23 +1509,36 @@ M.receiptForm = function (r, presetCustomerId) {
     amount: C.input({ type: 'number', value: r.amount, min: 0 }),
     reason: C.input({ value: r.reason || '' }),
   };
-  const body = U.el('div', { class: 'form-grid' }, [
+  if (si) f.customer.disabled = true;   // gắn hóa đơn -> khóa khách (không cho đổi đối tượng)
+  const banner = si ? U.el('div', { class: 'alert-bar', style: 'background:#eef6e1;border-color:#cfe3a8;color:#3d5a1e' }, [
+    U.el('span', null, 'Thu cho hóa đơn '), U.el('b', null, si.code),
+    U.el('span', null, ' — còn nợ '), U.el('b', null, U.money(Math.max(0, remForInvoice)) + ' đ'),
+    U.el('span', { class: 'text-muted', style: 'margin-left:6px' }, '(có thể thu 1 phần)'),
+  ]) : null;
+  const grid = U.el('div', { class: 'form-grid' }, [
     C.field('Số phiếu', f.code),
     C.field('Ngày', f.date, { required: true }),
     C.field('Nộp vào tài khoản', f.account, { required: true }),
-    C.field('Khách hàng (thu nợ)', M.partnerAdd(f.customer, true, [{ value: '', label: '-- Không gắn khách hàng --' }])),
+    si ? C.field('Khách hàng (theo hóa đơn)', f.customer) : C.field('Khách hàng (thu nợ)', M.partnerAdd(f.customer, true, [{ value: '', label: '-- Không gắn khách hàng --' }])),
     C.field('Số tiền (đ)', f.amount, { required: true }),
     C.field('Lý do thu', f.reason, { full: true }),
   ]);
+  const body = U.el('div', null, [banner, grid].filter(Boolean));
   C.modal({
-    title: isNew ? 'Lập phiếu thu' : 'Sửa phiếu thu', body,
+    title: isNew ? (si ? 'Thu tiền cho hóa đơn ' + si.code : 'Lập phiếu thu') : 'Sửa phiếu thu', body,
     footer: [C.btn('Hủy', C.closeModal), C.btn('Lưu', () => {
       const amt = Number(f.amount.value) || 0;
       if (amt <= 0) return U.toast('Nhập số tiền', 'error');
+      // Chặn thu vượt số còn nợ của hóa đơn (cho phép = đúng số còn nợ)
+      if (si && amt > remForInvoice + 0.5) return U.toast('Số tiền vượt quá số còn nợ của hóa đơn (' + U.money(Math.max(0, remForInvoice)) + ' đ)', 'error');
       const obj = { id: r.id || PW.uid(), code: f.code.value, date: f.date.value,
-        accountId: f.account.value, customerId: f.customer.value || null,
-        amount: amt, reason: f.reason.value, note: '' };
+        accountId: f.account.value,
+        customerId: si ? si.customerId : (f.customer.value || null),
+        amount: amt, reason: f.reason.value, note: r.note || '' };
+      if (invoiceId) obj.invoiceId = invoiceId;   // chỉ gắn khi thu cho hóa đơn (thu tổng/ứng trước giữ nguyên không có invoiceId)
       if (isNew) PW.data.receipts.push(obj); else Object.assign(r, obj);
+      // Đồng bộ si.paid: chỉ cộng phần CHÊNH LỆCH (amt mới - amt cũ) để sửa/xóa không lệch
+      if (invoiceId) M._applyReceiptToInvoice(invoiceId, amt - oldAmt);
       PW.logActivity(isNew ? 'create' : 'update', 'receipt', obj.code, U.money(obj.amount) + ' đ — ' + (obj.reason || ''));
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu thu');
     }, 'primary')],

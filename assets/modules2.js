@@ -76,15 +76,16 @@ M.sales = function (root) {
       { header: 'TT thanh toán', width: 14, align: 'center' },
     ];
     const data = rows.map(si => {
-      const g = PW.invoiceGrand(si), p = Number(si.paid || 0), c = PW.customer(si.customerId);
-      const status = p <= 0 ? 'Chưa thu' : (p < g ? 'Thu 1 phần' : 'Đã thu đủ');
-      return [U.date(si.date), si.code, c ? c.name : '', si.note || '', PW.invoiceTotal(si), PW.invoiceVat(si), g, p, g - p, status];
+      const g = PW.invoiceGrand(si), p = Number(si.paid || 0), rem = PW.invoiceRemaining(si), c = PW.customer(si.customerId);
+      const status = rem <= 0 ? 'Đã thu đủ' : (p > 0 ? 'Thu 1 phần' : 'Chưa thu');
+      return [U.date(si.date), si.code, c ? c.name : '', si.note || '', PW.invoiceTotal(si), PW.invoiceVat(si), g, p, rem, status];
     });
     const sHang = rows.reduce((s, si) => s + PW.invoiceTotal(si), 0);
     const sThue = rows.reduce((s, si) => s + PW.invoiceVat(si), 0);
     const sTong = rows.reduce((s, si) => s + PW.invoiceGrand(si), 0);
     const sPaid = rows.reduce((s, si) => s + Number(si.paid || 0), 0);
-    const totals = [null, null, null, null, sHang, sThue, sTong, sPaid, sTong - sPaid, null];
+    const sRem = rows.reduce((s, si) => s + PW.invoiceRemaining(si), 0);
+    const totals = [null, null, null, null, sHang, sThue, sTong, sPaid, sRem, null];
     const extra = [];
     if (st.customerId) { const c = PW.customer(st.customerId); if (c) extra.push('Khách hàng: ' + c.name); }
     if (st.channelId) { const ch = PW.channel && PW.channel(st.channelId); if (ch) extra.push('Kênh: ' + ch.name); }
@@ -114,17 +115,19 @@ M.sales = function (root) {
       { label: 'Tiền thuế GTGT', num: true, render: si => U.money(PW.invoiceVat(si)) },
       { label: 'Tổng thanh toán', num: true, render: si => U.money(PW.invoiceGrand(si)) },
       { label: 'TT thanh toán', center: true, render: si => {
-          const g = PW.invoiceGrand(si), p = Number(si.paid || 0);
-          return p <= 0 ? '<span class="tag red">Chưa thu</span>' : (p < g ? '<span class="tag orange">Thu 1 phần</span>' : '<span class="tag green">Đã thu đủ</span>');
+          const rem = PW.invoiceRemaining(si), p = Number(si.paid || 0);   // còn nợ thực (trừ trả lại/giảm giá)
+          return rem <= 0 ? '<span class="tag green">Đã thu đủ</span>' : (p > 0 ? '<span class="tag orange">Thu 1 phần</span>' : '<span class="tag red">Chưa thu</span>');
         } },
       { label: '', render: si => C.actions([
-          { label: 'Thu tiền', title: 'Lập phiếu thu cho hóa đơn này', onClick: () => M.receiptForm ? M.receiptForm(null, si.customerId) : M.salesForm(si) },
+          { label: 'Thu tiền', title: 'Lập phiếu thu cho hóa đơn này', onClick: () => M.receiptForm ? M.receiptForm(null, si.customerId, si.id) : M.salesForm(si) },
           { label: 'Sửa', onClick: () => M.salesForm(si) },
           { label: 'Sao chép', title: 'Tạo hóa đơn mới từ hóa đơn này', onClick: () => M.docCopy(si, 'sale') },
           { label: '🖨 In', cls: 'primary', title: 'In / gửi Zalo', onClick: () => M.printMenu(si) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
               if (U.confirm('Xóa hóa đơn ' + si.code + '?')) {
                 PW.logActivity('delete', 'salesInvoice', si.code, U.money(PW.invoiceGrand(si)) + ' đ');
+                // Phiếu thu đã gắn hóa đơn này -> gỡ liên kết (giữ tiền là phiếu thu thường, vẫn giảm công nợ khách)
+                PW.data.receipts.forEach(r => { if (r.invoiceId === si.id) { delete r.invoiceId; r.reason = (r.reason || 'Thu tiền') + ' (HĐ ' + si.code + ' đã xóa)'; } });
                 PW.data.salesInvoices = PW.data.salesInvoices.filter(x => x.id !== si.id);
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
@@ -185,6 +188,7 @@ M.invoiceView = function (si) {
   const emp = si.employeeId && PW.data.employees ? PW.data.employees.find(e => e.id === si.employeeId) : null;
   const ch = PW.channel && PW.channel(si.channelId);
   const sub = PW.invoiceTotal(si), vat = PW.invoiceVat(si), grand = PW.invoiceGrand(si), paid = Number(si.paid || 0);
+  const rem = PW.invoiceRemaining(si);   // còn nợ THỰC = trừ cả trả lại/giảm giá gắn HĐ (khớp nút Thu tiền)
   const showBC = M._anyBarcode(si.items, 'any');
   const rowsHtml = si.items.map((it, i) => {
     const p = PW.product(it.productId); const price = Number(it.price || 0);
@@ -206,13 +210,25 @@ M.invoiceView = function (si) {
       <div>Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
       ${vat ? `<div>Thuế GTGT: ${U.money(vat)} đ</div>` : ''}
       <div style="font-size:16px;font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN: ${U.money(grand)} đ</div>
-      <div>Đã thu: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${grand - paid > 0 ? 'text-red' : 'text-green'}">${U.money(grand - paid)} đ</b></div>
+      <div>Đã thu: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${rem > 0 ? 'text-red' : 'text-green'}">${U.money(rem)} đ</b></div>
     </div>` });
+  // Lịch sử các phiếu thu đã gắn vào hóa đơn này
+  const recs = PW.data.receipts.filter(r => r.invoiceId === si.id)
+    .sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code));
+  if (recs.length) {
+    const recRows = recs.map(r => `<tr><td>${U.date(r.date)}</td><td>${U.esc(r.code)}</td><td>${U.esc((PW.account(r.accountId) || {}).name || '')}</td><td style="text-align:right">${U.money(r.amount)}</td></tr>`).join('');
+    body.appendChild(U.el('div', { class: 'mt16', html:
+      `<div class="card-title" style="font-size:14px">🧾 Lịch sử thu tiền (${recs.length} phiếu)</div>
+       <table class="items-tbl" style="width:100%;border-collapse:collapse">
+         <thead><tr><th>Ngày</th><th>Số phiếu</th><th>Tài khoản</th><th class="num">Số tiền</th></tr></thead>
+         <tbody>${recRows}</tbody></table>` }));
+  }
   C.modal({
     title: 'Hóa đơn ' + si.code, wide: true, body,
     footer: [C.btn('Đóng', C.closeModal),
+      rem > 0 ? C.btn('💵 Thu tiền', () => { C.closeModal(); M.receiptForm(null, si.customerId, si.id); }) : null,
       C.btn('Sửa', () => { C.closeModal(); M.salesForm(si); }),
-      C.btn('🖨 In', () => M.printMenu(si), 'primary')],
+      C.btn('🖨 In', () => M.printMenu(si), 'primary')].filter(Boolean),
   });
 };
 
@@ -270,6 +286,11 @@ M.salesForm = function (si, presetCustomerId) {
     customerId: presetCustomerId || (PW.data.customers[0] ? PW.data.customers[0].id : ''),
     items: [], discount: 0, paid: 0, paidAccountId: PW.data.cashAccounts[0].id, note: '',
   };
+  // Phần "đã thu" qua PHIẾU THU gắn hóa đơn (si.paidViaReceipt) KHÔNG nhập trên form này;
+  // ô "Đã thu" chỉ hiển thị/sửa phần thu-ngay-trên-hóa-đơn. Bảo toàn paidViaReceipt khi lưu lại,
+  // nếu không mở Sửa HĐ rồi Lưu sẽ xóa mất số đã thu qua phiếu thu.
+  const viaReceipt = Number(si.paidViaReceipt || 0);
+  if (!isNew && viaReceipt) si.paid = Math.max(0, Number(si.paid || 0) - viaReceipt);   // ô form chỉ còn phần thu-ngay
   M.docForm({
     mode: 'sale', doc: si, isNew, skipDraft: isCopy,
     title: isNew ? 'Lập hóa đơn bán hàng' : 'Sửa hóa đơn bán',
@@ -278,6 +299,8 @@ M.salesForm = function (si, presetCustomerId) {
     partnerKey: 'customerId',
     priceKey: 'price',
     onSave: (obj) => {
+      // Cộng lại phần đã thu qua phiếu thu (giữ bất biến: si.paid = thu-ngay + thu-qua-phiếu)
+      if (!isNew && viaReceipt) { obj.paid = Number(obj.paid || 0) + viaReceipt; obj.paidViaReceipt = viaReceipt; }
       if (isNew) PW.data.salesInvoices.push(obj);
       else { const idx = PW.data.salesInvoices.findIndex(x => x.id === obj.id); PW.data.salesInvoices[idx] = obj; }
     },
