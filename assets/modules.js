@@ -743,10 +743,13 @@ M.partners = function (root, kind) {
   const toolbar = U.el('div', { class: 'toolbar' });
   const search = U.el('input', { class: 'search', placeholder: 'Tìm theo tên / mã / điện thoại...' });
   const debtSel = C.select([{ value: '', label: 'Tất cả công nợ' }, { value: 'owing', label: 'Còn nợ' }, { value: 'clear', label: 'Hết nợ' }, { value: 'over', label: 'Vượt hạn mức' }], '');
+  const groupName = (id) => { const g = PW.data.partnerGroups.find(gr => gr.id === id); return g ? g.name : ''; };
+  const groupSel = C.select([{ value: '', label: 'Tất cả nhóm' }].concat(PW.data.partnerGroups.map(g => ({ value: g.id, label: g.name }))), '');
   const bulkBtn = C.btn('🗑 Xóa đã chọn', () => bulkDelete(), 'danger sm');
   bulkBtn.style.display = 'none';
   toolbar.appendChild(search);
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Công nợ'), debtSel]));
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, 'Nhóm'), groupSel]));
   toolbar.appendChild(bulkBtn);
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('📊 Xuất Excel', () => doExport(), 'sm'));
@@ -761,8 +764,10 @@ M.partners = function (root, kind) {
   function filtered() {
     const q = search.value.trim().toLowerCase();
     const ds = debtSel.value;
+    const grp = groupSel.value;
     return list.filter(x => {
       if (q && !((x.name || '').toLowerCase().includes(q) || (x.code || '').toLowerCase().includes(q) || (x.phone || '').includes(q))) return false;
+      if (grp && (x.groupId || '') !== grp) return false;
       if (ds) {
         const d = debtFn(x.id);
         if (ds === 'owing' && d <= 0) return false;
@@ -802,9 +807,9 @@ M.partners = function (root, kind) {
     selected.clear(); PW.save(); App.refresh(); U.toast('Đã xóa các đối tượng đã chọn');
   }
   function doExport() {
-    const rows = filtered().map(x => [x.code, x.name, x.address || '', x.taxCode || '', x.phone || '', debtFn(x.id)]);
+    const rows = filtered().map(x => [x.code, x.name, groupName(x.groupId), x.address || '', x.taxCode || '', x.phone || '', debtFn(x.id)]);
     U.exportExcel(isCus ? 'DanhSachKhachHang' : 'DanhSachNhaCungCap',
-      ['Mã', 'Tên', 'Địa chỉ', 'MST/CCCD', 'Điện thoại', isCus ? 'Công nợ phải thu' : 'Công nợ phải trả'],
+      ['Mã', 'Tên', 'Nhóm', 'Địa chỉ', 'MST/CCCD', 'Điện thoại', isCus ? 'Công nợ phải thu' : 'Công nợ phải trả'],
       rows, isCus ? 'DANH SÁCH KHÁCH HÀNG' : 'DANH SÁCH NHÀ CUNG CẤP');
   }
 
@@ -825,7 +830,7 @@ M.partners = function (root, kind) {
     });
     const htr = U.el('tr');
     htr.appendChild(U.el('th', { style: 'width:34px' }, headChk));
-    ['Mã', 'Tên ' + (isCus ? 'khách hàng' : 'nhà cung cấp'), 'Địa chỉ', 'MST/CCCD', 'Điện thoại'].forEach(h =>
+    ['Mã', 'Tên ' + (isCus ? 'khách hàng' : 'nhà cung cấp'), 'Nhóm', 'Địa chỉ', 'MST/CCCD', 'Điện thoại'].forEach(h =>
       htr.appendChild(U.el('th', null, h)));
     htr.appendChild(U.el('th', { class: 'num' }, isCus ? 'Công nợ phải thu' : 'Công nợ phải trả'));
     htr.appendChild(U.el('th', { class: 'center' }, 'Chức năng'));
@@ -833,7 +838,7 @@ M.partners = function (root, kind) {
 
     const tb = U.el('tbody');
     if (!pageRows.length) {
-      tb.appendChild(U.el('tr', null, U.el('td', { colspan: 8 }, U.el('div', { class: 'empty' }, 'Chưa có dữ liệu'))));
+      tb.appendChild(U.el('tr', null, U.el('td', { colspan: 9 }, U.el('div', { class: 'empty' }, 'Chưa có dữ liệu'))));
     }
     // Nhân viên (chế độ server) KHÔNG được thao tác tiền (thu/chi) -> ẩn nút, tránh 403 khó hiểu
     const restricted = PW.mode === 'server' && PW.user && PW.user.role === 'nhanvien';
@@ -854,6 +859,7 @@ M.partners = function (root, kind) {
         U.el('td', { 'data-label': '' }, chk),
         U.el('td', { 'data-label': 'Mã' }, U.esc(x.code)),
         U.el('td', { 'data-label': 'Tên' }, U.esc(x.name)),
+        U.el('td', { 'data-label': 'Nhóm', html: x.groupId ? U.esc(groupName(x.groupId) || '(nhóm đã xóa)') : '<span class="text-muted">—</span>' }),
         U.el('td', { 'data-label': 'Địa chỉ' }, U.esc(x.address || '')),
         U.el('td', { 'data-label': 'MST/CCCD' }, U.esc(x.taxCode || '')),
         U.el('td', { 'data-label': 'Điện thoại' }, U.esc(x.phone || '')),
@@ -867,7 +873,9 @@ M.partners = function (root, kind) {
 
     // Phân trang
     pager.innerHTML = '';
-    pager.appendChild(U.el('div', { class: 'text-muted' }, 'Tổng số: ' + total + ' bản ghi'));
+    const sumDebt = rows.reduce((s, x) => s + debtFn(x.id), 0);
+    pager.appendChild(U.el('div', { class: 'text-muted' }, 'Tổng số: ' + total + ' bản ghi · '
+      + (isCus ? 'Tổng phải thu' : 'Tổng phải trả') + (groupSel.value ? ' (' + groupName(groupSel.value) + ')' : '') + ': ' + U.money(sumDebt)));
     pager.appendChild(U.el('div', { class: 'spacer' }));
     pager.appendChild(U.el('span', { class: 'text-muted', style: 'margin-right:6px' }, 'Số dòng/trang:'));
     const sizeSel = C.select([{ value: 20, label: '20' }, { value: 50, label: '50' }, { value: 100, label: '100' }, { value: 'all', label: 'Tất cả' }], pageSize);
@@ -882,6 +890,7 @@ M.partners = function (root, kind) {
   }
   search.addEventListener('input', () => { page = 1; draw(); });
   debtSel.addEventListener('change', () => { page = 1; draw(); });
+  groupSel.addEventListener('change', () => { page = 1; draw(); });
   draw();
 };
 
