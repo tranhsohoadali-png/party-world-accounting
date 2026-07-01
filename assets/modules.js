@@ -940,7 +940,11 @@ M.partnerForm = function (kind, x, opts) {
   const noteTa = C.textarea({ rows: 3 }); noteTa.value = x.note || '';
 
   // Nhóm KH/NCC (select + thêm nhanh)
-  const groupOpts = () => [{ value: '', label: '-- Chọn nhóm --' }].concat(PW.data.partnerGroups.map(g => ({ value: g.id, label: g.name })));
+  const groupOpts = () => {
+    const opts = [{ value: '', label: '-- Chọn nhóm --' }].concat(PW.data.partnerGroups.map(g => ({ value: g.id, label: g.name })));
+    if (x.groupId && !PW.data.partnerGroups.some(g => g.id === x.groupId)) opts.push({ value: x.groupId, label: '(Nhóm đã xóa)' });   // giữ liên kết nếu nhóm đã bị xóa
+    return opts;
+  };
   const groupSel = C.select(groupOpts(), x.groupId || '');
   const addGroupBtn = U.el('button', { class: 'btn sm primary', type: 'button', title: 'Thêm nhóm mới', onclick: () => {
     const name = prompt('Tên nhóm ' + LABEL + ' mới:');

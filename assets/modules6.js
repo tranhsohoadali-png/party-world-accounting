@@ -107,7 +107,6 @@ M.catalogHub = function (root) {
 /* ---------- CRUD danh mục đơn giản ---------- */
 M.simpleCatalog = function (root, id) {
   const cfg = M.CATALOGS[id];
-  const list = PW.data[cfg.data];
 
   const card = U.el('div', { class: 'card' });
   const toolbar = U.el('div', { class: 'toolbar' });
@@ -138,12 +137,17 @@ M.simpleCatalog = function (root, id) {
       { label: 'Xóa', cls: 'danger', onClick: () => {
           if (U.confirm('Xóa "' + (r.name || r.code) + '"?')) {
             PW.data[cfg.data] = PW.data[cfg.data].filter(x => x.id !== r.id);
+            // Xóa nhóm KH/NCC -> gỡ groupId mồ côi ở khách hàng & nhà cung cấp
+            if (cfg.data === 'partnerGroups') {
+              (PW.data.customers || []).forEach(c => { if (c.groupId === r.id) c.groupId = null; });
+              (PW.data.suppliers || []).forEach(s => { if (s.groupId === r.id) s.groupId = null; });
+            }
             PW.save(); draw(); U.toast('Đã xóa');
           }
         } },
     ]) });
     host.innerHTML = '';
-    host.appendChild(C.table(list, cols, { empty: 'Chưa có dữ liệu' }));
+    host.appendChild(C.table(PW.data[cfg.data], cols, { empty: 'Chưa có dữ liệu' }));   // đọc THẲNG PW.data (không giữ tham chiếu cũ -> Xóa cập nhật ngay)
   }
   draw();
 };
