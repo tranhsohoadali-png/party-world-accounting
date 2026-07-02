@@ -930,6 +930,21 @@ M.docForm = function (cfg) {
     }
   }
 
+  // Ô số dòng hàng: ẩn spinner, KHÔNG cho lăn chuột đổi số (dễ sai), và ↓/Enter -> dòng dưới, ↑ -> dòng trên (cùng cột)
+  function wireLineNav(inp, colClass) {
+    inp.classList.add('no-spin', colClass);
+    inp.addEventListener('wheel', (e) => { if (document.activeElement === inp) e.preventDefault(); }, { passive: false });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === 'ArrowUp') {
+        const all = Array.prototype.slice.call(itemsBody.querySelectorAll('.' + colClass));
+        const i = all.indexOf(inp);
+        const j = (e.key === 'ArrowUp') ? i - 1 : i + 1;
+        if (i > -1 && j >= 0 && j < all.length) { e.preventDefault(); all[j].focus(); all[j].select(); }
+        else if (e.key !== 'Enter') e.preventDefault();   // chặn ↑/↓ đổi số ở đầu/cuối bảng
+      }
+    });
+  }
+
   function drawItems() {
     itemsBody.innerHTML = '';
     items.forEach((it, idx) => {
@@ -940,8 +955,10 @@ M.docForm = function (cfg) {
       }, { isSale: isSale });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; updateLine(); });
+      wireLineNav(qtyI, 'li-qty');
       const priceI = U.el('input', { type: 'number', value: it[unitField], min: 0, style: 'text-align:right' });
       priceI.addEventListener('input', () => { it[unitField] = Number(priceI.value) || 0; updateLine(); });
+      wireLineNav(priceI, 'li-price');
       // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
       const lineTotal = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)), min: 0, style: 'text-align:right' });
       function updateLine() { lineTotal.value = Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)); calc(); }
@@ -950,6 +967,7 @@ M.docForm = function (cfg) {
         if (q > 0) { it[unitField] = Math.round(tt / q * 100) / 100; priceI.value = it[unitField]; }
         calc(); scheduleDraft();
       });
+      wireLineNav(lineTotal, 'li-total');
       const p = PW.product(it.productId);
       const stockInfo = isSale && p ? U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' }, 'Tồn: ' + U.num(PW.stockOf(p.id))) : null;
 

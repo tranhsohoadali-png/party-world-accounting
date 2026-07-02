@@ -258,6 +258,9 @@ input.inp:focus, select.inp:focus, textarea.inp:focus, input.search:focus { outl
 .items-tbl th { background: #f4f7ee; color: var(--muted); text-align: left; }
 .items-tbl input, .items-tbl select { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
 .items-tbl td.num { text-align: right; }
+/* Ẩn nút tăng/giảm (spinner) của ô số — tránh bấm/lăn chuột làm sai số lượng */
+input.no-spin::-webkit-outer-spin-button, input.no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.no-spin { -moz-appearance: textfield; appearance: textfield; }
 
 /* Toast */
 .toast {
