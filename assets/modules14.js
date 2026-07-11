@@ -223,9 +223,8 @@ M._ciZipRead = async function (buf) {
   };
 };
 
-// .xlsx -> mảng dòng "ô1<TAB>ô2..." (sheet đầu tiên, giữ đúng vị trí cột)
-M._ciXlsxToLines = async function (file) {
-  const zip = await M._ciZipRead(await file.arrayBuffer());
+// Đọc bảng sharedStrings của 1 .xlsx zip -> mảng chuỗi
+M._ciXlsxShared = async function (zip) {
   const shared = [];
   const ssXml = await zip.read('xl/sharedStrings.xml');
   if (ssXml) {
@@ -236,10 +235,10 @@ M._ciXlsxToLines = async function (file) {
       shared.push(s);
     }
   }
-  const sheetName = zip.names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
-    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]))[0];
-  if (!sheetName) throw new Error('Không tìm thấy worksheet trong file Excel');
-  const doc = new DOMParser().parseFromString(await zip.read(sheetName), 'application/xml');
+  return shared;
+};
+// Phân tích 1 worksheet (DOM doc) + sharedStrings -> mảng dòng "ô1<TAB>ô2..." (giữ đúng vị trí cột theo r="B3")
+M._ciSheetDocToLines = function (doc, shared) {
   const rows = doc.getElementsByTagNameNS('*', 'row');
   const lines = [];
   for (let i = 0; i < rows.length; i++) {
@@ -255,18 +254,69 @@ M._ciXlsxToLines = async function (file) {
       } else {
         const vEl = c.getElementsByTagNameNS('*', 'v')[0];
         v = vEl ? vEl.textContent : '';
-        if (t === 's') v = shared[Number(v)] != null ? shared[Number(v)] : '';
+        if (t === 's') v = (shared[Number(v)] != null) ? shared[Number(v)] : '';
       }
-      // Đặt theo chữ cột (r="B3") để giữ ô trống giữa các cột
       const colLetters = (c.getAttribute('r') || '').replace(/\d+/g, '');
       let col = 0;
       for (let k = 0; k < colLetters.length; k++) col = col * 26 + (colLetters.charCodeAt(k) - 64);
       if (col > 0) vals[col - 1] = v; else vals.push(v);
     }
-    const line = Array.from(vals, x => x == null ? '' : x).join('\t').replace(/[\t ]+$/, '');   // GIỮ ô trống bên trái (không lệch cột dòng tổng)
+    const line = Array.from(vals, x => x == null ? '' : x).join('\t').replace(/[\t ]+$/, '');
     if (line) lines.push(line);
   }
   return lines;
+};
+// Danh sách các sheet .xlsx đã sort theo số file
+M._ciXlsxSheetFiles = function (zip) {
+  return zip.names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
+    .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]));
+};
+// .xlsx -> mảng dòng "ô1<TAB>ô2..." (sheet ĐẦU TIÊN, giữ đúng vị trí cột) — giữ chữ ký cũ cho import ký gửi
+M._ciXlsxToLines = async function (file) {
+  const zip = await M._ciZipRead(await file.arrayBuffer());
+  const shared = await M._ciXlsxShared(zip);
+  const sheetFile = M._ciXlsxSheetFiles(zip)[0];
+  if (!sheetFile) throw new Error('Không tìm thấy worksheet trong file Excel');
+  const doc = new DOMParser().parseFromString(await zip.read(sheetFile), 'application/xml');
+  return M._ciSheetDocToLines(doc, shared);
+};
+// .xlsx -> [{name, lines}] cho MỌI worksheet. Ghép TÊN <-> FILE đúng qua r:id (workbook.xml.rels),
+// KHÔNG ghép theo chỉ số (OOXML không đảm bảo thứ tự tab == thứ tự file sheetN.xml).
+M._ciXlsxAllSheets = async function (file) {
+  const zip = await M._ciZipRead(await file.arrayBuffer());
+  const shared = await M._ciXlsxShared(zip);
+  const files = M._ciXlsxSheetFiles(zip);
+  // r:id -> file (vd rId1 -> xl/worksheets/sheet1.xml)
+  const relMap = {};
+  const relsXml = await zip.read('xl/_rels/workbook.xml.rels');
+  if (relsXml) {
+    const rels = new DOMParser().parseFromString(relsXml, 'application/xml').getElementsByTagNameNS('*', 'Relationship');
+    for (let i = 0; i < rels.length; i++) {
+      const id = rels[i].getAttribute('Id'); if (!id) continue;
+      relMap[id] = 'xl/' + String(rels[i].getAttribute('Target') || '').replace(/^\/?xl\//, '').replace(/^\.\//, '');
+    }
+  }
+  const out = [];
+  const wbXml = await zip.read('xl/workbook.xml');
+  const sheetEls = wbXml ? new DOMParser().parseFromString(wbXml, 'application/xml').getElementsByTagNameNS('*', 'sheet') : [];
+  if (sheetEls.length) {
+    for (let i = 0; i < sheetEls.length; i++) {
+      const name = sheetEls[i].getAttribute('name') || ('Sheet' + (i + 1));
+      let rid = sheetEls[i].getAttribute('r:id');
+      if (!rid) { const at = sheetEls[i].attributes; for (let k = 0; k < at.length; k++) if (/(^|:)id$/i.test(at[k].name) && at[k].name !== 'sheetId') { rid = at[k].value; break; } }
+      const target = rid && relMap[rid];
+      const path = (target && zip.names.indexOf(target) >= 0) ? target : files[i];   // fallback theo chỉ số nếu thiếu rels
+      if (!path) continue;
+      const doc = new DOMParser().parseFromString(await zip.read(path), 'application/xml');
+      out.push({ name: name, lines: M._ciSheetDocToLines(doc, shared) });
+    }
+    return out;
+  }
+  for (let i = 0; i < files.length; i++) {   // không có workbook.xml -> đọc theo file
+    const doc = new DOMParser().parseFromString(await zip.read(files[i]), 'application/xml');
+    out.push({ name: 'Sheet' + (i + 1), lines: M._ciSheetDocToLines(doc, shared) });
+  }
+  return out;
 };
 
 // Bảng HTML đội lốt .xls (chính dạng U.exportExcel xuất + nhiều phần mềm VN) -> dòng TSV

@@ -116,8 +116,10 @@ M.payrollDetail = function (id) {
   toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' },
     '💰 Bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) + ' (ngày công chuẩn: ' + p.standardDays + ')'));
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
+  toolbar.appendChild(C.btn('📄 Nhập Excel bảng công', () => M.payrollImportExcel(p), 'sm'));
   toolbar.appendChild(C.btn('📥 Lấy chấm công', () => M.payrollImportServer(p), 'sm'));
   toolbar.appendChild(C.btn('📋 Dán chấm công', () => M.payrollPasteTK(p), 'sm'));
+  toolbar.appendChild(C.btn('🛡️ Hậu kiểm', () => M.payrollAuditModal(p), 'sm'));
   if (canAuto) {
     toolbar.appendChild(C.btn(App._payrollAuto ? '🔄 Tự động: BẬT' : '🔄 Tự động: TẮT',
       () => { App._payrollAuto = !App._payrollAuto; U.toast(App._payrollAuto ? 'Đã bật tự động cập nhật chấm công (mỗi 3 phút)' : 'Đã tắt tự động'); M.payrollDetail(id); },
@@ -416,11 +418,245 @@ M.payrollPasteTK = function (p) {
   });
 };
 
+/* ==================================================================
+   NHẬP EXCEL BẢNG CÔNG + HẬU KIỂM (chống lỗi trước khi chốt lương)
+   ================================================================== */
+// Số ngày trong tháng 'YYYY-MM'
+M._daysInMonth = function (ym) {
+  const y = Number((ym || '').slice(0, 4)), mo = Number((ym || '').slice(5, 7));
+  if (!y || !mo) return 31;
+  return new Date(y, mo, 0).getDate();
+};
+// Khớp 1 mã chấm công (từ file) -> nhân viên: ưu tiên tkCode, rồi mã NV, rồi tên
+M.payrollMatchEmp = function (code) {
+  const c = _norm(code);
+  if (!c) return null;
+  return PW.data.employees.find(e => _norm(e.tkCode) === c || _norm(e.code) === c)
+      || PW.data.employees.find(e => _norm(e.name) === c) || null;
+};
+// Đọc file .xlsx bảng công -> chọn sheet "Tổng hợp" (theo tên hoặc tiêu đề), trả { lines, sheetName }
+M.payrollReadCongFile = async function (file) {
+  const sheets = await M._ciXlsxAllSheets(file);
+  if (!sheets.length) throw new Error('File Excel không có worksheet nào.');
+  const looksSummary = lines => (lines || []).slice(0, 6).some(l => {
+    const n = M._ciNorm(l);
+    return /ngay cong/.test(n) && !/gio vao|gio ra/.test(n);
+  });
+  // Ưu tiên theo NỘI DUNG (tiêu đề tổng hợp) — chắc chắn đúng dữ liệu; rồi mới theo tên
+  const picked = sheets.find(s => looksSummary(s.lines) && /tong hop/.test(M._ciNorm(s.name)))
+    || sheets.find(s => looksSummary(s.lines))
+    || sheets.find(s => /tong hop/.test(M._ciNorm(s.name))) || sheets[0];
+  return { lines: picked.lines, sheetName: picked.name };
+};
+// Parse sheet Tổng hợp -> { recs, month, headerFound }
+M.payrollParseCong = function (lines, fileName) {
+  let month = null;
+  (lines || []).slice(0, 3).forEach(l => {
+    const m = l.match(/th[aá]ng\s*(\d{1,2})\s*[\/\-.]\s*(\d{4})/i);
+    if (m) month = m[2] + '-' + String(m[1]).padStart(2, '0');
+  });
+  if (!month && fileName) { const m = String(fileName).match(/(\d{4})[-_.](\d{1,2})/); if (m) month = m[1] + '-' + String(m[2]).padStart(2, '0'); }
+  let hi = -1; const col = {};
+  for (let i = 0; i < Math.min((lines || []).length, 8); i++) {
+    const cells = (M._ciSplitCells(lines[i]) || []).map(c => M._ciNorm(c));
+    if (cells.some(c => /ngay cong/.test(c))) {
+      cells.forEach((c, idx) => {   // cột ĐẦU khớp thắng (== null) -> tránh cột 'Ngày công phép/thực tế' đè
+        if (/ngay cong/.test(c) && col.ngay == null) col.ngay = idx;
+        else if (/tong gio/.test(c) && col.tongGio == null) col.tongGio = idx;
+        else if (/tien tang ca/.test(c) && col.tienTC == null) col.tienTC = idx;   // specific TRƯỚC 'tang ca'
+        else if (/tang ca/.test(c) && col.tangCa == null) col.tangCa = idx;
+        else if (/di muon/.test(c) && col.diMuon == null) col.diMuon = idx;
+        else if (/phat/.test(c) && col.phat == null) col.phat = idx;
+        else if (/(nhan vien|ho ten|^ten|^ma)/.test(c) && col.ma == null) col.ma = idx;
+      });
+      hi = i; break;
+    }
+  }
+  if (hi < 0 || col.ngay == null) return { recs: [], month: month, headerFound: false };
+  if (col.ma == null) col.ma = 0;   // cột A = mã chấm công
+  const recs = [];
+  for (let i = hi + 1; i < lines.length; i++) {
+    const cells = M._ciSplitCells(lines[i]) || [];
+    const code = String(cells[col.ma] || '').trim();
+    if (!code) continue;
+    if (/^(tong|cong|sum)\b|tong cong/.test(M._ciNorm(code))) continue;   // bỏ dòng tổng/cộng
+    const num = idx => (idx != null ? M._tkNum(cells[idx]) : null);
+    recs.push({
+      code: code, name: code,   // name = giá trị cột định danh -> Áp dụng khớp được cả khi file dùng cột 'Họ tên'
+      totalDays: num(col.ngay), allowDays: num(col.ngay),
+      otHours: col.tangCa != null ? num(col.tangCa) : null,
+      lateFine: col.phat != null ? num(col.phat) : null,
+      tongGio: col.tongGio != null ? num(col.tongGio) : null,
+      diMuonPhut: col.diMuon != null ? num(col.diMuon) : null,
+      tienTC: col.tienTC != null ? num(col.tienTC) : null,
+    });
+  }
+  return { recs: recs, month: month, headerFound: true };
+};
+// HẬU KIỂM: trả { red:[], orange:[], counts }. ctx (khi import) = { recs, monthFile }
+M.payrollAudit = function (p, ctx) {
+  ctx = ctx || {};
+  const red = [], orange = [];
+  const push = (arr, ma, msg, empId) => arr.push({ ma: ma, msg: msg, employeeId: empId || null });
+  const sd = Number(p.standardDays) || 0;
+  const dim = M._daysInMonth(p.month);
+
+  if (ctx.recs) {
+    if (ctx.monthFile && ctx.monthFile !== p.month)
+      push(red, 'KY01', 'File là chấm công tháng ' + ctx.monthFile + ' nhưng bảng lương đang mở là tháng ' + p.month + ' — nạp nhầm kỳ sẽ sai toàn bộ.');
+    const seen = {};
+    ctx.recs.forEach(r => { const c = _norm(r.code); seen[c] = (seen[c] || 0) + 1; });
+    Object.keys(seen).forEach(c => { if (seen[c] > 1) push(orange, 'KH04', 'Mã "' + c + '" xuất hiện ' + seen[c] + ' dòng trong file — chỉ dòng cuối được áp dụng.'); });
+    ctx.recs.forEach(r => {
+      const emp = M.payrollMatchEmp(r.code);
+      if (!emp) { push(red, 'KH01', 'Dòng "' + r.code + '" trong file không khớp nhân viên nào (sai/thiếu "Mã chấm công").'); return; }
+      const nm = emp.name, td = Number(r.totalDays || 0), ot = Number(r.otHours || 0);
+      if (r.totalDays == null) push(orange, 'NC02', nm + ': không đọc được ngày công (ô trống/chứa chữ) — sẽ GIỮ số cũ khi áp dụng, không cập nhật.', emp.id);
+      if (r.totalDays != null && r.totalDays < 0) push(red, 'NC01', nm + ': ngày công âm (' + r.totalDays + ').', emp.id);
+      if (td > dim) push(red, 'NC03', nm + ': ' + td + ' ngày công > số ngày của tháng (' + dim + ') — chắc chắn sai.', emp.id);
+      else if (sd && td > sd) push(orange, 'NC04', nm + ': ' + td + ' ngày công > ngày công chuẩn (' + sd + ') → lương chính vượt 100%.', emp.id);
+      if (td === 0) push(orange, 'NC06', nm + ': 0 ngày công trong file — nghỉ cả tháng hay thiếu dữ liệu?', emp.id);
+      if (r.tongGio != null && td > 0) {
+        if (r.tongGio === 0) push(red, 'GC01', nm + ': ' + td + ' ngày công nhưng 0 giờ — mâu thuẫn (thiếu giờ vào/ra).', emp.id);
+        else { const h = r.tongGio / td; if (h < 4 || h > 13) push(orange, 'GC02', nm + ': TB ' + (Math.round(h * 10) / 10) + ' giờ/ngày — ngoài khoảng thường (4–13h).', emp.id); }
+      }
+      if (ot > 0 && td === 0) push(red, 'TC02', nm + ': có tăng ca ' + ot + 'h nhưng 0 ngày công — mâu thuẫn.', emp.id);
+      if (ot > 60 || (td > 0 && ot > td * 4)) push(orange, 'TC01', nm + ': tăng ca ' + ot + ' giờ — cao bất thường, xác nhận số liệu.', emp.id);
+      if (r.tienTC != null && r.tienTC > 0 && ot > 0) push(orange, 'TC03', nm + ': file có "Tiền tăng ca" ' + U.money(r.tienTC) + 'đ nhưng phần mềm TỰ tính tiền OT theo số giờ — chỉ dùng 1 nguồn (đang dùng số giờ).', emp.id);
+      if (r.lateFine != null && r.lateFine < 0) push(red, 'PH01', nm + ': tiền phạt âm.', emp.id);
+    });
+  }
+
+  if (p.paidDate) push(red, 'IM05', 'Bảng lương tháng ' + p.month + ' ĐÃ ghi chi lương ngày ' + U.date(p.paidDate) + ' — sửa/nạp lúc này gây lệch số đã chi.');
+  if (sd <= 0) push(red, 'CH03', 'Ngày công chuẩn = ' + p.standardDays + ' không hợp lệ → phụ cấp & lương tháng chia sai.');
+  const tkMap = {};
+  PW.data.employees.forEach(e => { const c = _norm(e.tkCode); if (c) (tkMap[c] = tkMap[c] || []).push(e.name); });
+  Object.keys(tkMap).forEach(c => { if (tkMap[c].length > 1) push(red, 'KH03', 'Mã chấm công "' + c + '" bị TRÙNG ở: ' + tkMap[c].join(', ') + ' — dữ liệu sẽ ghi nhầm người.'); });
+  (p.lines || []).forEach(ln => {
+    const e = empById(ln.employeeId);
+    if (!e) { push(red, 'KH07', 'Có dòng lương trỏ tới nhân viên đã bị xóa — gỡ dòng hoặc khôi phục NV.', ln.employeeId); return; }
+    const td = Number(ln.totalDays || 0), ad = Number(ln.allowDays || 0);
+    if (ad > td) push(red, 'NC05', e.name + ': ngày có phụ cấp (' + ad + ') > tổng ngày công (' + td + ') — vô lý.', e.id);
+    if (td > 0 && !(Number(e.salaryBase) > 0) && !(Number(e.dayWage) > 0)) push(red, 'CH01', e.name + ': có ' + td + ' ngày công nhưng chưa khai "Lương cơ bản/tháng" lẫn "Lương theo ngày" → lương chính = 0đ.', e.id);
+    else if (Number(e.salaryBase) > 0 && Number(e.dayWage) > 0) push(orange, 'CH02', e.name + ': khai cả Lương cơ bản/tháng lẫn Lương theo ngày — phần mềm chỉ dùng Lương theo ngày.', e.id);
+    const r = M.payrollCompute(e, ln, p.standardDays);
+    if (r.thucLinh < 0) push(red, 'TL01', e.name + ': THỰC LĨNH ÂM (' + U.money(r.thucLinh) + 'đ) — các khoản trừ vượt thu nhập.', e.id);
+    else if (r.thucLinh === 0 && td > 0) push(orange, 'TL02', e.name + ': thực lĩnh 0đ dù có ' + td + ' ngày công.', e.id);
+    if (ctx.recs && td === 0 && !ctx.recs.some(rc => M.payrollMatchEmp(rc.code) === e))
+      push(orange, 'KH02', e.name + ': không có dữ liệu chấm công trong file (đang 0 ngày) — đã nghỉ việc hay bị bỏ sót?', e.id);
+  });
+
+  return { red: red, orange: orange, counts: { red: red.length, orange: orange.length } };
+};
+// Mở bảng hậu kiểm độc lập (kiểm bảng lương hiện tại trước khi chốt)
+M.payrollAuditModal = function (p) {
+  const audit = M.payrollAudit(p);
+  const body = U.el('div');
+  body.appendChild(U.el('div', { class: 'section-sub', html: 'Hậu kiểm bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) + ': '
+    + (audit.counts.red ? '<span class="text-red">🔴 ' + audit.counts.red + ' lỗi chặn</span> · ' : '')
+    + '<span style="color:#c77f0a">🟡 ' + audit.counts.orange + ' nhắc</span>'
+    + (!audit.counts.red && !audit.counts.orange ? ' — <span class="text-green">✓ không phát hiện lỗi, có thể chốt lương</span>' : '') }));
+  const list = U.el('div', { style: 'max-height:360px;overflow:auto;margin-top:8px' });
+  audit.red.forEach(a => list.appendChild(U.el('div', { style: 'padding:4px 0', html: '<span class="tag red">' + a.ma + '</span> ' + U.esc(a.msg) })));
+  audit.orange.forEach(a => list.appendChild(U.el('div', { style: 'padding:4px 0', html: '<span class="tag orange">' + a.ma + '</span> ' + U.esc(a.msg) })));
+  if (!audit.red.length && !audit.orange.length) list.appendChild(U.el('div', { class: 'text-green', style: 'padding:8px 0' }, '✓ Tất cả hợp lệ.'));
+  body.appendChild(list);
+  C.modal({ title: '🛡️ Hậu kiểm bảng lương', wide: true, body, footer: [C.btn('Đóng', C.closeModal, 'primary')] });
+};
+// MÀN NHẬP EXCEL: chọn file -> xem trước (cũ→mới) + hậu kiểm -> Áp dụng (có bảo vệ)
+M.payrollImportExcel = function (p) {
+  if (p.paidDate && !U.confirm('Bảng lương này ĐÃ ghi chi lương. Vẫn nhập lại chấm công? (dễ lệch số đã chi)')) return;
+  const fileIn = U.el('input', { type: 'file', accept: '.xlsx', style: 'display:none' });
+  const drop = U.el('div', { class: 'section-sub', style: 'border:2px dashed var(--line);border-radius:8px;padding:18px;text-align:center;cursor:pointer' },
+    '📄 Bấm để chọn file Excel bảng công (.xlsx) — hoặc kéo-thả vào đây');
+  drop.onclick = () => fileIn.click();
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.background = '#eef6e6'; });
+  drop.addEventListener('dragleave', () => { drop.style.background = ''; });
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.style.background = ''; if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]); });
+  fileIn.addEventListener('change', () => { if (fileIn.files[0]) handle(fileIn.files[0]); });
+  const host = U.el('div', { class: 'mt16' });
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' }, 'Nhập từ file Excel "Bảng công tháng" (sheet Tổng hợp). Hệ thống XEM TRƯỚC + HẬU KIỂM, chỉ ghi vào bảng lương khi bạn bấm "Áp dụng".'),
+    drop, fileIn, host,
+  ]);
+  C.modal({ title: '📄 Nhập Excel bảng công — tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4), wide: true, body, footer: [C.btn('Đóng', C.closeModal)] });
+
+  async function handle(file) {
+    host.innerHTML = '<div class="section-sub">Đang đọc file...</div>';
+    let read, parsed;
+    try { read = await M.payrollReadCongFile(file); parsed = M.payrollParseCong(read.lines, file.name); }
+    catch (e) { host.innerHTML = '<div class="text-red">Lỗi đọc file: ' + U.esc(e.message) + '</div>'; return; }
+    if (!parsed.headerFound) { host.innerHTML = '<div class="text-red">Không nhận dạng được cột (thiếu "Ngày công"...). Kiểm tra đúng sheet Tổng hợp.</div>'; return; }
+    if (!parsed.recs.length) { host.innerHTML = '<div class="text-red">Không đọc được dòng nhân viên nào trong sheet "' + U.esc(read.sheetName) + '".</div>'; return; }
+    render(file, read, parsed);
+  }
+
+  function render(file, read, parsed) {
+    const recs = parsed.recs;
+    const rows = recs.map(r => {
+      const emp = M.payrollMatchEmp(r.code);
+      const ln = emp ? (p.lines.find(l => l.employeeId === emp.id) || { totalDays: 0, otHours: 0, lateFine: 0 }) : null;
+      let net = null;
+      if (emp) {
+        const sim = Object.assign({}, ln, {   // ô trống (null) -> GIỮ số cũ, khớp đúng hành vi tkApplyAndReport
+          totalDays: r.totalDays != null ? r.totalDays : (ln.totalDays || 0),
+          allowDays: r.allowDays != null ? r.allowDays : (ln.allowDays || 0),
+          otHours: r.otHours != null ? r.otHours : (ln.otHours || 0),
+          lateFine: (r.lateFine != null && r.lateFine > 0) ? r.lateFine : (ln.lateFine || 0) });
+        net = M.payrollCompute(emp, sim, p.standardDays).thucLinh;
+      }
+      return { r: r, emp: emp, ln: ln, net: net };
+    });
+    const audit = M.payrollAudit(p, { recs: recs, monthFile: parsed.month });
+    const matched = rows.filter(x => x.emp).length;
+    host.innerHTML = '';
+    if (parsed.month && parsed.month !== p.month)
+      host.appendChild(U.el('div', { class: 'tag red', style: 'display:block;padding:8px;margin-bottom:8px' }, '⚠ File là tháng ' + parsed.month + ' ≠ bảng lương tháng ' + p.month + '. Kiểm tra lại!'));
+    host.appendChild(U.el('div', { class: 'section-sub', html: 'File: <b>' + U.esc(file.name) + '</b> · sheet <b>' + U.esc(read.sheetName) + '</b> · khớp <b class="text-green">' + matched + '/' + recs.length + '</b> nhân viên. Cột "Tiền tăng ca" chỉ để đối chiếu (KHÔNG cộng vào lương).' }));
+    host.appendChild(C.table(rows, [
+      { label: 'Mã file', render: x => U.esc(x.r.code) },
+      { label: 'Nhân viên', render: x => x.emp ? U.esc(x.emp.name) : '<span class="tag red">chưa khớp</span>' },
+      { label: 'Ngày công', center: true, render: x => x.emp ? ((x.ln.totalDays || 0) + ' → <b>' + (x.r.totalDays != null ? x.r.totalDays : '?') + '</b>') : '' },
+      { label: 'Tăng ca (h)', center: true, render: x => x.emp ? ((x.ln.otHours || 0) + ' → <b>' + (x.r.otHours != null ? x.r.otHours : (x.ln.otHours || 0)) + '</b>') : '' },
+      { label: 'Phạt', num: true, render: x => x.emp ? (U.money(x.ln.lateFine || 0) + ' → <b>' + U.money((x.r.lateFine != null && x.r.lateFine > 0) ? x.r.lateFine : (x.ln.lateFine || 0)) + '</b>') : '' },
+      { label: 'Thực lĩnh dự kiến', num: true, render: x => x.net != null ? U.money(x.net) : '' },
+    ], { empty: '—' }));
+    const auditWrap = U.el('div', { class: 'mt16' });
+    auditWrap.appendChild(U.el('div', { class: 'card-title', style: 'font-size:14px', html: '🛡️ Hậu kiểm: '
+      + (audit.counts.red ? '<span class="text-red">🔴 ' + audit.counts.red + ' lỗi chặn</span> · ' : '')
+      + '<span style="color:#c77f0a">🟡 ' + audit.counts.orange + ' nhắc</span>'
+      + (!audit.counts.red && !audit.counts.orange ? ' <span class="text-green">✓ không có lỗi</span>' : '') }));
+    const list = U.el('div', { style: 'max-height:260px;overflow:auto' });
+    audit.red.forEach(a => list.appendChild(U.el('div', { style: 'padding:4px 0', html: '<span class="tag red">' + a.ma + '</span> ' + U.esc(a.msg) })));
+    audit.orange.forEach(a => list.appendChild(U.el('div', { style: 'padding:4px 0', html: '<span class="tag orange">' + a.ma + '</span> ' + U.esc(a.msg) })));
+    auditWrap.appendChild(list);
+    host.appendChild(auditWrap);
+    const ackChk = U.el('input', { type: 'checkbox' });
+    const ackRow = (audit.counts.orange && !audit.counts.red)
+      ? U.el('label', { class: 'radio', style: 'margin-right:10px' }, [ackChk, ' Tôi đã kiểm tra các cảnh báo vàng'])
+      : null;
+    const applyBtn = C.btn('✅ Áp dụng vào bảng lương', () => {
+      if (audit.counts.red) return U.toast('Còn ' + audit.counts.red + ' lỗi chặn (🔴) — xử lý xong mới áp dụng.', 'error');
+      if (ackRow && !ackChk.checked) return U.toast('Tích xác nhận đã kiểm tra cảnh báo vàng.', 'error');
+      C.closeModal();
+      p._congSource = { file: file.name, sheet: read.sheetName };
+      M.tkApplyAndReport(p, recs);   // TÁI DÙNG: khớp + tự thêm NV + chỉ ghi 4 trường; KHÔNG cộng đôi OT
+    }, 'primary');
+    if (audit.counts.red) { applyBtn.disabled = true; applyBtn.title = 'Còn ' + audit.counts.red + ' lỗi chặn — không thể áp dụng'; }
+    host.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right' }, [ackRow, applyBtn].filter(Boolean)));
+  }
+};
+
 /* ---------- Ghi nhận chi lương (tạo phiếu chi) ---------- */
 M.payrollPay = function (p) {
   if (p.paidDate) {
     if (!U.confirm('Bảng lương tháng ' + p.month + ' ĐÃ ghi chi lương ngày ' + U.date(p.paidDate) + '.\nTạo THÊM phiếu chi nữa? (dễ bị trùng)')) return;
   }
+  // Hậu kiểm trước khi chốt: cảnh báo nếu còn lỗi nghiêm trọng
+  const au = M.payrollAudit(p);
+  if (au.counts.red && !U.confirm('🛡️ Hậu kiểm phát hiện ' + au.counts.red + ' lỗi nghiêm trọng:\n- '
+      + au.red.slice(0, 6).map(a => a.msg).join('\n- ') + (au.red.length > 6 ? '\n...' : '')
+      + '\n\nVẫn tiếp tục ghi chi lương?')) return;
   const total = M.payrollNetTotal(p);
   const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
   const body = U.el('div', { class: 'form-grid' }, [
