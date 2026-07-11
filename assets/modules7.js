@@ -442,11 +442,68 @@ M.payrollReadCongFile = async function (file) {
     const n = M._ciNorm(l);
     return /ngay cong/.test(n) && !/gio vao|gio ra/.test(n);
   });
+  const looksDetail = lines => (lines || []).slice(0, 6).some(l => /gio vao|gio ra/.test(M._ciNorm(l)));
   // Ưu tiên theo NỘI DUNG (tiêu đề tổng hợp) — chắc chắn đúng dữ liệu; rồi mới theo tên
   const picked = sheets.find(s => looksSummary(s.lines) && /tong hop/.test(M._ciNorm(s.name)))
     || sheets.find(s => looksSummary(s.lines))
     || sheets.find(s => /tong hop/.test(M._ciNorm(s.name))) || sheets[0];
-  return { lines: picked.lines, sheetName: picked.name };
+  const det = sheets.find(s => s !== picked && (looksDetail(s.lines) || /chi tiet/.test(M._ciNorm(s.name))));
+  return { lines: picked.lines, sheetName: picked.name, detail: det ? { lines: det.lines, sheetName: det.name } : null };
+};
+// Parse sheet Chi tiết (từng ngày) -> { byEmp: { normCode: {name, days, tongGio, tangCa, phat, rows[]} }, headerFound }
+M.payrollParseChiTiet = function (lines) {
+  let hi = -1; const col = {};
+  for (let i = 0; i < Math.min((lines || []).length, 8); i++) {
+    const cells = (M._ciSplitCells(lines[i]) || []).map(c => M._ciNorm(c));
+    if (cells.some(c => /gio vao|so gio/.test(c)) && cells.some(c => /nhan vien|ho ten/.test(c))) {
+      cells.forEach((c, idx) => {
+        if (/^ngay\b/.test(c) && col.ngay == null) col.ngay = idx;
+        else if (/^thu\b/.test(c) && col.thu == null) col.thu = idx;
+        else if (/(nhan vien|ho ten)/.test(c) && col.nv == null) col.nv = idx;
+        else if (/gio vao/.test(c) && col.vao == null) col.vao = idx;
+        else if (/gio ra/.test(c) && col.ra == null) col.ra = idx;
+        else if (/so gio/.test(c) && col.soGio == null) col.soGio = idx;
+        else if (/di muon/.test(c) && col.diMuon == null) col.diMuon = idx;
+        else if (/tang ca/.test(c) && col.tangCa == null) col.tangCa = idx;
+        else if (/phat/.test(c) && col.phat == null) col.phat = idx;
+      });
+      hi = i; break;
+    }
+  }
+  if (hi < 0 || col.nv == null || col.soGio == null) return { byEmp: {}, headerFound: false };
+  const byEmp = {};
+  const g = (cells, idx) => (idx != null ? (M._tkNum(cells[idx]) || 0) : 0);
+  for (let i = hi + 1; i < lines.length; i++) {
+    const cells = M._ciSplitCells(lines[i]) || [];
+    const code = String(cells[col.nv] || '').trim();
+    if (!code) continue;
+    const k = _norm(code);
+    const soGio = g(cells, col.soGio), tangCa = g(cells, col.tangCa), phat = g(cells, col.phat);
+    const e = byEmp[k] || (byEmp[k] = { name: code, days: 0, tongGio: 0, tangCa: 0, phat: 0, rows: [] });
+    if (soGio > 0) e.days++;
+    e.tongGio += soGio; e.tangCa += tangCa; e.phat += phat;
+    e.rows.push({ ngay: col.ngay != null ? cells[col.ngay] : '', thu: col.thu != null ? cells[col.thu] : '',
+      vao: col.vao != null ? cells[col.vao] : '', ra: col.ra != null ? cells[col.ra] : '',
+      soGio: soGio, diMuon: g(cells, col.diMuon), tangCa: tangCa, phat: phat });
+  }
+  return { byEmp: byEmp, headerFound: true };
+};
+// Modal chi tiết ngày công 1 nhân viên (từ sheet Chi tiết) — mở lớp 2, không đóng wizard
+M.payrollDayDetail = function (title, ct) {
+  const r2 = x => Math.round((x || 0) * 100) / 100, r1 = x => Math.round((x || 0) * 10) / 10;
+  const body = U.el('div');
+  body.appendChild(U.el('div', { class: 'section-sub' }, ct.days + ' ngày có công · tổng ' + r1(ct.tongGio) + 'h · tăng ca ' + r1(ct.tangCa) + 'h · phạt ' + U.money(ct.phat) + 'đ'));
+  body.appendChild(C.table(ct.rows, [
+    { label: 'Ngày', render: r => U.esc(String(r.ngay || '')) },
+    { label: 'Thứ', center: true, render: r => U.esc(String(r.thu || '')) },
+    { label: 'Vào', center: true, render: r => U.esc(String(r.vao || '')) },
+    { label: 'Ra', center: true, render: r => U.esc(String(r.ra || '')) },
+    { label: 'Số giờ', num: true, render: r => r2(r.soGio) },
+    { label: 'Đi muộn (ph)', num: true, render: r => r.diMuon || 0 },
+    { label: 'Tăng ca (h)', num: true, render: r => r2(r.tangCa) },
+    { label: 'Phạt', num: true, render: r => U.money(r.phat || 0) },
+  ], { empty: '—' }));
+  C.miniModal({ title: '📅 Chi tiết ngày công — ' + title, wide: true, body, footer: [C.btn('Đóng', C.closeMini, 'primary')] });
 };
 // Parse sheet Tổng hợp -> { recs, month, headerFound }
 M.payrollParseCong = function (lines, fileName) {
@@ -524,6 +581,15 @@ M.payrollAudit = function (p, ctx) {
       if (ot > 60 || (td > 0 && ot > td * 4)) push(orange, 'TC01', nm + ': tăng ca ' + ot + ' giờ — cao bất thường, xác nhận số liệu.', emp.id);
       if (r.tienTC != null && r.tienTC > 0 && ot > 0) push(orange, 'TC03', nm + ': file có "Tiền tăng ca" ' + U.money(r.tienTC) + 'đ nhưng phần mềm TỰ tính tiền OT theo số giờ — chỉ dùng 1 nguồn (đang dùng số giờ).', emp.id);
       if (r.lateFine != null && r.lateFine < 0) push(red, 'PH01', nm + ': tiền phạt âm.', emp.id);
+      // Đối chiếu Tổng hợp ↔ Chi tiết (nếu file có sheet Chi tiết)
+      const ct = ctx.chiTiet && ctx.chiTiet[_norm(r.code)];
+      if (ct) {
+        const r1 = x => Math.round(x * 10) / 10;
+        if (r.totalDays != null && Math.abs(td - ct.days) >= 1) push(orange, 'RC01', nm + ': ngày công Tổng hợp (' + td + ') ≠ số ngày có chấm công ở Chi tiết (' + ct.days + ').', emp.id);
+        if (r.tongGio != null && Math.abs(r.tongGio - ct.tongGio) > 0.5) push(orange, 'RC02', nm + ': tổng giờ Tổng hợp (' + r1(r.tongGio) + 'h) ≠ cộng từng ngày ở Chi tiết (' + r1(ct.tongGio) + 'h).', emp.id);
+        if (r.otHours != null && Math.abs(ot - ct.tangCa) > 0.05) push(orange, 'RC03', nm + ': tăng ca Tổng hợp (' + r1(ot) + 'h) ≠ cộng Chi tiết (' + r1(ct.tangCa) + 'h).', emp.id);
+        if (r.lateFine != null && Math.abs((r.lateFine || 0) - ct.phat) > 0) push(orange, 'RC03', nm + ': phạt Tổng hợp (' + U.money(r.lateFine || 0) + ') ≠ cộng Chi tiết (' + U.money(ct.phat) + ').', emp.id);
+      }
     });
   }
 
@@ -588,10 +654,12 @@ M.payrollImportExcel = function (p) {
     catch (e) { host.innerHTML = '<div class="text-red">Lỗi đọc file: ' + U.esc(e.message) + '</div>'; return; }
     if (!parsed.headerFound) { host.innerHTML = '<div class="text-red">Không nhận dạng được cột (thiếu "Ngày công"...). Kiểm tra đúng sheet Tổng hợp.</div>'; return; }
     if (!parsed.recs.length) { host.innerHTML = '<div class="text-red">Không đọc được dòng nhân viên nào trong sheet "' + U.esc(read.sheetName) + '".</div>'; return; }
-    render(file, read, parsed);
+    let chiTiet = null;   // đối chiếu với sheet Chi tiết (nếu có)
+    if (read.detail) { const pc = M.payrollParseChiTiet(read.detail.lines); if (pc.headerFound && Object.keys(pc.byEmp).length) chiTiet = pc.byEmp; }
+    render(file, read, parsed, chiTiet);
   }
 
-  function render(file, read, parsed) {
+  function render(file, read, parsed, chiTiet) {
     const recs = parsed.recs;
     const rows = recs.map(r => {
       const emp = M.payrollMatchEmp(r.code);
@@ -607,12 +675,14 @@ M.payrollImportExcel = function (p) {
       }
       return { r: r, emp: emp, ln: ln, net: net };
     });
-    const audit = M.payrollAudit(p, { recs: recs, monthFile: parsed.month });
+    const audit = M.payrollAudit(p, { recs: recs, monthFile: parsed.month, chiTiet: chiTiet });
     const matched = rows.filter(x => x.emp).length;
     host.innerHTML = '';
     if (parsed.month && parsed.month !== p.month)
       host.appendChild(U.el('div', { class: 'tag red', style: 'display:block;padding:8px;margin-bottom:8px' }, '⚠ File là tháng ' + parsed.month + ' ≠ bảng lương tháng ' + p.month + '. Kiểm tra lại!'));
-    host.appendChild(U.el('div', { class: 'section-sub', html: 'File: <b>' + U.esc(file.name) + '</b> · sheet <b>' + U.esc(read.sheetName) + '</b> · khớp <b class="text-green">' + matched + '/' + recs.length + '</b> nhân viên. Cột "Tiền tăng ca" chỉ để đối chiếu (KHÔNG cộng vào lương).' }));
+    host.appendChild(U.el('div', { class: 'section-sub', html: 'File: <b>' + U.esc(file.name) + '</b> · sheet <b>' + U.esc(read.sheetName) + '</b>'
+      + (chiTiet ? ' · <span class="text-green">✓ đối chiếu Chi tiết (' + U.esc((read.detail || {}).sheetName || '') + ')</span>' : '')
+      + ' · khớp <b class="text-green">' + matched + '/' + recs.length + '</b> nhân viên. Cột "Tiền tăng ca" chỉ để đối chiếu (KHÔNG cộng vào lương).' }));
     host.appendChild(C.table(rows, [
       { label: 'Mã file', render: x => U.esc(x.r.code) },
       { label: 'Nhân viên', render: x => x.emp ? U.esc(x.emp.name) : '<span class="tag red">chưa khớp</span>' },
@@ -620,6 +690,10 @@ M.payrollImportExcel = function (p) {
       { label: 'Tăng ca (h)', center: true, render: x => x.emp ? ((x.ln.otHours || 0) + ' → <b>' + (x.r.otHours != null ? x.r.otHours : (x.ln.otHours || 0)) + '</b>') : '' },
       { label: 'Phạt', num: true, render: x => x.emp ? (U.money(x.ln.lateFine || 0) + ' → <b>' + U.money((x.r.lateFine != null && x.r.lateFine > 0) ? x.r.lateFine : (x.ln.lateFine || 0)) + '</b>') : '' },
       { label: 'Thực lĩnh dự kiến', num: true, render: x => x.net != null ? U.money(x.net) : '' },
+      { label: '', center: true, render: x => {
+          const ct = chiTiet && chiTiet[_norm(x.r.code)];
+          return ct ? C.btn('📅 ngày', () => M.payrollDayDetail(x.emp ? x.emp.name : x.r.code, ct), 'sm') : '';
+        } },
     ], { empty: '—' }));
     const auditWrap = U.el('div', { class: 'mt16' });
     auditWrap.appendChild(U.el('div', { class: 'card-title', style: 'font-size:14px', html: '🛡️ Hậu kiểm: '
