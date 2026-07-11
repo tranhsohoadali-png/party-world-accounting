@@ -9,7 +9,8 @@ M.payrollCompute = function (emp, line, standardDays) {
   const base = Number(emp.salaryBase || 0);
   const totalDays = Number(line.totalDays || 0);   // tổng ngày công thực tế (gồm cả ngày lễ)
   const allowDays = Number(line.allowDays || 0);   // ngày công có phụ cấp (ngày đi làm thực tế)
-  const dayWage = sd ? base / sd : 0;              // lương 1 ngày
+  const dayRate = Number(emp.dayWage || 0);         // lương theo ngày công (đơn giá 1 ngày) — ưu tiên nếu > 0
+  const dayWage = dayRate > 0 ? dayRate : (sd ? base / sd : 0);   // lương 1 ngày: đơn giá ngày công HOẶC lương tháng ÷ ngày công chuẩn
   const hourWage = dayWage / 8;                     // lương 1 giờ
   const luongChinh = dayWage * totalDays;
   const luongTN = (Number(emp.allowResp || 0) / sd) * allowDays;
@@ -170,7 +171,7 @@ M.payrollDetail = function (id) {
       const luongChinh = U.el('span'), tn = U.el('span'), pc = U.el('span'), lamThem = U.el('span'), net = U.el('span', { style: 'font-weight:700' });
       const tr = U.el('tr', null, [
         U.el('td', { 'data-label': 'Nhân viên' }, U.esc(e.name)),
-        U.el('td', { class: 'num', 'data-label': 'Lương CB' }, U.money(e.salaryBase || 0)),
+        U.el('td', { class: 'num', 'data-label': 'Lương CB' }, Number(e.dayWage || 0) > 0 ? U.money(e.dayWage) + '/ngày' : U.money(e.salaryBase || 0)),
         U.el('td', { class: 'num', 'data-label': 'Tổng ngày công' }, numInput(ln, 'totalDays', 60)),
         U.el('td', { class: 'num', 'data-label': 'NC có phụ cấp' }, numInput(ln, 'allowDays', 60)),
         U.el('td', { class: 'num', 'data-label': 'Tăng ca (giờ)' }, numInput(ln, 'otHours', 55)),
@@ -213,7 +214,7 @@ M.payrollDetail = function (id) {
     const rows = p.lines.map(ln => {
       const e = empById(ln.employeeId) || {};
       const r = M.payrollCompute(e, ln, p.standardDays);
-      return [e.name || '', e.salaryBase || 0, ln.totalDays, ln.allowDays, ln.otHours,
+      return [e.name || '', Number(e.dayWage || 0) > 0 ? e.dayWage : (e.salaryBase || 0), ln.totalDays, ln.allowDays, ln.otHours,
         Math.round(r.luongChinh), Math.round(r.luongTN), Math.round(r.pcXang + r.pcAn + r.pcTN),
         Math.round(r.lamThem), ln.bonus, ln.lateFine, ln.bhxh, ln.advance, ln.phoneUse, Math.round(r.thucLinh)];
     });
@@ -239,7 +240,7 @@ M.payslip = function (p, ln) {
     <table>
       <tr><th style="width:36px">STT</th><th>Nội dung</th><th style="width:130px">Số tiền</th><th style="width:160px">Ghi chú</th></tr>
       <tr><td colspan="4" class="sec">A. THÔNG TIN CÔNG / MỨC LƯƠNG</td></tr>
-      ${row(1, 'Lương cơ bản', e.salaryBase || 0, '')}
+      ${row(1, Number(e.dayWage || 0) > 0 ? 'Đơn giá ngày công' : 'Lương cơ bản', Number(e.dayWage || 0) > 0 ? e.dayWage : (e.salaryBase || 0), '')}
       ${row(2, 'Ngày công chuẩn trong tháng', '', String(p.standardDays))}
       ${row(3, 'Tổng ngày công thực tế', '', String(ln.totalDays))}
       ${row(4, 'Ngày công có phụ cấp', '', String(ln.allowDays))}
