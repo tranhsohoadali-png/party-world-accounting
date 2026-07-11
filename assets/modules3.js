@@ -12,6 +12,19 @@ M.itemsEditor = function (items, opts) {
   const onChange = opts.onChange || function () {};
   if (!items.length) items.push({ productId: '', qty: 1, [priceKey]: 0 });
   const tbody = U.el('tbody');
+  // Ô số dòng hàng: ẩn spinner, chặn lăn chuột đổi số, ↓/Enter -> dòng dưới, ↑ -> dòng trên (cùng cột)
+  function wireNav(inp, colClass) {
+    inp.classList.add('no-spin', colClass);
+    inp.addEventListener('wheel', (e) => { if (document.activeElement === inp) e.preventDefault(); }, { passive: false });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === 'ArrowUp') {
+        const all = Array.prototype.slice.call(tbody.querySelectorAll('.' + colClass));
+        const i = all.indexOf(inp), j = (e.key === 'ArrowUp') ? i - 1 : i + 1;
+        if (i > -1 && j >= 0 && j < all.length) { e.preventDefault(); all[j].focus(); all[j].select(); }
+        else if (e.key !== 'Enter') e.preventDefault();
+      }
+    });
+  }
 
   function subtotal() {
     return items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it[priceKey]) || 0), 0);
@@ -24,10 +37,10 @@ M.itemsEditor = function (items, opts) {
         it[priceKey] = p[opts.productPriceKey || 'price'] || 0;
         draw(); onChange();
       }, { isSale: (opts.productPriceKey || 'price') === 'price' });
-      const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
-      const priceI = U.el('input', { type: 'number', value: it[priceKey], min: 0, style: 'text-align:right' });
+      const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' }); wireNav(qtyI, 'li-qty');
+      const priceI = U.el('input', { type: 'number', value: it[priceKey], min: 0, style: 'text-align:right' }); wireNav(priceI, 'li-price');
       // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
-      const totalI = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)), min: 0, style: 'text-align:right' });
+      const totalI = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)), min: 0, style: 'text-align:right' }); wireNav(totalI, 'li-total');
       function syncTotal() { totalI.value = Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)); onChange(); }
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; syncTotal(); });
       priceI.addEventListener('input', () => { it[priceKey] = Number(priceI.value) || 0; syncTotal(); });
@@ -391,14 +404,44 @@ M.returnForm = function (sr) {
     PW.data.salesInvoices.filter(si => si.customerId === cid).sort((a, b) => a.date < b.date ? 1 : -1)
       .map(si => ({ value: si.id, label: si.code + ' · ' + U.date(si.date) + ' · ' + U.money(PW.invoiceGrand(si)) + 'đ' })));
   const invSel = C.select(invOpts(custI.value), sr.invoiceId || '');
-  custI.addEventListener('change', () => M.rebuildSelect(invSel, invOpts(custI.value), ''));
+  const vatSel = C.select([{ value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }], Number(sr.vatRate) || 0);
+  const chSel = C.select([{ value: '', label: '-- Kênh bán --' }].concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))), sr.channelId || '');
+  const empOpts = () => [{ value: '', label: '-- Không --' }].concat((PW.data.employees || []).map(e => ({ value: e.id, label: e.name })));
+  const empSel = C.select(empOpts(), sr.employeeId || '');
+  const empRow = U.el('div', { style: 'display:flex;gap:6px' }, [empSel,
+    U.el('button', { class: 'btn sm primary', type: 'button', title: 'Thêm nhân viên', onclick: () => M.quickAddEmployee(ne => M.rebuildSelect(empSel, empOpts(), ne.id)) }, '+')]);
   const noteI = C.input({ value: sr.note || '' });
-  const grand = U.el('span', { style: 'font-weight:700' });
+  const totalCell = U.el('span', { style: 'font-weight:600' });
+  const vatCell = U.el('span', { style: 'font-weight:600' });
+  const grandCell = U.el('span', { style: 'font-weight:800;color:#c0392b' });
   const editor = M.itemsEditor(sr.items.map(it => Object.assign({}, it)), {
-    priceKey: 'price', priceLabel: 'Đơn giá trả', productPriceKey: 'price',
-    onChange: () => { grand.textContent = U.money(editor.subtotal()) + ' đ'; },
+    priceKey: 'price', priceLabel: 'Đơn giá trả', productPriceKey: 'price', showStock: true,
+    onChange: () => recalc(),
   });
-  grand.textContent = U.money(editor.subtotal()) + ' đ';
+
+  function linkedInv() { return invSel.value && PW.data.salesInvoices.find(x => x.id === invSel.value); }
+  function recalc() {
+    const base = editor.subtotal();
+    const inv = linkedInv();
+    const rate = inv ? Number(inv.vatRate || 0) : (Number(vatSel.value) || 0);   // gắn HĐ -> theo thuế HĐ gốc (khớp returnGrand)
+    const vat = Math.round(base * rate / 100);
+    totalCell.textContent = U.money(base) + ' đ';
+    vatCell.textContent = U.money(vat) + ' đ (' + rate + '%)';
+    grandCell.textContent = U.money(base + vat) + ' đ';
+  }
+  function syncFromInvoice() {
+    const inv = linkedInv();
+    if (inv) {   // gắn hóa đơn gốc -> tự điền & khóa thuế theo HĐ; điền sẵn kênh/nhân viên nếu có
+      vatSel.value = String(Number(inv.vatRate || 0)); vatSel.disabled = true;
+      if (inv.channelId) chSel.value = inv.channelId;
+      if (inv.employeeId) empSel.value = inv.employeeId;
+    } else { vatSel.disabled = false; }
+    recalc();
+  }
+  custI.addEventListener('change', () => { M.rebuildSelect(invSel, invOpts(custI.value), ''); syncFromInvoice(); });
+  invSel.addEventListener('change', syncFromInvoice);
+  vatSel.addEventListener('change', recalc);
+  syncFromInvoice();
 
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
@@ -406,11 +449,18 @@ M.returnForm = function (sr) {
       C.field('Ngày', dateI, { required: true }),
       C.field('Khách hàng trả lại', M.partnerAdd(custI, true), { required: true }),
       C.field('Từ hóa đơn gốc (để đối chiếu)', invSel),
+      C.field('Thuế GTGT (%)', vatSel),
+      C.field('Kênh bán', chSel),
+      C.field('Nhân viên', empRow),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Hàng hóa khách trả lại'),
     editor.wrap,
     C.field('Lý do trả lại', noteI, { full: true }),
-    U.el('div', { style: 'margin-top:12px;text-align:right' }, [U.el('span', { class: 'text-muted' }, 'TỔNG GIÁ TRỊ TRẢ LẠI: '), grand]),
+    U.el('div', { style: 'margin-top:12px;text-align:right;line-height:1.9' }, [
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Tiền hàng trả lại: '), totalCell]),
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Thuế GTGT: '), vatCell]),
+      U.el('div', { style: 'font-size:16px' }, [U.el('span', { class: 'text-muted' }, 'TỔNG GIÁ TRỊ TRẢ LẠI (gồm thuế): '), grandCell]),
+    ]),
     U.el('div', { class: 'section-sub', style: 'text-align:right' }, 'Hàng trả sẽ nhập lại kho, giảm doanh thu & công nợ phải thu của khách.'),
   ]);
 
@@ -421,7 +471,9 @@ M.returnForm = function (sr) {
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng', 'error');
       if (!custI.value) return U.toast('Chọn khách hàng', 'error');
       const obj = { id: sr.id || PW.uid(), code: codeI.value, date: dateI.value,
-        customerId: custI.value, invoiceId: invSel.value || null, items: valid, note: noteI.value };
+        customerId: custI.value, invoiceId: invSel.value || null,
+        vatRate: Number(vatSel.value) || 0, channelId: chSel.value || null, employeeId: empSel.value || null,
+        items: valid, note: noteI.value };
       if (sr.noRestock !== undefined) obj.noRestock = sr.noRestock;   // giữ cờ thất lạc (do đối soát ghi)
       if (isNew) PW.data.salesReturns.push(obj);
       else { const i = PW.data.salesReturns.findIndex(x => x.id === obj.id); PW.data.salesReturns[i] = obj; }
