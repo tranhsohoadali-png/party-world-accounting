@@ -334,6 +334,14 @@ function _norm(s) { return String(s == null ? '' : s).trim().toLowerCase().repla
 M.tkApplyAndReport = function (p, rawList, silent) {
   const recs = (rawList || []).map(M.tkNormalize);
   if (!recs.length) { if (!silent) U.toast('Không đọc được dữ liệu nhân viên từ nguồn chấm công', 'error'); return; }
+  // Đồng bộ: thêm dòng cho nhân viên hiện tại CHƯA có trong bảng lương (để nạp được chấm công của NV mới thêm)
+  let added = 0;
+  (PW.data.employees || []).forEach(e => {
+    if (!p.lines.some(ln => ln.employeeId === e.id)) {
+      p.lines.push({ employeeId: e.id, totalDays: 0, allowDays: 0, otHours: 0, bonus: 0, extra: 0, lateFine: 0, bhxh: 0, advance: 0, phoneUse: 0, note: '' });
+      added++;
+    }
+  });
   let matched = 0; const unmatched = [];
   recs.forEach(rec => {
     let line = null;
@@ -359,6 +367,7 @@ M.tkApplyAndReport = function (p, rawList, silent) {
   M.payrollDetail(p.id); // dựng lại bảng để hiện số mới
   if (silent) return;
   let msg = 'Đã cập nhật chấm công cho ' + matched + '/' + recs.length + ' nhân viên.';
+  if (added) msg += ' Đã thêm ' + added + ' nhân viên mới vào bảng lương.';
   if (unmatched.length) msg += ' Chưa khớp (' + unmatched.length + '): ' + unmatched.slice(0, 6).join(', ') + (unmatched.length > 6 ? '...' : '') + '. Hãy điền "Mã chấm công" cho NV này trong Danh mục.';
   U.toast(msg, unmatched.length ? 'error' : 'success');
 };
