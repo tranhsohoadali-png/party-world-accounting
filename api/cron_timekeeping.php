@@ -97,10 +97,14 @@ $st->execute([$json, $version]);
 if ($st->rowCount() > 0) {
   // CHỈ khi đã thực sự ghi đè -> lưu BẢN CŨ ($row['data'], đọc ở trên) vào lịch sử để rollback được.
   try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (id INT AUTO_INCREMENT PRIMARY KEY, data LONGTEXT, version INT, updated_by VARCHAR(50) DEFAULT '', saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (id INT AUTO_INCREMENT PRIMARY KEY, data LONGTEXT, version INT, updated_by VARCHAR(50) DEFAULT '', app_data_id INT NOT NULL DEFAULT 1, saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+    // Bảng cũ chưa có cột app_data_id -> thêm (đồng bộ với đa cơ sở trong data.php)
+    try { if (!$pdo->query("SHOW COLUMNS FROM app_data_history LIKE 'app_data_id'")->fetch()) $pdo->exec("ALTER TABLE app_data_history ADD COLUMN app_data_id INT NOT NULL DEFAULT 1"); } catch (Throwable $e) {}
     if (!empty($row['data'])) {
-      $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by) VALUES (?,?,?)")->execute([$row['data'], $version, 'cron-before']);
-      $pdo->exec("DELETE FROM app_data_history WHERE id <= (SELECT m FROM (SELECT MAX(id) - 80 AS m FROM app_data_history) t)");
+      // Cron chỉ đụng cơ sở #1 (chấm công của tranh) -> gắn app_data_id=1 và prune RIÊNG cơ sở 1,
+      // KHÔNG được xóa snapshot rollback của cơ sở khác (bóng bay…) qua prune toàn cục.
+      $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by, app_data_id) VALUES (?,?,?,1)")->execute([$row['data'], $version, 'cron-before']);
+      $pdo->exec("DELETE FROM app_data_history WHERE app_data_id=1 AND id <= (SELECT m FROM (SELECT MAX(id) - 80 AS m FROM app_data_history WHERE app_data_id=1) t)");
     }
   } catch (Throwable $e) { logmsg('Luu lich su that bai: ' . $e->getMessage()); }
   logmsg("OK: cập nhật chấm công $matched NV tháng $month" . ($created ? ' (đã tạo bảng lương)' : '') . '.');

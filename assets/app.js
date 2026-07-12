@@ -94,6 +94,7 @@ App.render = function () {
     });
   });
   App.renderUserbar();
+  App.renderWorkspaceBar();
 };
 
 App.findItem = function (id) {
@@ -438,14 +439,82 @@ App.logout = async function () {
   location.reload();
 };
 
+/* ---------- Thanh chọn CƠ SỞ KINH DOANH (đa cơ sở) — trên topbar ---------- */
+App.renderWorkspaceBar = function () {
+  const host = document.getElementById('workspacebar');
+  if (!host) return;
+  host.innerHTML = '';
+  const list = PW.workspaces || [];
+  // Ai được tạo cơ sở mới: offline (chủ máy) hoặc admin/kế toán ở chế độ server.
+  const canManage = PW.mode !== 'server' || (PW.user && ['admin', 'ketoan'].includes(PW.user.role));
+  // Ẩn khi chỉ có 1 cơ sở và không có quyền tạo thêm (không làm rối giao diện).
+  if (list.length <= 1 && !canManage) { host.classList.add('hidden'); return; }
+  host.classList.remove('hidden');
+  host.appendChild(U.el('span', { class: 'ws-ico', title: 'Cơ sở kinh doanh' }, '🏢'));
+  const sel = U.el('select', { class: 'ws-select', title: 'Chọn cơ sở kinh doanh' });
+  list.forEach(w => {
+    const o = U.el('option', { value: String(w.id) }, w.name);
+    if (w.id === PW.ws) o.selected = true;
+    sel.appendChild(o);
+  });
+  // Cơ sở đang mở không có trong danh sách (vd ws_list lỗi tạm) -> thêm mục tạm để dropdown vẫn đúng cơ sở
+  if (!list.some(w => w.id === PW.ws)) {
+    const o = U.el('option', { value: String(PW.ws) }, 'Cơ sở #' + PW.ws);
+    o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => {
+    const id = parseInt(sel.value, 10);
+    if (id === PW.ws) return;
+    const nm = (list.find(w => w.id === id) || {}).name || ('#' + id);
+    if (!U.confirm('Chuyển sang cơ sở "' + nm + '"?\nSổ sách cơ sở hiện tại sẽ được lưu trước khi chuyển.')) { sel.value = String(PW.ws); return; }
+    PW.switchWorkspace(id);
+  });
+  host.appendChild(sel);
+  if (canManage)
+    host.appendChild(U.el('button', { class: 'btn sm', title: 'Thêm cơ sở kinh doanh mới', onclick: () => App.addWorkspaceForm() }, '＋'));
+};
+
+App.addWorkspaceForm = function () {
+  const nameI = C.input({ placeholder: 'VD: Bóng bay, Quà tặng…' });
+  C.modal({
+    title: '➕ Thêm cơ sở kinh doanh',
+    body: U.el('div', { class: 'form-grid' }, [
+      C.field('Tên cơ sở', nameI, { required: true, full: true }),
+      U.el('div', { class: 'section-sub full' },
+        'Cơ sở mới bắt đầu với SỔ SÁCH TRỐNG (hàng hóa, khách, hóa đơn, quỹ, công nợ… đều rỗng). '
+        + 'Hoàn toàn KHÔNG ảnh hưởng dữ liệu các cơ sở đang có. Sau khi tạo sẽ tự chuyển sang cơ sở mới.'),
+    ]),
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo & chuyển sang', async (ev) => {
+      const btn = ev && ev.target; const nm = nameI.value.trim();
+      if (!nm) return U.toast('Nhập tên cơ sở', 'error');
+      if (btn) btn.disabled = true;
+      try {
+        const id = await PW.wsAdd(nm);
+        U.toast('Đã tạo cơ sở "' + nm + '"');
+        C.closeModal();
+        PW.switchWorkspace(id);
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        U.toast(e.message || 'Không tạo được cơ sở', 'error');
+      }
+    }, 'primary')],
+  });
+};
+
 /* ---------- Khởi động ---------- */
 App.boot = async function () {
   App.initUI();                                 // sáng/tối + menu điện thoại
   if (U.autoIconify) U.autoIconify();           // tự thay emoji -> icon SVG ở tiêu đề/nút/KPI
   const ses = await PW.detectSession();        // xác định offline hay server
   if (ses.server && !ses.user) { M.loginScreen(); return; } // server nhưng chưa đăng nhập
-  await PW.load();
   PW.user = ses.user || PW.user;
+  await PW.wsList();                            // nạp danh sách CƠ SỞ KINH DOANH
+  // CHỈ khi ĐÃ tải được danh sách thật VÀ cơ sở đã chọn không còn -> mới quay về cơ sở gốc.
+  // Nếu ws_list lỗi tạm (500/mạng) thì wsListLoaded=false -> KHÔNG đụng lựa chọn, tránh vô tình
+  // rơi vào sổ tranh (id=1) rồi ghi nhầm dữ liệu cơ sở khác vào đó.
+  if (PW.wsListLoaded && !PW.workspaces.some(w => w.id === PW.ws)) { PW.ws = 1; try { localStorage.setItem(PW.WS_KEY, '1'); } catch (e) {} }
+  await PW.load();
   // Trang mặc định theo quyền
   const hash = (window.location.hash || '').replace('#', '');
   if (hash && App.findItem(hash).id === hash && App.canSee(App.findItem(hash))) App.current = hash;
@@ -475,12 +544,14 @@ App.registerPWA = function () {
 };
 
 window.addEventListener('DOMContentLoaded', () => { App.boot(); });
-// Lưu nốt thay đổi trước khi đóng/tải lại trang (chế độ server)
+// Lưu nốt thay đổi trước khi đóng/tải lại trang (chế độ server).
+// PHẢI kèm ws để ghi vào ĐÚNG cơ sở — nếu thiếu, server mặc định ws=1 và
+// sẽ ghi dữ liệu cơ sở đang mở đè lên dữ liệu tranh (id=1). Gửi cả ?ws= lẫn body.ws.
 window.addEventListener('beforeunload', () => {
-  if (PW.mode === 'server' && PW._saveTimer) {
+  if (PW.mode === 'server' && PW._dirty) {   // còn thay đổi chưa lưu-xong (chờ debounce HOẶC đang gửi dở)
     try {
-      navigator.sendBeacon('api/data.php?action=save',
-        new Blob([JSON.stringify({ data: PW.data, version: PW._version })], { type: 'application/json' }));
+      navigator.sendBeacon('api/data.php?action=save&ws=' + PW.ws,
+        new Blob([JSON.stringify({ data: PW.data, version: PW._version, ws: PW.ws })], { type: 'application/json' }));
     } catch (e) {}
   }
 });

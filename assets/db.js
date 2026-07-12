@@ -5,12 +5,23 @@
 
 const PW = {
   KEY: 'PARTY_WORLD_DB_V1',
+  WS_KEY: 'DALI_WS',          // cơ sở đang chọn (lưu localStorage để F5 giữ nguyên)
+  WS_LIST_KEY: 'DALI_WS_LIST',// danh sách cơ sở (chỉ dùng ở chế độ offline)
+  ws: 1,                      // id CƠ SỞ KINH DOANH hiện tại (1 = dữ liệu gốc — tranh)
+  workspaces: [{ id: 1, name: 'Cơ sở chính' }],
+  wsListLoaded: false,        // đã tải được DANH SÁCH cơ sở thật chưa (chống reset nhầm khi lỗi tạm)
   data: null,
   mode: 'local',     // 'local' (localStorage) | 'server' (PHP+MySQL)
   user: null,        // người dùng đang đăng nhập (chế độ server)
   _version: 0,       // phiên bản dữ liệu (chống ghi đè)
   _saveTimer: null,
+  _dirty: false,     // có thay đổi CHƯA lưu-xong-server không (gate beacon beforeunload)
 };
+
+// Cơ sở đã chọn (đọc TRƯỚC khi load để nạp đúng sổ). Sai/không hợp lệ -> về cơ sở 1.
+try { const _w = parseInt(localStorage.getItem(PW.WS_KEY) || '1', 10); if (_w >= 1 && _w <= 9999) PW.ws = _w; } catch (e) {}
+// Khóa localStorage theo cơ sở: cơ sở 1 giữ NGUYÊN khóa cũ (không ảnh hưởng dữ liệu offline hiện có).
+PW.localKey = function () { return PW.ws === 1 ? PW.KEY : PW.KEY + '__ws' + PW.ws; };
 
 /* ---------- Chuẩn hóa cấu trúc dữ liệu ---------- */
 PW._normalize = function () {
@@ -89,8 +100,14 @@ PW.detectSession = async function () {
 
 /* ---------- Nạp dữ liệu ---------- */
 PW.load = async function () {
+  // Cơ sở 1 = dữ liệu gốc -> seed mẫu (tranh) như cũ. Cơ sở mới -> seed SỔ TRỐNG mang tên cơ sở.
+  const seedFor = () => {
+    if (PW.ws === 1) return PW.seed();
+    const w = (PW.workspaces || []).find(x => x.id === PW.ws);
+    return PW.seedEmpty(w ? w.name : '');   // đặt companyName = tên cơ sở -> hóa đơn/báo cáo hiển thị đúng
+  };
   if (PW.mode === 'server') {
-    const r = await PW.api('data.php?action=get');
+    const r = await PW.api('data.php?action=get&ws=' + PW.ws);
     if (r.status === 200 && r.data) {
       PW._version = r.data.version || 0;
       if (r.data.data) {
@@ -99,19 +116,19 @@ PW.load = async function () {
         return PW.data;
       }
     }
-    // Server chưa có dữ liệu -> tạo dữ liệu mẫu lần đầu rồi lưu lên
-    PW.data = PW.seed();
+    // Cơ sở chưa có dữ liệu -> tạo sổ (mẫu cho cơ sở 1, trống cho cơ sở mới) rồi lưu lên
+    PW.data = seedFor();
     PW._normalize();
     await PW.saveNow();
     return PW.data;
   }
-  // ----- Chế độ offline (localStorage) -----
-  const raw = localStorage.getItem(PW.KEY);
+  // ----- Chế độ offline (localStorage), theo từng cơ sở -----
+  const raw = localStorage.getItem(PW.localKey());
   if (raw) {
     try { PW.data = JSON.parse(raw); }
-    catch (e) { console.error('Lỗi đọc dữ liệu, tạo mới', e); PW.data = PW.seed(); }
+    catch (e) { console.error('Lỗi đọc dữ liệu, tạo mới', e); PW.data = seedFor(); }
   } else {
-    PW.data = PW.seed();
+    PW.data = seedFor();
   }
   PW._normalize();
   return PW.data;
@@ -121,23 +138,26 @@ PW.load = async function () {
 PW.save = function (force) {
   if (PW.mode === 'server') {
     // Gộp nhiều thay đổi liên tiếp, lưu sau 600ms
+    PW._dirty = true;   // có thay đổi chưa lưu-xong -> beacon beforeunload sẽ lưu nốt nếu đóng tab
     clearTimeout(PW._saveTimer);
     PW._saveTimer = setTimeout(() => { PW.saveNow(force); }, 600);
     return;
   }
-  localStorage.setItem(PW.KEY, JSON.stringify(PW.data));
+  localStorage.setItem(PW.localKey(), JSON.stringify(PW.data));
 };
 
 // Lưu ngay lên server (chế độ server). force=true -> bỏ qua lớp chắn mất dữ liệu (chỉ dùng cho xóa/khôi phục có xác nhận)
 PW.saveNow = async function (force) {
   if (PW.mode !== 'server') return;
   clearTimeout(PW._saveTimer);
+  PW._saveTimer = null;   // không còn thay đổi chờ lưu -> beacon beforeunload chỉ bắn khi THỰC SỰ đang chờ
   const r = await PW.api('data.php?action=save', {
     method: 'POST',
-    body: JSON.stringify({ data: PW.data, version: PW._version, force: !!force }),
+    body: JSON.stringify({ data: PW.data, version: PW._version, force: !!force, ws: PW.ws }),
   });
   if (r.status === 200 && r.data && r.data.ok) {
     PW._version = r.data.version;
+    PW._dirty = false;   // đã lưu thành công lên server -> hết thay đổi chờ
   } else if (r.status === 409 && r.data && r.data.error === 'data_loss_guard') {
     // Server chặn vì bản mới làm mất nhiều dữ liệu. Lúc này PW.data trên máy đang LỆCH (chưa lưu được);
     // mọi lần lưu sau cũng sẽ bị chặn -> TẢI LẠI để đồng bộ về bản tốt trên máy chủ (tránh kẹt + RAM hỏng).
@@ -842,6 +862,91 @@ PW.seed = function () {
       { id: 'ch_tiktok', name: 'TikTok Shop', feePercent: 8, isPlatform: true },
     ],
   };
+};
+
+/* ============================================================
+   SỔ TRỐNG cho CƠ SỞ KINH DOANH MỚI (vd Bóng bay)
+   Không có sample tranh — chỉ vài danh mục nền tối thiểu để dùng ngay.
+   Đặt sẵn cờ seededNvlGroups/migratedSizeGroups=true để _normalize KHÔNG
+   thêm nhóm NVL theo kích thước tranh (20x20…) vào cơ sở không phải tranh.
+   ============================================================ */
+PW.seedEmpty = function (name) {
+  const uid = () => PW.uid();
+  return {
+    meta: { companyName: name || 'Cơ sở mới', counters: {}, seededNvlGroups: true, migratedSizeGroups: true },
+    cashAccounts: [{ id: uid(), name: 'Tiền mặt', type: 'cash', opening: 0 }],
+    products: [], customers: [], suppliers: [],
+    receipts: [], payments: [], salesInvoices: [], purchases: [],
+    quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
+    purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
+    employees: [], payrolls: [], productionOrders: [], stockAdjustments: [],
+    productivityEntries: [], productAliases: [], taxInvoices: [], activityLog: [], cashCounts: [],
+    productGroups: [],
+    units: [
+      { id: uid(), name: 'Cái' }, { id: uid(), name: 'Gói' }, { id: uid(), name: 'Bộ' },
+      { id: uid(), name: 'Chiếc' }, { id: uid(), name: 'Hộp' }, { id: uid(), name: 'Túi' },
+    ],
+    warehouses: [{ id: uid(), code: 'KHO00001', name: 'Kho chính', address: '' }],
+    expenseItems: [
+      { id: uid(), name: 'Chi phí vận chuyển' }, { id: uid(), name: 'Chi phí mặt bằng' },
+      { id: uid(), name: 'Lương nhân viên' }, { id: uid(), name: 'Chi phí khác' },
+    ],
+    paymentTerms: [
+      { id: uid(), name: 'Trả ngay', days: 0 }, { id: uid(), name: 'Nợ 15 ngày', days: 15 },
+      { id: uid(), name: 'Nợ 30 ngày', days: 30 },
+    ],
+    partnerGroups: [
+      { id: uid(), name: 'Khách lẻ' }, { id: uid(), name: 'Đại lý' }, { id: uid(), name: 'Khách sỉ' },
+    ],
+    channels: [
+      { id: uid(), name: 'Bán lẻ', feePercent: 0, isPlatform: false },
+      { id: uid(), name: 'Sỉ / Đại lý', feePercent: 0, isPlatform: false },
+    ],
+  };
+};
+
+/* ============================================================
+   ĐA CƠ SỞ: danh sách / thêm / chuyển cơ sở
+   ============================================================ */
+// Nạp danh sách cơ sở (server: từ bảng workspaces; offline: từ localStorage).
+PW.wsList = async function () {
+  PW.wsListLoaded = false;
+  if (PW.mode === 'server') {
+    const r = await PW.api('data.php?action=ws_list');
+    if (r.status === 200 && r.data && Array.isArray(r.data.workspaces) && r.data.workspaces.length) {
+      PW.workspaces = r.data.workspaces;
+      PW.wsListLoaded = true;   // CHỈ khi tải được danh sách THẬT -> mới cho phép reset cơ sở đã chọn
+    }
+    // Lỗi tạm (500/mạng): giữ nguyên PW.workspaces + wsListLoaded=false -> boot KHÔNG đụng lựa chọn
+    return PW.workspaces;
+  }
+  try { const arr = JSON.parse(localStorage.getItem(PW.WS_LIST_KEY) || 'null'); if (Array.isArray(arr) && arr.length) PW.workspaces = arr; } catch (e) {}
+  if (!PW.workspaces.some(w => w.id === 1)) PW.workspaces.unshift({ id: 1, name: 'Cơ sở chính' });
+  PW.wsListLoaded = true;       // offline: danh sách luôn xác định (localStorage)
+  return PW.workspaces;
+};
+// Thêm cơ sở mới -> trả về id cơ sở mới (KHÔNG tự chuyển; caller quyết định).
+PW.wsAdd = async function (name) {
+  name = String(name || '').trim();
+  if (!name) throw new Error('Thiếu tên cơ sở');
+  if (PW.mode === 'server') {
+    const r = await PW.api('data.php?action=ws_add', { method: 'POST', body: JSON.stringify({ name }) });
+    if (r.status === 200 && r.data && r.data.ok) { PW.workspaces.push({ id: r.data.id, name: r.data.name }); return r.data.id; }
+    throw new Error((r.data && r.data.error) || 'Không tạo được cơ sở');
+  }
+  const maxId = PW.workspaces.reduce((m, w) => Math.max(m, w.id), 0);
+  const id = maxId + 1;
+  PW.workspaces.push({ id, name });
+  try { localStorage.setItem(PW.WS_LIST_KEY, JSON.stringify(PW.workspaces)); } catch (e) {}
+  return id;
+};
+// Chuyển sang cơ sở khác: lưu nốt cơ sở hiện tại -> ghi nhớ lựa chọn -> tải lại trang.
+PW.switchWorkspace = async function (id) {
+  id = parseInt(id, 10);
+  if (!(id >= 1) || id === PW.ws) return;
+  if (PW.mode === 'server') { try { await PW.saveNow(); } catch (e) {} }
+  try { localStorage.setItem(PW.WS_KEY, String(id)); } catch (e) {}
+  location.reload();
 };
 
 /* ---------- Truy vấn nhanh (bổ sung) ---------- */

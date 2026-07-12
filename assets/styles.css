@@ -371,6 +371,13 @@ body.dark .alert-bar { background: #2e2812; border-color: #5a4a1e; color: #e0c97
 .userbar.hidden { display: none; }
 .userbar-name { font-size: 13px; }
 .userbar-role { color: var(--muted); }
+/* Thanh chọn cơ sở kinh doanh (đa cơ sở) */
+.workspacebar { display: flex; align-items: center; gap: 6px; margin-right: 4px; }
+.workspacebar.hidden { display: none; }
+.workspacebar .ws-ico { font-size: 15px; line-height: 1; }
+.ws-select { font-size: 13px; font-weight: 600; padding: 5px 8px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); color: var(--text); max-width: 190px; cursor: pointer; }
+.ws-select:hover { border-color: var(--brand); }
 body.login-mode .app { filter: blur(2px); pointer-events: none; }
 .login-overlay { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #d8edbf, #eef7e0); padding: 20px; }

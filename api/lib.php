@@ -129,15 +129,46 @@ function pw_ensure_history_table(PDO $pdo): void {
     data LONGTEXT,
     version INT,
     updated_by VARCHAR(50) DEFAULT '',
+    app_data_id INT NOT NULL DEFAULT 1,
     saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  // Bảng cũ (trước khi có đa cơ sở) chưa có cột app_data_id -> thêm.
+  // MySQL không hỗ trợ ADD COLUMN IF NOT EXISTS nên phải kiểm tra trước.
+  try {
+    $has = $pdo->query("SHOW COLUMNS FROM app_data_history LIKE 'app_data_id'")->fetch();
+    if (!$has) $pdo->exec("ALTER TABLE app_data_history ADD COLUMN app_data_id INT NOT NULL DEFAULT 1");
+  } catch (Throwable $e) { /* bỏ qua: nếu lỗi thì cột đã có hoặc sẽ dùng mặc định */ }
 }
-// Lưu bản hiện tại (chuỗi JSON) vào lịch sử; giữ tối đa $keep bản gần nhất.
-function pw_snapshot_history(PDO $pdo, ?string $curJson, int $curVersion, string $by, int $keep = 80): void {
+// Lưu bản hiện tại (chuỗi JSON) vào lịch sử của 1 cơ sở ($ws); giữ tối đa $keep bản gần nhất CỦA CƠ SỞ ĐÓ.
+function pw_snapshot_history(PDO $pdo, ?string $curJson, int $curVersion, string $by, int $ws = 1, int $keep = 80): void {
   if ($curJson === null || $curJson === '') return;   // không có gì để lưu
-  $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by) VALUES (?,?,?)")
-      ->execute([$curJson, $curVersion, $by]);
-  $pdo->exec("DELETE FROM app_data_history WHERE id <= (SELECT m FROM (SELECT MAX(id) - $keep AS m FROM app_data_history) t)");
+  $pdo->prepare("INSERT INTO app_data_history (data, version, updated_by, app_data_id) VALUES (?,?,?,?)")
+      ->execute([$curJson, $curVersion, $by, $ws]);
+  $pdo->prepare("DELETE FROM app_data_history WHERE app_data_id = ?
+      AND id <= (SELECT m FROM (SELECT MAX(id) - $keep AS m FROM app_data_history WHERE app_data_id = ?) t)")
+      ->execute([$ws, $ws]);
+}
+
+/* ---------- Đa cơ sở kinh doanh (workspaces) ----------
+   Mỗi cơ sở = 1 dòng app_data (id = workspace id) + 1 dòng workspaces (tên).
+   Cơ sở #1 = dữ liệu gốc (giữ nguyên). Cơ sở mới bắt đầu sổ sách TRỐNG.
+   Mặc định ws=1 ở mọi nơi -> hành vi cũ không đổi khi không truyền ws. */
+function pw_ensure_workspaces_table(PDO $pdo): void {
+  $pdo->exec("CREATE TABLE IF NOT EXISTS workspaces (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  // Đảm bảo cơ sở #1 (dữ liệu gốc) luôn có tên hiển thị.
+  $pdo->exec("INSERT IGNORE INTO workspaces (id, name) VALUES (1, 'Tranh số hóa DALI')");
+}
+// Lấy id cơ sở từ request (?ws= hoặc body.ws). Mặc định 1. Giới hạn 1..9999 để an toàn.
+function pw_current_ws(?array $body = null): int {
+  $ws = 0;
+  if (isset($_GET['ws'])) $ws = (int)$_GET['ws'];
+  elseif ($body !== null && isset($body['ws'])) $ws = (int)$body['ws'];
+  if ($ws < 1 || $ws > 9999) $ws = 1;
+  return $ws;
 }
 // So sánh dữ liệu MỚI với HIỆN TẠI: trả danh sách mục lớn bị mất/tụt mạnh ([] = an toàn).
 function pw_data_loss_check($curData, $newData): array {

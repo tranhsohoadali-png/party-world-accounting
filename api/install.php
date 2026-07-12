@@ -45,14 +45,28 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS app_data (
 // Khởi tạo dòng dữ liệu rỗng (id=1) nếu chưa có
 $pdo->exec("INSERT IGNORE INTO app_data (id, data, version) VALUES (1, NULL, 0)");
 
-// Bảng LỊCH SỬ: lưu bản trước mỗi lần ghi đè app_data (để rollback khi mất dữ liệu)
+// Bảng CƠ SỞ KINH DOANH (đa cơ sở): mỗi cơ sở = 1 dòng app_data (id = workspace id)
+$pdo->exec("CREATE TABLE IF NOT EXISTS workspaces (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+$pdo->exec("INSERT IGNORE INTO workspaces (id, name) VALUES (1, 'Tranh số hóa DALI')");
+
+// Bảng LỊCH SỬ: lưu bản trước mỗi lần ghi đè app_data (để rollback khi mất dữ liệu). app_data_id = cơ sở nào.
 $pdo->exec("CREATE TABLE IF NOT EXISTS app_data_history (
   id INT AUTO_INCREMENT PRIMARY KEY,
   data LONGTEXT,
   version INT,
   updated_by VARCHAR(50) DEFAULT '',
+  app_data_id INT NOT NULL DEFAULT 1,
   saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+// Bảng cũ chưa có cột app_data_id -> thêm (MySQL không có ADD COLUMN IF NOT EXISTS)
+try {
+  $hasCol = $pdo->query("SHOW COLUMNS FROM app_data_history LIKE 'app_data_id'")->fetch();
+  if (!$hasCol) $pdo->exec("ALTER TABLE app_data_history ADD COLUMN app_data_id INT NOT NULL DEFAULT 1");
+} catch (Throwable $e) { /* bỏ qua */ }
 
 // Tạo admin mặc định nếu chưa có user nào
 $count = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
