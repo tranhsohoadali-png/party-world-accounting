@@ -20,12 +20,13 @@ git config --global user.email "tranhsohoadali@gmail.com"
 ```
 
 ### 2. Clone mã nguồn
-Repo **public** → clone/pull **không cần token**. Nên clone vào **đúng đường dẫn cũ** `D:\phần mềm kế toán` (để khớp cấu hình & trí nhớ Claude Code — xem mục D).
-```bash
-cd /d D:\
-git clone https://github.com/tranhsohoadali-png/party-world-accounting.git "phần mềm kế toán"
+Repo **public** → clone/pull **không cần token**. Clone vào thư mục nào cũng được; chỉ cần **nhớ đường dẫn đã chọn** (nó quyết định tên thư mục trí nhớ Claude Code — xem mục D).
+```powershell
+git clone https://github.com/tranhsohoadali-png/party-world-accounting.git "E:\Kế toán"
 ```
 > Toàn bộ code + tài liệu đã đưa lên Git sẽ về theo bước này.
+>
+> 📍 **Đường dẫn đang dùng thực tế:** `E:\Kế toán`. Nếu bạn clone chỗ khác, thay đường dẫn ở mọi lệnh phía dưới cho khớp.
 
 ### 3. Đăng nhập GitHub để PUSH
 Lần `git push` **đầu tiên**, Windows sẽ bật cửa sổ đăng nhập GitHub (hoặc hỏi dán **Personal Access Token** `party-world`, hết hạn **27/09/2026**).
@@ -58,12 +59,22 @@ Các file dưới đây bị `.gitignore` (không lên GitHub) nên **clone sẽ
 ---
 
 ## D. (Tùy chọn) Giữ "trí nhớ" của Claude Code cho dự án
-Để Claude Code trên máy mới nhớ nguyên bối cảnh dự án (kiến trúc, định dạng file, cách deploy…), chép thư mục:
+Claude Code lưu trí nhớ dự án ở `C:\Users\<USER>\.claude\projects\<MÃ_ĐƯỜNG_DẪN>\memory\`.
+
+**`<MÃ_ĐƯỜNG_DẪN>` sinh ra từ đường dẫn dự án** — thay mọi ký tự không phải chữ/số bằng dấu `-`:
+
+| Đường dẫn dự án | Mã thư mục trí nhớ |
+|---|---|
+| `D:\phần mềm kế toán` (máy cũ) | `D--ph-n-m-m-k--to-n` |
+| `E:\Kế toán` (máy hiện tại) | `E--K--to-n` |
+
+Để mang trí nhớ sang máy mới, chép **nội dung bên trong** thư mục `memory\` của máy cũ vào thư mục `memory\` của máy mới:
+```powershell
+# Ví dụ: từ USB (ổ F:) sang máy hiện tại
+Copy-Item "F:\memory\*" "C:\Users\Admin\.claude\projects\E--K--to-n\memory\" -Recurse -Force
 ```
-C:\Users\<TÊN_USER_CŨ>\.claude\projects\D--ph-n-m-m-k--to-n\memory\
-```
-sang vị trí tương ứng dưới `.claude\projects\` của user trên máy mới.
-> Giữ **nguyên đường dẫn dự án `D:\phần mềm kế toán`** để Claude Code khớp đúng thư mục `D--ph-n-m-m-k--to-n`.
+> ⚠️ Chép **ruột** của `memory\`, đừng để lồng thành `memory\memory\`.
+> Đổi đường dẫn dự án ⇒ mã thư mục đổi theo ⇒ nhớ chép trí nhớ sang mã mới, nếu không Claude Code sẽ khởi động với trí nhớ rỗng.
 
 ---
 
