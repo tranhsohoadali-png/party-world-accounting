@@ -174,7 +174,10 @@ EOF
 
 chmod 600 /etc/systemd/system/mcp-365.service
 systemctl daemon-reload
-systemctl enable --now mcp-365 >/dev/null
+systemctl enable mcp-365 >/dev/null
+# restart (khong phai --now): chay lai script sau khi doi server.py/bien moi truong
+# thi phai khoi dong lai moi an, '--now' voi service dang chay la lenh rong.
+systemctl restart mcp-365
 
 for i in $(seq 1 15); do
   ss -ltn 2>/dev/null | grep -q "127.0.0.1:$PORT" && break
