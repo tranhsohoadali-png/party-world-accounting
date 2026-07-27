@@ -217,11 +217,19 @@ Script KHONG tu sua server block dang phuc vu so tranh. Ban tu them 1 dong:
   1) Mo file:      ${CONF:-/etc/nginx/sites-available/<file cua ketoan.tranhdali.vn>}
   2) Tim khoi:     server { ... listen 443 ... server_name ketoan.tranhdali.vn ... }
                    (dung khoi dang chua 'location /mcp')
-  3) Them vao trong khoi do:
+  3) Them vao trong khoi do (canh 'location /mcp'), DUNG DUONG DAN TUYET DOI:
 
-         include snippets/mcp-365.conf;
+         include $SNIPPET;
 
-  4) Kiem tra roi nap lai:
+  4) XAC NHAN include da vao cau hinh HIEU LUC (buoc hay bi bo qua):
+
+         sudo nginx -T 2>/dev/null | grep -c "location /mcp-365"
+
+     Phai ra 1. Ra 0 = dong include chua co tac dung, DUNG reload, quay lai buoc 1.
+     Luu y: 'nginx -t' chi kiem CU PHAP nen no pass ca khi ban quen chen gi.
+     Chi 'nginx -T' moi cho thay cau hinh thuc su dang chay.
+
+  5) Nap lai:
 
          sudo nginx -t && sudo systemctl reload nginx
 
