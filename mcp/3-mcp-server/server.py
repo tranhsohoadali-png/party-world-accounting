@@ -27,6 +27,14 @@ PARTY_WORLD_API = os.getenv("PW_API_BASE", "https://ketoan.tranhdali.vn/api/v1")
 PARTY_WORLD_TOKEN = os.getenv("PW_API_TOKEN", "")
 HTTP_TIMEOUT = 15.0
 
+# ============ DANH TÍNH SỔ ============
+# Nhiều instance MCP chạy song song, MỖI CÁI MỘT BỘ SỔ RIÊNG (xem deploy/MCP-365-trien-khai.md).
+# Trước đây tên sổ bị ghi cứng là "Dali" nên bản thứ hai cũng tự xưng là sổ tranh -> claude.ai
+# không phân biệt được và đã ghi nhầm 18 bút toán sang sai sổ (27/07/2026).
+# Nay tên sổ lấy từ biến môi trường và được IN VÀO MỌI kết quả, để ghi nhầm cửa lộ ra ngay.
+BOOK_NAME = os.getenv("PW_BOOK_NAME", "Tranh số hóa DALI")
+BOOK_SLUG = os.getenv("PW_BOOK_SLUG", "ketoan-tranhdali")
+
 if not PARTY_WORLD_TOKEN:
     raise RuntimeError(
         "PW_API_TOKEN environment variable is required. "
@@ -34,11 +42,14 @@ if not PARTY_WORLD_TOKEN:
     )
 
 mcp = FastMCP(
-    name="ketoan-tranhdali",
+    name=BOOK_SLUG,
     instructions=(
-        "Sổ kế toán Party World của Công ty Sản xuất & Thương mại Dali. "
+        f"⚠️ ĐÂY LÀ SỔ KẾ TOÁN: « {BOOK_NAME} ». CHỈ ghi những khoản thuộc đúng sổ này.\n"
+        f"Có thể còn sổ khác (cơ sở kinh doanh khác) dùng bộ công cụ TÊN GIỐNG HỆT nhưng "
+        f"là CSDL hoàn toàn tách biệt. Nếu khoản cần ghi không thuộc « {BOOK_NAME} », "
+        f"ĐỪNG ghi — hãy hỏi lại người dùng xem nên dùng sổ nào.\n"
         "Dùng để ghi nhận chi phí, doanh thu, công nợ, và biến động tồn kho từ ảnh "
-        "hóa đơn / sao kê ngân hàng / đơn hàng Shopee. "
+        "hóa đơn / sao kê ngân hàng / đơn hàng. "
         "Tất cả số tiền mặc định bằng VND. Ngày dùng định dạng YYYY-MM-DD."
     ),
     # Chống DNS-rebinding của MCP SDK chỉ cho localhost mặc định -> phải khai báo
@@ -420,7 +431,7 @@ async def list_recent_entries(
     if not entries:
         return f"Không có entry nào trong {days} ngày gần nhất."
 
-    lines = [f"📊 {len(entries)} entry gần nhất (tổng: {result.get('total_amount', 0):,.0f}đ):"]
+    lines = [f"📊 [SỔ: {BOOK_NAME}] {len(entries)} entry gần nhất (tổng: {result.get('total_amount', 0):,.0f}đ):"]
     for e in entries:
         lines.append(
             f"  • {e['entry_date']} | {e['entry_type']} | "
@@ -446,7 +457,7 @@ async def get_summary_report(from_date: Optional[str] = None, to_date: Optional[
     result = await _api_get("/reports/summary", params)
     p = result["period"]
     return (
-        f"📈 Báo cáo {p['from']} → {p['to']}:\n"
+        f"📈 [SỔ: {BOOK_NAME}] Báo cáo {p['from']} → {p['to']}:\n"
         f"  • Doanh thu: {result['income']:>15,.0f}đ\n"
         f"  • Chi phí:   {result['expense']:>15,.0f}đ\n"
         f"  • Lãi/Lỗ:    {result['net_profit']:>15,.0f}đ"
@@ -558,9 +569,10 @@ async def search_inventory(query: Optional[str] = None, category: Optional[str] 
 
 # ============ HELPER ============
 def _format_result(result: dict, what: str) -> str:
+    # Luôn kèm tên sổ: nếu Claude gọi nhầm connector, người dùng thấy ngay ở dòng đầu.
     if result.get("duplicate"):
-        return f"⚠️ Entry '{what}' đã tồn tại (id={result['id']}). Không tạo trùng."
-    msg = f"✅ Đã ghi nhận {what} (id={result.get('id')})."
+        return f"⚠️ [SỔ: {BOOK_NAME}] Entry '{what}' đã tồn tại (id={result['id']}). Không tạo trùng."
+    msg = f"✅ [SỔ: {BOOK_NAME}] Đã ghi nhận {what} (id={result.get('id')})."
     mv = result.get("inventory_movement")
     if mv:
         kind = "nhập kho" if mv.get("type") == "inventory_in" else "xuất kho"

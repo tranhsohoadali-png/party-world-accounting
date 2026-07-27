@@ -152,6 +152,9 @@ Group=www-data
 WorkingDirectory=$OPT_DIR
 Environment="PW_API_BASE=https://ketoan.tranhdali.vn/api365/v1"
 Environment="PW_API_TOKEN=$API_TOKEN"
+# Danh tinh so: in vao MOI ket qua doc/ghi de ghi nham cua lo ra ngay.
+Environment="PW_BOOK_NAME=Chi tiêu 365 — Bóng bay Party"
+Environment="PW_BOOK_SLUG=chitieu-365"
 Environment="HOME=$OPT_DIR"
 Environment="XDG_CACHE_HOME=/tmp"
 ExecStart=$OPT_DIR/venv/bin/uvicorn server:app --host 127.0.0.1 --port $PORT
