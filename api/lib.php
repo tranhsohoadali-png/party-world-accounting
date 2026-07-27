@@ -51,6 +51,42 @@ function pdo(): PDO {
   return $pdo;
 }
 
+/* ---------- PDO cho "Sổ Claude (MCP)" theo từng cơ sở ----------
+   Bảng sổ MCP (accounting_entries/inventory_items/counterparties) KHÔNG có cột
+   workspace, nên mỗi cơ sở có sổ riêng = một CSDL riêng (một instance MCP riêng).
+   Bản đồ ws -> file config nằm ở api/mcp-ws-map.php (xem mcp-ws-map.sample.php).
+
+   Trả về:
+     - PDO   : cơ sở #1 (CSDL app) hoặc cơ sở đã khai báo trong bản đồ
+     - null  : cơ sở chưa có sổ MCP riêng -> phía gọi phải trả sổ TRỐNG.
+   Cố ý KHÔNG fallback về CSDL app: hiện nhầm sổ của cơ sở khác nguy hiểm hơn
+   nhiều so với hiện sổ trống (từng gây hiểu lầm cơ sở Bóng bay chi 1,1 tỷ). */
+function pw_mcp_pdo(int $ws): ?PDO {
+  static $cache = [];
+  if (array_key_exists($ws, $cache)) return $cache[$ws];
+
+  if ($ws === 1) return $cache[$ws] = pdo();          // cơ sở gốc: CSDL của app
+
+  $mapFile = __DIR__ . '/mcp-ws-map.php';
+  $map = file_exists($mapFile) ? require $mapFile : [];
+  $cfgFile = (is_array($map) && isset($map[$ws])) ? $map[$ws] : null;
+  if ($cfgFile === null || !file_exists($cfgFile)) return $cache[$ws] = null;
+
+  $cfg = require $cfgFile;
+  $charset = $cfg['db_charset'] ?? 'utf8mb4';
+  $dsn = "mysql:host={$cfg['db_host']};dbname={$cfg['db_name']};charset={$charset}";
+  try {
+    $cache[$ws] = new PDO($dsn, $cfg['db_user'], $cfg['db_pass'], [
+      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+      PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+      PDO::ATTR_EMULATE_PREPARES => false,
+    ]);
+  } catch (Throwable $e) {
+    json_out(['error' => "Không kết nối được sổ MCP của cơ sở $ws"], 500);
+  }
+  return $cache[$ws];
+}
+
 // Người dùng hiện tại (từ session) hoặc null
 function current_user(): ?array {
   if (empty($_SESSION['uid'])) return null;

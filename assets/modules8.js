@@ -77,7 +77,7 @@ M.ledger = function (root) {
   f.q.addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(load, 400); });
 
   async function load() {
-    const qs = new URLSearchParams({ action: 'list', type: f.type.value, from: f.from.value, to: f.to.value, q: f.q.value.trim() });
+    const qs = new URLSearchParams({ action: 'list', ws: PW.ws, type: f.type.value, from: f.from.value, to: f.to.value, q: f.q.value.trim() });
     const r = await PW.api('ledger.php?' + qs.toString());
     if (r.status !== 200 || !r.data || !r.data.ok) {
       host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, (r.data && r.data.error) || 'Lỗi tải sổ giao dịch'));
@@ -349,7 +349,7 @@ M.mcpInventory = function (root) {
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
   card.appendChild(host); root.appendChild(card);
   (async function () {
-    const r = await PW.api('ledger.php?action=inventory');
+    const r = await PW.api('ledger.php?action=inventory&ws=' + PW.ws);
     if (r.status !== 200 || !r.data || !r.data.ok) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, 'Lỗi tải tồn kho')); return; }
     if (r.data.installed === false) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty' }, 'Chưa cài sổ tồn kho (inventory_items).')); return; }
     items = r.data.items || [];
@@ -391,7 +391,7 @@ M.mcpCounterparties = function (root) {
   const host = U.el('div', null, U.el('div', { class: 'empty' }, 'Đang tải...'));
   card.appendChild(host); root.appendChild(card);
   (async function () {
-    const r = await PW.api('ledger.php?action=counterparties');
+    const r = await PW.api('ledger.php?action=counterparties&ws=' + PW.ws);
     if (r.status !== 200 || !r.data || !r.data.ok) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty text-red' }, 'Lỗi tải đối tác')); return; }
     if (r.data.installed === false) { host.innerHTML = ''; host.appendChild(U.el('div', { class: 'empty' }, 'Chưa cài sổ đối tác (counterparties).')); return; }
     parties = r.data.parties || [];

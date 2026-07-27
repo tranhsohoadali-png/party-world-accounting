@@ -7,8 +7,19 @@
 require __DIR__ . '/lib.php';
 require_login();
 
-$pdo = pdo();
 $action = $_GET['action'] ?? 'list';
+
+/* Sổ MCP tách theo cơ sở: mỗi cơ sở một CSDL riêng (xem pw_mcp_pdo trong lib.php).
+   Cơ sở chưa có sổ riêng -> trả sổ TRỐNG, KHÔNG rơi về CSDL app (tránh hiện
+   nhầm sổ của cơ sở khác). */
+$ws  = pw_current_ws();
+$pdo = pw_mcp_pdo($ws);
+if (!$pdo) {
+  json_out(['ok' => true, 'installed' => false, 'ws' => $ws,
+    'entries' => [], 'summary' => null, 'items' => [], 'parties' => [],
+    'note' => 'Cơ sở này chưa có sổ Claude (MCP) riêng. Mỗi cơ sở cần một instance MCP + CSDL riêng; '
+            . 'khai báo trong api/mcp-ws-map.php.']);
+}
 
 // Bảng do package MCP tạo, có thể chưa cài -> trả rỗng
 function pw_table_exists(PDO $pdo, string $t): bool {

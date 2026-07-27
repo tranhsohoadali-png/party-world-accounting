@@ -244,7 +244,7 @@ M.dashboard = function (root) {
     mcpCard.appendChild(mcpBody);
     root.appendChild(mcpCard);
     (async function () {
-      const qs = new URLSearchParams({ action: 'summary', from: period.from, to: period.to });
+      const qs = new URLSearchParams({ action: 'summary', ws: PW.ws, from: period.from, to: period.to });
       const r = await PW.api('ledger.php?' + qs.toString());
       mcpBody.innerHTML = '';
       if (r.status === 200 && r.data && r.data.ok && r.data.installed !== false && r.data.summary) {
@@ -260,7 +260,8 @@ M.dashboard = function (root) {
         mcpBody.appendChild(U.el('div', { class: 'section-sub mt8' },
           U.el('a', { href: '#ledger', onclick: e => { e.preventDefault(); App.go('ledger'); } }, 'Xem chi tiết Sổ giao dịch →')));
       } else if (r.data && r.data.installed === false) {
-        mcpBody.appendChild(U.el('div', { class: 'section-sub' }, 'Chưa cài Sổ giao dịch (package MCP) — chạy install.sh trên VPS.'));
+        mcpBody.appendChild(U.el('div', { class: 'section-sub' },
+          r.data.note || 'Chưa cài Sổ giao dịch (package MCP) — chạy install.sh trên VPS.'));
       } else {
         mcpBody.appendChild(U.el('div', { class: 'section-sub' }, 'Chưa tải được sổ giao dịch.'));
       }

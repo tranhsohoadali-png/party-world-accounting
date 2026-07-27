@@ -24,3 +24,6 @@ CAI-LICH-MOI-GIO.bat
 deploy/
 HƯỚNG DẪN TRIỂN KHAI.txt
 api/ai-key*
+
+# Ban do co so -> CSDL so MCP (duong dan rieng tung may chu)
+api/mcp-ws-map.php
