@@ -24,6 +24,25 @@ ok()   { printf '  \033[32mOK\033[0m  %s\n' "$1"; }
 info() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 die()  { printf '  \033[31mLOI\033[0m %s\n' "$1" >&2; exit 1; }
 
+run_tests() {
+  info "KIEM TRA"
+  c1=$(curl -s -o /dev/null -w '%{http_code}' "https://ketoan.tranhdali.vn/api365/v1/reports/summary" || true)
+  c2=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $API_TOKEN" \
+       "https://ketoan.tranhdali.vn/api365/v1/reports/summary" || true)
+  c3=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/mcp" \
+       -H 'Accept: text/event-stream, application/json' -H 'Content-Type: application/json' --data '{}' || true)
+  printf '  /api365 khong token : %s   (mong doi 401)\n' "$c1"
+  printf '  /api365 co token    : %s   (mong doi 200)\n' "$c2"
+  printf '  loopback :%s/mcp    : %s   (mong doi KHAC 404)\n' "$PORT" "$c3"
+  echo
+  echo "  So 365 phai TRONG (expense = 0):"
+  curl -s -H "Authorization: Bearer $API_TOKEN" \
+    "https://ketoan.tranhdali.vn/api365/v1/reports/summary?from=2026-01-01&to=2026-12-31" || true
+  echo
+  printf '  Ban 1 (so tranh) phai van song: '
+  systemctl is-active mcp-ketoan-dali
+}
+
 [ "$(id -u)" -eq 0 ] || die "Phai chay bang sudo/root."
 
 # ---------------------------------------------------------------
@@ -54,6 +73,12 @@ ok "Ma nguon mcp/ day du trong webroot"
 PHP_SOCK=$(ls /run/php/*-fpm.sock 2>/dev/null | head -1) || true
 [ -n "${PHP_SOCK:-}" ] || die "Khong tim thay socket PHP-FPM trong /run/php/."
 ok "Socket PHP: $PHP_SOCK"
+
+# Che do chi kiem tra: khong cai lai gi ca
+if [ "${1:-}" = "--test" ]; then
+  run_tests
+  exit 0
+fi
 
 # ---------------------------------------------------------------
 info "1. (B2) Nhan ban tang PHP API -> $API_DIR"
@@ -207,23 +232,3 @@ Sau do chay kiem tra:
   sudo bash $WEBROOT/mcp/5-deployment/install-365.sh --test
 
 EOF
-
-# ---------------------------------------------------------------
-if [ "${1:-}" = "--test" ]; then
-  info "KIEM TRA"
-  c1=$(curl -s -o /dev/null -w '%{http_code}' "https://ketoan.tranhdali.vn/api365/v1/reports/summary" || true)
-  c2=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $API_TOKEN" \
-       "https://ketoan.tranhdali.vn/api365/v1/reports/summary" || true)
-  c3=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/mcp" \
-       -H 'Accept: text/event-stream, application/json' -H 'Content-Type: application/json' --data '{}' || true)
-  printf '  /api365 khong token : %s   (mong doi 401)\n' "$c1"
-  printf '  /api365 co token    : %s   (mong doi 200)\n' "$c2"
-  printf '  loopback :%s/mcp  : %s   (mong doi KHAC 404)\n' "$PORT" "$c3"
-  echo
-  echo "  So 365 phai TRONG:"
-  curl -s -H "Authorization: Bearer $API_TOKEN" \
-    "https://ketoan.tranhdali.vn/api365/v1/reports/summary?from=2026-01-01&to=2026-12-31" || true
-  echo
-  echo "  Ban 1 (so tranh) phai van song:"
-  systemctl is-active mcp-ketoan-dali
-fi
