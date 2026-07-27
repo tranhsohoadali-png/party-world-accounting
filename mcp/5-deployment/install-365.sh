@@ -64,6 +64,20 @@ NTOK=$(mysql -N -B "$DB" -e "SELECT COUNT(*) FROM api_tokens WHERE is_active=1;"
 [ "$NTOK" -ge 1 ] || die "Chua co token active nao trong $DB.api_tokens."
 ok "Token active: $NTOK"
 
+# Scope phai dung dinh dang <tai_nguyen>:<hanh_dong> — require_token() so khop CHINH XAC.
+# Sai dinh dang (vd 'read,write') se ra 403 "Token lacks scope" du token hop le.
+SCOPES=$(mysql -N -B "$DB" -e "SELECT scopes FROM api_tokens WHERE is_active=1 LIMIT 1;")
+SCOPES=${SCOPES// /}
+NEED="entries:write,entries:read,inventory:write,inventory:read,counterparties:write,counterparties:read,reports:read"
+for s in ${NEED//,/ }; do
+  case ",$SCOPES," in
+    *",$s,"*) ;;
+    *) die "Token thieu scope '$s'. Sua bang:
+       mysql $DB -e \"UPDATE api_tokens SET scopes='$NEED' WHERE is_active=1;\"" ;;
+  esac
+done
+ok "Token du 7 scope"
+
 for f in "$WEBROOT/mcp/2-php-api/api/helpers.php" "$WEBROOT/mcp/3-mcp-server/server.py" \
          "$WEBROOT/mcp/3-mcp-server/requirements.txt"; do
   [ -f "$f" ] || die "Thieu $f — chay 'cd $WEBROOT && git pull' truoc."
