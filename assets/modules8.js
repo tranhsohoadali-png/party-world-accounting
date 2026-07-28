@@ -24,6 +24,14 @@ M.ledger = function (root) {
   }
 
   let lastEntries = [];
+  /* (D) Chọn tập con để đưa vào sổ. Giữ theo id chứ không theo vị trí dòng,
+     và lọc lại sau mỗi lần tải để không sót id đã biến mất khỏi bộ lọc. */
+  const selected = new Set();
+  const selAllChk = U.el('input', { type: 'checkbox', title: 'Chọn / bỏ chọn tất cả khoản đủ điều kiện' });
+  // Chỉ chi/thu CHƯA vào sổ mới đưa hàng loạt được (phải thu/trả/tồn kho đi đường hóa đơn).
+  function selectable(e) {
+    return (e.entry_type === 'expense' || e.entry_type === 'income') && !convertedOf(e.id);
+  }
   // Đã được chuyển sang sổ chính chưa? (tìm phiếu chi/thu có fromLedgerId trỏ về entry này)
   function convertedOf(id) {
     const sid = String(id);
@@ -62,7 +70,8 @@ M.ledger = function (root) {
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0;flex:1' }, [U.el('label', null, 'Tìm'), f.q]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('Xem', load, 'primary')]));
   toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('📊 Xuất Excel', exportLedger, 'sm')]));
-  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), C.btn('⇊ Đưa hết vào sổ', bulkConvert, 'sm')]));
+  const bulkBtn = C.btn('⇊ Đưa hết vào sổ', bulkConvert, 'sm');   // nhãn đổi theo số khoản đang chọn
+  toolbar.appendChild(U.el('div', { class: 'field', style: 'margin:0' }, [U.el('label', null, ' '), bulkBtn]));
   const onlyUnconv = U.el('input', { type: 'checkbox' });
   onlyUnconv.addEventListener('change', () => load());
   toolbar.appendChild(U.el('label', { class: 'radio', style: 'margin:0;white-space:nowrap;align-self:center' }, [onlyUnconv, ' Chỉ khoản chưa vào sổ']));
@@ -104,8 +113,13 @@ M.ledger = function (root) {
     const rows = r.data.entries || [];
     lastEntries = rows;
     const shown = onlyUnconv.checked ? rows.filter(e => !convertedOf(e.id)) : rows;
+    // (D) Lựa chọn chỉ giữ lại những khoản còn hiện VÀ còn đủ điều kiện sau lần tải này
+    const okIds = new Set(shown.filter(selectable).map(e => String(e.id)));
+    [...selected].forEach(id => { if (!okIds.has(id)) selected.delete(id); });
     host.innerHTML = '';
     host.appendChild(C.table(shown, [
+      { label: selAllChk, center: true, width: '34px', render: e => selectable(e)
+          ? `<input type="checkbox" data-sel="${e.id}"${selected.has(String(e.id)) ? ' checked' : ''}>` : '' },
       { label: 'Ngày', render: e => U.date(e.entry_date) },
       { label: 'Loại', center: true, render: e => {
           const t = M.LEDGER_TYPES[e.entry_type] || { label: e.entry_type, cls: 'gray' };
@@ -148,6 +162,26 @@ M.ledger = function (root) {
       const entry = lastEntries.find(e => String(e.id) === btn.getAttribute('data-quick'));
       if (entry) M.ledgerQuickVoucher(entry, btn.getAttribute('data-kind'), load);
     }));
+
+    // (D) Ô tick từng dòng + ô tick "tất cả" ở tiêu đề
+    function syncSelUI() {
+      const n = selected.size, tot = okIds.size;
+      selAllChk.checked = n > 0 && n === tot;
+      selAllChk.indeterminate = n > 0 && n < tot;
+      bulkBtn.textContent = n ? '⇊ Đưa ' + n + ' khoản đã chọn' : '⇊ Đưa hết vào sổ';
+    }
+    host.querySelectorAll('[data-sel]').forEach(cb => cb.addEventListener('change', () => {
+      const id = cb.getAttribute('data-sel');
+      if (cb.checked) selected.add(id); else selected.delete(id);
+      syncSelUI();
+    }));
+    selAllChk.onchange = () => {          // gán lại mỗi lần vẽ -> không chồng listener
+      selected.clear();
+      if (selAllChk.checked) okIds.forEach(id => selected.add(id));
+      host.querySelectorAll('[data-sel]').forEach(cb => { cb.checked = selected.has(cb.getAttribute('data-sel')); });
+      syncSelUI();
+    };
+    syncSelUI();
   }
 
   function exportLedger() {
@@ -167,9 +201,11 @@ M.ledger = function (root) {
   }
 
   function bulkConvert() {
-    const todo = lastEntries.filter(e => (e.entry_type === 'expense' || e.entry_type === 'income') && !convertedOf(e.id));
+    const pool = lastEntries.filter(selectable);
+    // Có tick thì chỉ làm phần đã tick; không tick gì thì giữ hành vi cũ (làm hết).
+    const todo = selected.size ? pool.filter(e => selected.has(String(e.id))) : pool;
     if (!todo.length) return U.toast('Không có khoản chi/thu nào CHƯA vào sổ trong danh sách.', 'error');
-    M.ledgerBulkToVoucher(todo, load);
+    M.ledgerBulkToVoucher(todo, () => { selected.clear(); load(); });
   }
 
   load();
