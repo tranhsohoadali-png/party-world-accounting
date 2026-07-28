@@ -94,7 +94,12 @@ M.purchaseOrders = function (root) {
   card.appendChild(host);
   root.appendChild(card);
 
-  function total(o) { return o.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0) - Number(o.discount || 0); }
+  // Tổng tiền GỒM thuế — khớp với "TỔNG TIỀN (gồm thuế)" trong form.
+  // Đơn cũ chưa có vatRate -> coi như 0% -> con số không đổi.
+  function total(o) {
+    const base = o.items.reduce((s, it) => s + Number(it.qty) * Number(it.cost), 0) - Number(o.discount || 0);
+    return base + Math.round(base * (Number(o.vatRate || 0)) / 100);
+  }
   function draw() {
     const q = search.value.trim().toLowerCase();
     const rows = PW.data.purchaseOrders.filter(o => {
@@ -133,33 +138,53 @@ M.purchaseOrderForm = function (o) {
   o = o ? JSON.parse(JSON.stringify(o)) : {
     code: PW.nextCode('DMH'), date: U.today(),
     supplierId: PW.data.suppliers[0] ? PW.data.suppliers[0].id : '',
-    items: [], discount: 0, status: 'open', note: '',
+    items: [], discount: 0, vatRate: 0, status: 'open', note: '',
   };
   const codeI = C.input({ value: o.code });
   const dateI = C.input({ type: 'date', value: o.date });
   const supI = C.select(PW.data.suppliers.map(s => ({ value: s.id, label: s.name })), o.supplierId);
   const noteI = C.input({ value: o.note || '' });
   const discI = C.input({ type: 'number', value: o.discount || 0, min: 0, style: 'width:140px;text-align:right' });
+  const vatRateI = C.select([{ value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }], o.vatRate || 0);
+  const subCell = U.el('span');
+  const vatLabel = U.el('span', { class: 'text-muted' });
+  const vatCell = U.el('span');
   const grand = U.el('span', { style: 'font-weight:700' });
   const editor = M.itemsEditor(o.items.map(it => Object.assign({}, it)), {
     priceKey: 'cost', priceLabel: 'Đơn giá nhập', productPriceKey: 'cost',
-    onChange: () => { grand.textContent = U.money(editor.subtotal() - (Number(discI.value) || 0)) + ' đ'; },
+    onChange: () => calc(),
   });
-  discI.addEventListener('input', () => grand.textContent = U.money(editor.subtotal() - (Number(discI.value) || 0)) + ' đ');
-  grand.textContent = U.money(editor.subtotal() - (Number(discI.value) || 0)) + ' đ';
+  // Cùng quy ước với hóa đơn mua/bán: đơn giá nhập là giá TRƯỚC thuế,
+  // giảm giá trừ trên tiền hàng, thuế tính trên phần SAU giảm giá.
+  function calc() {
+    const sub = editor.subtotal();
+    const base = sub - (Number(discI.value) || 0);
+    const rate = Number(vatRateI.value) || 0;
+    const vat = Math.round(base * rate / 100);
+    subCell.textContent = U.money(sub) + ' đ';
+    vatLabel.textContent = 'Thuế GTGT (' + rate + '%): ';
+    vatCell.textContent = U.money(vat) + ' đ';
+    grand.textContent = U.money(base + vat) + ' đ';
+  }
+  discI.addEventListener('input', calc);
+  vatRateI.addEventListener('change', calc);
+  calc();
 
   const body = U.el('div', null, [
     U.el('div', { class: 'form-grid' }, [
       C.field('Số chứng từ', codeI),
       C.field('Ngày', dateI, { required: true }),
       C.field('Nhà cung cấp', M.partnerAdd(supI, false), { required: true, full: true }),
+      C.field('Diễn giải', noteI, { full: true }),
+      C.field('Thuế GTGT (%)', vatRateI),
     ]),
     U.el('div', { class: 'section-sub mt16', style: 'font-weight:600;color:#2c3a47' }, 'Chi tiết hàng hóa đặt mua'),
     editor.wrap,
-    C.field('Diễn giải', noteI, { full: true }),
-    U.el('div', { style: 'margin-top:12px;display:flex;flex-direction:column;gap:8px;align-items:flex-end' }, [
+    U.el('div', { style: 'margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-end' }, [
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'Tổng tiền hàng: '), subCell]),
       U.el('div', { style: 'display:flex;align-items:center;gap:10px' }, [U.el('span', { class: 'text-muted' }, 'Giảm giá: '), discI]),
-      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'TỔNG TIỀN: '), grand]),
+      U.el('div', null, [vatLabel, vatCell]),
+      U.el('div', null, [U.el('span', { class: 'text-muted' }, 'TỔNG TIỀN (gồm thuế): '), grand]),
     ]),
   ]);
 
@@ -171,6 +196,7 @@ M.purchaseOrderForm = function (o) {
       if (!supI.value) return U.toast('Chọn nhà cung cấp', 'error');
       const obj = { id: o.id || PW.uid(), code: codeI.value, date: dateI.value,
         supplierId: supI.value, items: valid, discount: Number(discI.value) || 0,
+        vatRate: Number(vatRateI.value) || 0,
         status: o.status || 'open', note: noteI.value };
       if (isNew) PW.data.purchaseOrders.push(obj);
       else { const i = PW.data.purchaseOrders.findIndex(x => x.id === obj.id); PW.data.purchaseOrders[i] = obj; }
@@ -185,7 +211,8 @@ M.convertToPurchase = function (o) {
   const pu = {
     id: PW.uid(), code: PW.nextCode('PN'), date: U.today(), supplierId: o.supplierId,
     items: o.items.map(it => ({ productId: it.productId, qty: Number(it.qty), cost: Number(it.cost) })),
-    discount: Number(o.discount || 0), paid: 0, paidAccountId: null, note: 'Từ đơn mua hàng ' + o.code,
+    discount: Number(o.discount || 0), vatRate: Number(o.vatRate || 0),
+    paid: 0, paidAccountId: null, note: 'Từ đơn mua hàng ' + o.code,
   };
   PW.data.purchases.push(pu);
   o.status = 'converted';
