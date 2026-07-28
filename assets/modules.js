@@ -623,9 +623,13 @@ M.productForm = function (p, opts) {
     bomSection.style.display = (k === 'thanhpham' || (bom.length && k !== 'combo')) ? '' : 'none';
     comboSection.style.display = (k === 'combo') ? '' : 'none';
     // NVL: ẩn giá vốn + giá bán (giá đổi theo NCC/thời điểm -> báo cáo lấy giá mua bình quân)
+    // + ẩn mã vạch nhà sách: NVL không bao giờ bán qua FAHASA / Phương Nam.
+    // Chỉ ẩn, KHÔNG xoá giá trị -> đổi lại tính chất là dữ liệu cũ hiện lại nguyên vẹn.
     const hide = (k === 'nvl');
     f.cost.parentElement.style.display = hide ? 'none' : '';
     f.price.parentElement.style.display = hide ? 'none' : '';
+    f.barcode.parentElement.style.display = hide ? 'none' : '';
+    f.barcodePN.parentElement.style.display = hide ? 'none' : '';
     if (typeof commonField !== 'undefined' && commonField) commonField.style.display = M.isMaterialKind(k) ? '' : 'none';
     fillGroupDL();
     fillSizeChips();
