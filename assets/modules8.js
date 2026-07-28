@@ -133,8 +133,9 @@ M.ledger = function (root) {
       { label: 'Vào sổ chính', center: true, render: e => {
           const code = convertedOf(e.id);
           if (code) return `<span class="tag green" title="Đã đưa vào sổ chính">✓ ${U.esc(code)}</span>`;
-          if (e.entry_type === 'expense') return `<button class="btn sm primary" data-conv="${e.id}" data-kind="chi">→ Phiếu chi</button>`;
-          if (e.entry_type === 'income') return `<button class="btn sm primary" data-conv="${e.id}" data-kind="thu">→ Phiếu thu</button>`;
+          // 2 nút: "⚡" đi thẳng (chi phí/thu nhập hoạt động), "→" mở modal để gắn công nợ/đơn.
+          if (e.entry_type === 'expense') return `<button class="btn sm" data-quick="${e.id}" data-kind="chi" title="Tạo NGAY phiếu chi hoạt động — không hỏi thêm">⚡ Chi phí</button> <button class="btn sm primary" data-conv="${e.id}" data-kind="chi" title="Chọn nhà cung cấp / gắn vào đơn mua chưa trả">→ Phiếu chi</button>`;
+          if (e.entry_type === 'income') return `<button class="btn sm" data-quick="${e.id}" data-kind="thu" title="Tạo NGAY phiếu thu (thu nhập khác) — không hỏi thêm">⚡ Thu nhập</button> <button class="btn sm primary" data-conv="${e.id}" data-kind="thu" title="Chọn khách hàng / gắn vào hóa đơn chưa thu">→ Phiếu thu</button>`;
           return '<span class="text-muted" title="Phải thu/trả/tồn kho — đưa vào sổ qua hóa đơn/phiếu nhập">—</span>';
         } },
     ], { empty: 'Chưa có giao dịch nào trong kỳ. Hãy gửi hóa đơn cho Claude để ghi.' }));
@@ -142,6 +143,10 @@ M.ledger = function (root) {
     host.querySelectorAll('[data-conv]').forEach(btn => btn.addEventListener('click', () => {
       const entry = lastEntries.find(e => String(e.id) === btn.getAttribute('data-conv'));
       if (entry) M.ledgerToVoucher(entry, btn.getAttribute('data-kind'), load);
+    }));
+    host.querySelectorAll('[data-quick]').forEach(btn => btn.addEventListener('click', () => {
+      const entry = lastEntries.find(e => String(e.id) === btn.getAttribute('data-quick'));
+      if (entry) M.ledgerQuickVoucher(entry, btn.getAttribute('data-kind'), load);
     }));
   }
 
@@ -170,6 +175,70 @@ M.ledger = function (root) {
   load();
 };
 
+/* ---------- Tiện ích dùng chung cho việc đưa sổ Claude vào sổ chính ---------- */
+M.LEDGER_ACC_KEY = 'DALI_LEDGER_ACC';
+
+// Đã xử lý chưa? Trả về mã chứng từ nếu rồi (phiếu chi/thu, hoặc đã áp thẳng vào đơn/HĐ).
+M.ledgerPostedCode = function (sid) {
+  sid = String(sid);
+  const v = (PW.data.payments || []).concat(PW.data.receipts || []).find(x => String(x.fromLedgerId) === sid)
+    || (PW.data.purchases || []).find(x => (x.settledFromLedger || []).map(String).indexOf(sid) >= 0)
+    || (PW.data.salesInvoices || []).find(x => (x.settledFromLedger || []).map(String).indexOf(sid) >= 0);
+  return v ? v.code : null;
+};
+
+// Tài khoản tiền gợi ý: hình thức thanh toán Claude ghi > lần dùng gần nhất > đầu danh sách.
+M.ledgerSuggestAccount = function (paymentMethod) {
+  const accs = PW.data.cashAccounts || [];
+  if (!accs.length) return '';
+  const pm = String(paymentMethod || '').toLowerCase();
+  const want = pm === 'cash' ? 'cash' : (pm === 'bank' ? 'bank' : '');
+  const hit = want && accs.find(a => a.type === want);
+  if (hit) return hit.id;
+  try { const id = localStorage.getItem(M.LEDGER_ACC_KEY); if (id && accs.some(a => a.id === id)) return id; } catch (e) {}
+  return accs[0].id;
+};
+M.ledgerRememberAccount = function (id) { try { if (id) localStorage.setItem(M.LEDGER_ACC_KEY, id); } catch (e) {} };
+
+// Khớp tên đối tác Claude ghi với danh mục NCC/KH (bỏ dấu, khớp đúng rồi mới khớp chứa).
+M.ledgerMatchParty = function (name, list) {
+  const norm = M._ciNorm || (s => String(s || '').toLowerCase().trim());
+  const n = norm(name);
+  if (!n) return null;
+  return (list || []).find(p => norm(p.name) === n)
+      || (list || []).find(p => { const pn = norm(p.name); return pn && (pn.indexOf(n) >= 0 || n.indexOf(pn) >= 0); })
+      || null;
+};
+
+/* ---------- (A) MỘT CHẠM: tạo thẳng phiếu chi/thu HOẠT ĐỘNG, không mở modal ----------
+   Dành cho ca phổ biến nhất: khoản không dính công nợ. Cùng hình dạng dữ liệu và
+   cùng cơ chế chống trùng (fromLedgerId) với đường "đưa hàng loạt". ---------- */
+M.ledgerQuickVoucher = function (entry, kind, after) {
+  if (!PW.data.cashAccounts || !PW.data.cashAccounts.length) {
+    return U.toast('Chưa có tài khoản tiền. Vào Danh mục → tài khoản tiền để thêm.', 'error');
+  }
+  const posted = M.ledgerPostedCode(entry.id);
+  if (posted) return U.toast('Giao dịch này đã được xử lý (' + posted + ') rồi.', 'error');
+
+  const isChi = kind === 'chi';
+  const accId = M.ledgerSuggestAccount(entry.payment_method);
+  const obj = {
+    id: PW.uid(), code: PW.nextCode(isChi ? 'PC' : 'PT'),
+    date: entry.entry_date, accountId: accId, amount: Number(entry.amount) || 0,
+    reason: entry.description || (isChi ? 'Chi phí (Claude)' : 'Thu nhập (Claude)'),
+    note: 'Từ sổ Claude' + (entry.category ? ' · ' + entry.category : ''),
+    fromLedgerId: String(entry.id),
+  };
+  if (isChi) { obj.supplierId = null; obj.category = (entry.category || '').trim(); PW.data.payments.push(obj); }
+  else { obj.customerId = null; obj.isRevenue = true; PW.data.receipts.push(obj); }
+  M.ledgerRememberAccount(accId);
+  PW.logActivity && PW.logActivity('create', isChi ? 'payment' : 'receipt', obj.code, U.money(obj.amount) + ' đ — từ sổ Claude (1 chạm)');
+  PW.save();
+  const acc = (PW.data.cashAccounts || []).find(a => a.id === accId);
+  U.toast('Đã tạo ' + (isChi ? 'phiếu chi ' : 'phiếu thu ') + obj.code + (acc ? ' · ' + acc.name : ''));
+  if (after) after();
+};
+
 /* ---------- Chuyển 1 giao dịch Claude -> Phiếu chi/thu trong SỔ CHÍNH ----------
    Tạo bút toán thật trong PW.data (payments/receipts) để tính vào báo cáo.
    Gắn fromLedgerId để nhận biết "đã chuyển" + tránh tạo trùng. ---------- */
@@ -178,22 +247,30 @@ M.ledgerToVoucher = function (entry, kind, after) {
     return U.toast('Chưa có tài khoản tiền. Vào Danh mục → tài khoản tiền để thêm.', 'error');
   }
   const sid = String(entry.id);
-  // Chống tạo trùng (đã tạo phiếu HOẶC đã áp thẳng vào 1 đơn)
-  const already = (PW.data.payments || []).concat(PW.data.receipts || []).find(x => String(x.fromLedgerId) === sid)
-    || (PW.data.purchases || []).find(x => (x.settledFromLedger || []).map(String).indexOf(sid) >= 0)
-    || (PW.data.salesInvoices || []).find(x => (x.settledFromLedger || []).map(String).indexOf(sid) >= 0);
-  if (already) return U.toast('Giao dịch này đã được xử lý (' + already.code + ') rồi.', 'error');
+  const posted = M.ledgerPostedCode(sid);
+  if (posted) return U.toast('Giao dịch này đã được xử lý (' + posted + ') rồi.', 'error');
 
   const isChi = kind === 'chi';
   const amount = Number(entry.amount) || 0;
-  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), M.ledgerSuggestAccount(entry.payment_method));
+  const partyList = isChi ? (PW.data.suppliers || []) : (PW.data.customers || []);
+
+  /* (B) Đoán sẵn từ dữ liệu Claude đã ghi, thay vì bắt người dùng khai lại:
+     - tên đối tác khớp danh mục -> chọn sẵn NCC/KH
+     - đối tác đó CÓ đơn chưa trả  -> mặc định "Trả nợ"; ngược lại -> "Chi phí hoạt động"
+     Mặc định cũ luôn là "Trả nợ" nên ca phổ biến nhất (chi phí lặt vặt, không dính
+     công nợ) phải đổi lại bằng tay mỗi lần. Mặc định mới cũng khớp với đường
+     "đưa hàng loạt" — vốn đã luôn tạo phiếu chi phí hoạt động. */
+  const guessParty = M.ledgerMatchParty(entry.counterparty_name, partyList);
+  const guessDebt = !!(guessParty && unpaidDocs(guessParty.id).length);
+
   // Loại: trả/thu nợ (gắn đối tác → trừ công nợ, KHÔNG vào lãi/lỗ) HOẶC chi phí/thu nhập (vào lãi/lỗ)
   const typeSel = C.select(isChi
     ? [{ value: 'debt', label: 'Trả nợ nhà cung cấp (trừ công nợ phải trả)' }, { value: 'pl', label: 'Chi phí hoạt động (tính vào lãi/lỗ)' }]
-    : [{ value: 'debt', label: 'Thu nợ khách hàng (trừ công nợ phải thu)' }, { value: 'pl', label: 'Thu nhập khác (tính vào doanh thu)' }], 'debt');
-  const partyList = isChi ? (PW.data.suppliers || []) : (PW.data.customers || []);
+    : [{ value: 'debt', label: 'Thu nợ khách hàng (trừ công nợ phải thu)' }, { value: 'pl', label: 'Thu nhập khác (tính vào doanh thu)' }],
+    guessDebt ? 'debt' : 'pl');
   const partySel = C.select([{ value: '', label: '-- Chọn ' + (isChi ? 'nhà cung cấp' : 'khách hàng') + ' --' }]
-    .concat(partyList.map(p => ({ value: p.id, label: p.name }))), '');
+    .concat(partyList.map(p => ({ value: p.id, label: p.name }))), guessParty ? guessParty.id : '');
   const docSel = C.select([{ value: '', label: '-- Không gắn đơn (trả/thu nợ chung) --' }], '');
   const catI = isChi ? C.input({ value: entry.category || '', list: 'dl-conv-expitems', placeholder: 'vd Phần mềm AI, NVL, Lương...' }) : null;
 
@@ -204,13 +281,16 @@ M.ledgerToVoucher = function (entry, kind, after) {
   function rebuildDocs() {
     const pid = partySel.value;
     const opts = [{ value: '', label: '-- Không gắn đơn (trả/thu nợ chung) --' }];
-    if (pid) unpaidDocs(pid).forEach(d => {
-      const rem = (isChi ? PW.purchaseGrand(d) : PW.invoiceGrand(d)) - (Number(d.paid) || 0);
-      opts.push({ value: d.id, label: d.code + ' · còn ' + U.money(rem) + ' đ' });
-    });
-    M.rebuildSelect(docSel, opts, '');
+    const docs = pid ? unpaidDocs(pid) : [];
+    const remain = d => (isChi ? PW.purchaseGrand(d) : PW.invoiceGrand(d)) - (Number(d.paid) || 0);
+    docs.forEach(d => opts.push({ value: d.id, label: d.code + ' · còn ' + U.money(remain(d)) + ' đ' }));
+    // Chỉ chọn sẵn đơn khi CHẮC CHẮN: đúng 1 đơn chưa trả và số còn lại khớp số tiền.
+    // Nhiều đơn hoặc lệch tiền -> để trống, người dùng tự quyết (tránh gắn nhầm đơn).
+    const pre = (docs.length === 1 && Math.abs(remain(docs[0]) - amount) < 1) ? docs[0].id : '';
+    M.rebuildSelect(docSel, opts, pre);
   }
   partySel.addEventListener('change', rebuildDocs);
+  rebuildDocs();   // đối tác có thể đã được đoán sẵn -> dựng danh sách đơn ngay
 
   const dyn = U.el('div', { class: 'form-grid' });
   function render() {
@@ -244,6 +324,7 @@ M.ledgerToVoucher = function (entry, kind, after) {
     footer: [C.btn('Hủy', C.closeModal), C.btn('Xác nhận', () => {
       const isDebt = typeSel.value === 'debt';
       if (isDebt && !partySel.value) return U.toast('Hãy chọn ' + (isChi ? 'nhà cung cấp' : 'khách hàng'), 'error');
+      M.ledgerRememberAccount(accSel.value);   // (C) lần sau mở lên là đúng tài khoản này
 
       // (A) Áp thẳng vào 1 đơn mua / hóa đơn → tăng "đã trả/đã thu", trừ công nợ, KHÔNG nhân đôi chi phí
       if (isDebt && docSel.value) {
@@ -293,7 +374,7 @@ M.ledgerBulkToVoucher = function (entries, after) {
   const thu = entries.filter(e => e.entry_type === 'income');
   const sumChi = chi.reduce((s, e) => s + (Number(e.amount) || 0), 0);
   const sumThu = thu.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), PW.data.cashAccounts[0].id);
+  const accSel = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), M.ledgerSuggestAccount(''));
 
   const body = U.el('div', null, [
     U.el('div', { class: 'section-sub' }, 'Đưa HÀNG LOẠT các khoản chưa vào sổ thành phiếu chi/thu trong sổ chính. Danh mục lấy theo từng giao dịch (sửa từng phiếu sau ở mục Tiền nếu cần).'),
@@ -307,6 +388,7 @@ M.ledgerBulkToVoucher = function (entries, after) {
   C.modal({
     title: '⇊ Đưa hàng loạt vào sổ chính', body,
     footer: [C.btn('Hủy', C.closeModal), C.btn('Tạo ' + entries.length + ' phiếu', () => {
+      M.ledgerRememberAccount(accSel.value);   // (C) nhớ cho lần sau
       const existing = new Set((PW.data.payments || []).concat(PW.data.receipts || []).map(x => String(x.fromLedgerId)));
       let nc = 0, nt = 0;
       entries.forEach(e => {

@@ -85,7 +85,7 @@ if ($action === 'summary') {
 // Danh sách entry
 $limit = min(1000, max(1, (int)($_GET['limit'] ?? 300)));
 $sql = "SELECT e.id, e.entry_type, e.entry_date, e.description, e.amount, e.category,
-          e.quantity, e.data, e.source, e.created_by, e.created_at,
+          e.quantity, e.data, e.payment_method, e.source, e.created_by, e.created_at,
           c.name AS counterparty_name, i.name AS item_name, i.code AS item_code
         FROM accounting_entries e
         $joins
