@@ -238,27 +238,35 @@ M.payslip = function (p, ln) {
   let detail = '';
   if (days.length) {
     const sum = k => days.reduce((s, d) => s + (Number(d[k]) || 0), 0);
-    const tGio = sum('soGio'), tTang = sum('tangCa'), tMuon = sum('diMuon'), tPhat = sum('phat');
-    const nCong = days.filter(d => Number(d.soGio) > 0).length;
+    const tGio = sum('soGio'), tNgay = sum('ngayCong'), tTang = sum('tangCa'),
+          tMuon = sum('diMuon'), tPhat = sum('phat');
+    // Máy chấm công xuất "Ngày công" (mỗi ngày = 1); file khác có thể xuất "Số giờ".
+    // Hiện đúng cột mà dữ liệu thực sự có, không in cột rỗng.
+    const dungNgay = tNgay > 0;
+    const colLabel = dungNgay ? 'Ngày công' : 'Số giờ';
+    const colVal = d => dungNgay ? (Number(d.ngayCong) || '') : (r2(d.soGio) || '');
+    const colTong = dungNgay ? tNgay : r2(tGio);
+    const lateUnit = ln.tkLateUnit || 'phút';
+    const nCong = days.filter(d => Number(d.ngayCong) > 0 || Number(d.soGio) > 0).length;
     detail = `
     <div class="sec-h">D. CHI TIẾT CHẤM CÔNG THÁNG ${mm}/${yy}</div>
     <table class="tk">
       <thead><tr>
         <th style="width:76px">Ngày</th><th style="width:50px">Thứ</th>
-        <th style="width:56px">Vào</th><th style="width:56px">Ra</th>
-        <th class="r" style="width:62px">Số giờ</th><th class="r" style="width:76px">Đi muộn (ph)</th>
-        <th class="r" style="width:72px">Tăng ca (h)</th><th class="r" style="width:86px">Phạt (đ)</th>
+        <th style="width:56px">Giờ vào</th><th style="width:56px">Giờ ra</th>
+        <th class="r" style="width:66px">${colLabel}</th><th class="r" style="width:82px">Đi muộn (${lateUnit})</th>
+        <th class="r" style="width:72px">Tăng ca (giờ)</th><th class="r" style="width:86px">Phạt (đ)</th>
       </tr></thead>
       <tbody>${days.map(d => `<tr>
         <td class="c">${U.esc(String(d.ngay || ''))}</td><td class="c">${U.esc(String(d.thu || ''))}</td>
         <td class="c">${U.esc(String(d.vao || ''))}</td><td class="c">${U.esc(String(d.ra || ''))}</td>
-        <td class="r">${r2(d.soGio) || ''}</td><td class="r">${Number(d.diMuon) || ''}</td>
+        <td class="r">${colVal(d)}</td><td class="r">${Number(d.diMuon) || ''}</td>
         <td class="r">${r2(d.tangCa) || ''}</td><td class="r">${Number(d.phat) ? U.money(d.phat) : ''}</td>
       </tr>`).join('')}</tbody>
       <tfoot><tr>
-        <td colspan="4">Cộng: <b>${nCong}</b> ngày có công</td>
-        <td class="r"><b>${r2(tGio)}</b></td><td class="r"><b>${tMuon || ''}</b></td>
-        <td class="r"><b>${r2(tTang)}</b></td><td class="r"><b>${U.money(tPhat)}</b></td>
+        <td colspan="4">Tổng ngày công: <b>${nCong}</b></td>
+        <td class="r"><b>${colTong}</b></td><td class="r"><b>${tMuon || 0}</b></td>
+        <td class="r"><b>${r2(tTang) || 0}</b></td><td class="r"><b>${U.money(tPhat)}</b></td>
       </tr></tfoot>
     </table>`;
   }
@@ -441,7 +449,7 @@ M.tkApplyAndReport = function (p, rawList, silent, chiTiet) {
       // in kèm được. Trước đây dữ liệu này chỉ sống trong wizard rồi mất.
       if (chiTiet) {
         const ct = chiTiet[_norm(rec.code)] || chiTiet[_norm(rec.name)];
-        if (ct && ct.rows && ct.rows.length) line.tkDays = ct.rows;
+        if (ct && ct.rows && ct.rows.length) { line.tkDays = ct.rows; line.tkLateUnit = ct.lateUnit || 'phút'; }
       }
       matched++;
     } else {
@@ -536,24 +544,28 @@ M.payrollReadCongFile = async function (file) {
 // Parse sheet Chi tiết (từng ngày) -> { byEmp: { normCode: {name, days, tongGio, tangCa, phat, rows[]} }, headerFound }
 M.payrollParseChiTiet = function (lines) {
   let hi = -1; const col = {};
+  let lateUnit = 'phút';   // "Đi muộn Lần" đếm số LẦN, "Đi muộn (phút)" đếm phút — nhãn khác nhau
   for (let i = 0; i < Math.min((lines || []).length, 8); i++) {
     const cells = (M._ciSplitCells(lines[i]) || []).map(c => M._ciNorm(c));
-    if (cells.some(c => /gio vao|so gio/.test(c)) && cells.some(c => /nhan vien|ho ten/.test(c))) {
+    if (cells.some(c => /gio vao|so gio|ngay cong/.test(c)) && cells.some(c => /nhan vien|ho ten/.test(c))) {
       cells.forEach((c, idx) => {
-        if (/^ngay\b/.test(c) && col.ngay == null) col.ngay = idx;
+        // "ngay cong" phải xét TRƯỚC /^ngay\b/, nếu không sẽ bị nhận nhầm thành cột Ngày
+        if (/ngay cong/.test(c) && col.ngayCong == null) col.ngayCong = idx;
+        else if (/^ngay\b/.test(c) && col.ngay == null) col.ngay = idx;
         else if (/^thu\b/.test(c) && col.thu == null) col.thu = idx;
         else if (/(nhan vien|ho ten)/.test(c) && col.nv == null) col.nv = idx;
         else if (/gio vao/.test(c) && col.vao == null) col.vao = idx;
         else if (/gio ra/.test(c) && col.ra == null) col.ra = idx;
         else if (/so gio/.test(c) && col.soGio == null) col.soGio = idx;
-        else if (/di muon/.test(c) && col.diMuon == null) col.diMuon = idx;
+        else if (/di muon/.test(c) && col.diMuon == null) { col.diMuon = idx; if (/\blan\b/.test(c)) lateUnit = 'lần'; }
         else if (/tang ca/.test(c) && col.tangCa == null) col.tangCa = idx;
         else if (/phat/.test(c) && col.phat == null) col.phat = idx;
       });
       hi = i; break;
     }
   }
-  if (hi < 0 || col.nv == null || col.soGio == null) return { byEmp: {}, headerFound: false };
+  // Máy chấm công xuất cột "Ngày công" (mỗi ngày = 1) chứ không phải "Số giờ" -> chấp nhận cả hai
+  if (hi < 0 || col.nv == null || (col.soGio == null && col.ngayCong == null)) return { byEmp: {}, headerFound: false };
   const byEmp = {};
   const g = (cells, idx) => (idx != null ? (M._tkNum(cells[idx]) || 0) : 0);
   for (let i = hi + 1; i < lines.length; i++) {
@@ -561,13 +573,17 @@ M.payrollParseChiTiet = function (lines) {
     const code = String(cells[col.nv] || '').trim();
     if (!code) continue;
     const k = _norm(code);
-    const soGio = g(cells, col.soGio), tangCa = g(cells, col.tangCa), phat = g(cells, col.phat);
-    const e = byEmp[k] || (byEmp[k] = { name: code, days: 0, tongGio: 0, tangCa: 0, phat: 0, rows: [] });
-    if (soGio > 0) e.days++;
-    e.tongGio += soGio; e.tangCa += tangCa; e.phat += phat;
+    // Bỏ các dòng tổng hợp cuối bảng (Tổng / Cộng / Nghỉ lễ / Tổng ngày công)
+    if (/^(tong|cong|nghi le)\b/.test(k)) continue;
+    const soGio = g(cells, col.soGio), ngayCong = g(cells, col.ngayCong),
+          tangCa = g(cells, col.tangCa), phat = g(cells, col.phat);
+    const e = byEmp[k] || (byEmp[k] = { name: code, days: 0, tongGio: 0, tongNgay: 0,
+      tangCa: 0, phat: 0, lateUnit: lateUnit, rows: [] });
+    if (soGio > 0 || ngayCong > 0) e.days++;
+    e.tongGio += soGio; e.tongNgay += ngayCong; e.tangCa += tangCa; e.phat += phat;
     e.rows.push({ ngay: col.ngay != null ? cells[col.ngay] : '', thu: col.thu != null ? cells[col.thu] : '',
       vao: col.vao != null ? cells[col.vao] : '', ra: col.ra != null ? cells[col.ra] : '',
-      soGio: soGio, diMuon: g(cells, col.diMuon), tangCa: tangCa, phat: phat });
+      soGio: soGio, ngayCong: ngayCong, diMuon: g(cells, col.diMuon), tangCa: tangCa, phat: phat });
   }
   return { byEmp: byEmp, headerFound: true };
 };
@@ -575,15 +591,20 @@ M.payrollParseChiTiet = function (lines) {
 M.payrollDayDetail = function (title, ct) {
   const r2 = x => Math.round((x || 0) * 100) / 100, r1 = x => Math.round((x || 0) * 10) / 10;
   const body = U.el('div');
-  body.appendChild(U.el('div', { class: 'section-sub' }, ct.days + ' ngày có công · tổng ' + r1(ct.tongGio) + 'h · tăng ca ' + r1(ct.tangCa) + 'h · phạt ' + U.money(ct.phat) + 'đ'));
+  // Cột đo công: máy chấm công cho "Ngày công", file khác cho "Số giờ" — hiện đúng cái đang có
+  const dungNgay = (ct.tongNgay || 0) > 0;
+  const donVi = ct.lateUnit || 'phút';
+  body.appendChild(U.el('div', { class: 'section-sub' }, ct.days + ' ngày có công · '
+    + (dungNgay ? 'tổng ' + r2(ct.tongNgay) + ' ngày công' : 'tổng ' + r1(ct.tongGio) + 'h')
+    + ' · tăng ca ' + r1(ct.tangCa) + 'h · phạt ' + U.money(ct.phat) + 'đ'));
   body.appendChild(C.table(ct.rows, [
     { label: 'Ngày', render: r => U.esc(String(r.ngay || '')) },
     { label: 'Thứ', center: true, render: r => U.esc(String(r.thu || '')) },
-    { label: 'Vào', center: true, render: r => U.esc(String(r.vao || '')) },
-    { label: 'Ra', center: true, render: r => U.esc(String(r.ra || '')) },
-    { label: 'Số giờ', num: true, render: r => r2(r.soGio) },
-    { label: 'Đi muộn (ph)', num: true, render: r => r.diMuon || 0 },
-    { label: 'Tăng ca (h)', num: true, render: r => r2(r.tangCa) },
+    { label: 'Giờ vào', center: true, render: r => U.esc(String(r.vao || '')) },
+    { label: 'Giờ ra', center: true, render: r => U.esc(String(r.ra || '')) },
+    { label: dungNgay ? 'Ngày công' : 'Số giờ', num: true, render: r => dungNgay ? (Number(r.ngayCong) || 0) : r2(r.soGio) },
+    { label: 'Đi muộn (' + donVi + ')', num: true, render: r => r.diMuon || 0 },
+    { label: 'Tăng ca (giờ)', num: true, render: r => r2(r.tangCa) },
     { label: 'Phạt', num: true, render: r => U.money(r.phat || 0) },
   ], { empty: '—' }));
   C.miniModal({ title: '📅 Chi tiết ngày công — ' + title, wide: true, body, footer: [C.btn('Đóng', C.closeMini, 'primary')] });
