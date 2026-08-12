@@ -17,6 +17,12 @@ return [
   'timekeeping_url' => 'https://mau.tranhdali.vn/api/luong',
   'timekeeping_key' => 'DAN_KHOA_API_CHAM_CONG_VAO_DAY',
 
+  // CHI TIẾT chấm công từng ngày: đọc THẲNG từ CSDL của mau (cùng MySQL instance)
+  // thay vì đi qua HTTP. mau tạo VIEW đúng 8 cột rồi GRANT SELECT cho user này.
+  // Cột: work_date, employee_code, check_in, check_out, work_day, late_count, ot_hours, fine
+  // Để trống = không dùng đường này (khi đó chi tiết ngày lấy từ API hoặc file Excel).
+  'timekeeping_days_source' => '',   // vd 'mau_db.v_chamcong_ngay_ketoan'
+
   // Nguồn NĂNG SUẤT: ketoan KÉO (pull) từ mau. DÙNG LẠI timekeeping_key (cùng KETOAN_API_KEY),
   // gửi qua header X-API-Key. Tham số hỗ trợ: ?day= / ?from=&to= / ?days=N (tối đa 92).
   'productivity_url' => 'https://mau.tranhdali.vn/api/nang-suat',

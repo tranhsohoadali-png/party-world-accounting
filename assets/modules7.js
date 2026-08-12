@@ -525,10 +525,47 @@ M.payrollImportServer = async function (p) {
   const list = M.tkExtractList(r.data.data);
   const coChiTiet = list.some(x => M.tkExtractDays(x).rows.length);
   M.tkApplyAndReport(p, list);
+  // API chưa trả chi tiết ngày -> thử đường CSDL (VIEW của mau, cùng MySQL)
   if (!coChiTiet) {
-    U.toast('Đã lấy SỐ TỔNG. API chấm công chưa trả chi tiết từng ngày nên phiếu lương sẽ '
-      + 'không có mục "Chi tiết chấm công" — bấm "🔍 Dữ liệu thô" để xem API đang trả gì.', 'error');
+    const n = await M.tkApplyDaysFromDb(p);
+    if (!n) {
+      U.toast('Đã lấy SỐ TỔNG. Chưa lấy được chi tiết từng ngày (API không trả, CSDL chưa khai '
+        + 'timekeeping_days_source) nên phiếu lương sẽ thiếu mục "Chi tiết chấm công" — '
+        + 'bấm "🔍 Dữ liệu thô" để xem hiện có gì.', 'error');
+    } else {
+      U.toast('Đã lấy số tổng + chi tiết từng ngày cho ' + n + ' nhân viên (nguồn: CSDL chấm công).');
+    }
   }
+};
+
+/* Lấy CHI TIẾT NGÀY thẳng từ CSDL của phần mềm chấm công (VIEW dùng chung).
+   Trả về số nhân viên đã gắn được chi tiết. */
+M.tkApplyDaysFromDb = async function (p) {
+  const r = await PW.api('timekeeping.php?action=days&month=' + p.month);
+  if (r.status !== 200 || !r.data || !r.data.ok || !r.data.configured) return 0;
+  const rows = r.data.rows || [];
+  if (!rows.length) return 0;
+  const byCode = {};
+  rows.forEach(d => {
+    const k = _norm(d.employee_code);
+    if (!k) return;
+    (byCode[k] || (byCode[k] = [])).push({
+      ngay: String(d.work_date || ''), thu: '',
+      vao: String(d.check_in || ''), ra: String(d.check_out || ''),
+      ngayCong: M._tkNum(d.work_day) || 0, soGio: 0,
+      diMuon: M._tkNum(d.late_count) || 0, tangCa: M._tkNum(d.ot_hours) || 0,
+      phat: M._tkNum(d.fine) || 0,
+    });
+  });
+  let n = 0;
+  p.lines.forEach(ln => {
+    const e = empById(ln.employeeId);
+    if (!e) return;
+    const days = byCode[_norm(e.tkCode)] || byCode[_norm(e.code)] || byCode[_norm(e.name)];
+    if (days && days.length) { ln.tkDays = days; ln.tkLateUnit = 'lần'; n++; }
+  });
+  if (n) { PW.save(); M.payrollDetail(p.id); }
+  return n;
 };
 
 /* Xem nguyên văn JSON mà API chấm công trả về — để biết cần map thêm trường nào

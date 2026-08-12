@@ -8,6 +8,36 @@ require __DIR__ . '/lib.php';
 require_login();
 
 $cfg = require __DIR__ . '/config.php';
+
+/* ---------- action=days: CHI TIẾT TỪNG NGÀY, đọc THẲNG từ CSDL của mau ----------
+   mau nằm cùng MySQL instance nên không cần đi vòng qua HTTP + khoá API
+   (xem cách productivity.php đọc VIEW năng suất). mau chỉ cần tạo 1 VIEW và
+   GRANT SELECT cho user DB của ketoan — không phải sửa API.
+   Hợp đồng cột: work_date, employee_code, check_in, check_out, work_day,
+                 late_count, ot_hours, fine                                     */
+if (($_GET['action'] ?? '') === 'days') {
+  $src = $cfg['timekeeping_days_source'] ?? '';
+  if (!$src) json_out(['ok' => true, 'configured' => false, 'rows' => [],
+    'note' => 'Chưa khai timekeeping_days_source trong api/config.php']);
+  if (!preg_match('/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$/', $src)) {
+    json_out(['ok' => false, 'error' => 'timekeeping_days_source không hợp lệ'], 500);
+  }
+  $srcSql = implode('.', array_map(function ($x) { return '`' . $x . '`'; }, explode('.', $src)));
+  $m = preg_replace('/[^0-9\-]/', '', $_GET['month'] ?? '');
+  if (!preg_match('/^\d{4}-\d{2}$/', $m)) json_out(['ok' => false, 'error' => 'Tháng không hợp lệ (YYYY-MM)'], 400);
+  try {
+    $st = pdo()->prepare("SELECT work_date, employee_code, check_in, check_out,
+                                 work_day, late_count, ot_hours, fine
+                          FROM $srcSql
+                          WHERE work_date >= ? AND work_date < DATE_ADD(?, INTERVAL 1 MONTH)
+                          ORDER BY employee_code, work_date LIMIT 5000");
+    $st->execute([$m . '-01', $m . '-01']);
+    json_out(['ok' => true, 'configured' => true, 'source' => $src, 'rows' => $st->fetchAll()]);
+  } catch (Throwable $e) {
+    json_out(['ok' => false, 'error' => 'Không đọc được nguồn "' . $src . '". Kiểm tra VIEW đã tạo và đã GRANT SELECT chưa.'], 500);
+  }
+}
+
 $base = $cfg['timekeeping_url'] ?? '';
 $key  = $cfg['timekeeping_key'] ?? '';
 if (!$base || !$key || $key === 'DAN_KHOA_API_CHAM_CONG_VAO_DAY') {
