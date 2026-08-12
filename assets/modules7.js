@@ -118,6 +118,7 @@ M.payrollDetail = function (id) {
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('📄 Nhập Excel bảng công', () => M.payrollImportExcel(p), 'sm'));
   toolbar.appendChild(C.btn('📥 Lấy chấm công', () => M.payrollImportServer(p), 'sm'));
+  toolbar.appendChild(C.btn('🔍 Dữ liệu thô', () => M.payrollRawTk(p), 'sm'));
   toolbar.appendChild(C.btn('📋 Dán chấm công', () => M.payrollPasteTK(p), 'sm'));
   toolbar.appendChild(C.btn('🛡️ Hậu kiểm', () => M.payrollAuditModal(p), 'sm'));
   if (canAuto) {
@@ -411,7 +412,39 @@ M.tkNormalize = function (r) {
     otHours: M._tkNum(_pick(flat, ['ot_hours', 'otHours', 'tang_ca', 'tang_ca_gio', 'gio_tang_ca', 'gioTangCa', 'overtime', 'overtime_hours', 'tangCa', 'tangca'])),
     lateFine: M._tkNum(_pick(flat, ['late_fine', 'lateFine', 'phat_di_muon', 'phatDiMuon', 'phat'])),
     lateMinutes: M._tkNum(_pick(flat, ['late_minutes', 'lateMinutes', 'phut_di_muon'])),
+    _raw: r,   // giữ bản ghi gốc để móc chi tiết từng ngày (tkExtractDays)
   };
+};
+
+/* Lấy CHI TIẾT TỪNG NGÀY từ 1 bản ghi nhân viên của API chấm công.
+   Mỗi phần mềm chấm công đặt tên trường một kiểu nên dò theo nhiều bí danh,
+   giống cách tkNormalize đang làm với số tổng.
+   Trả { rows, lateUnit }; rows rỗng = API chưa trả chi tiết ngày. */
+M.tkExtractDays = function (rec) {
+  if (!rec || typeof rec !== 'object') return { rows: [], lateUnit: 'lần' };
+  const cands = ['days', 'chi_tiet', 'chiTiet', 'details', 'detail', 'records', 'logs',
+                 'attendances', 'attendance_days', 'by_day', 'danh_sach_ngay', 'ngay_cong_chi_tiet'];
+  let arr = null;
+  const pools = [rec, rec.attendance, rec.data].filter(x => x && typeof x === 'object');
+  for (const pool of pools) { for (const k of cands) { if (Array.isArray(pool[k])) { arr = pool[k]; break; } } if (arr) break; }
+  if (!arr || !arr.length) return { rows: [], lateUnit: 'lần' };
+
+  // Đơn vị đi muộn: có trường phút thì là phút, ngược lại hiểu là số lần
+  const probe = arr[0] || {};
+  const lateUnit = (_pick(probe, ['late_minutes', 'phut_di_muon', 'so_phut_di_muon']) !== undefined) ? 'phút' : 'lần';
+
+  const rows = arr.map(d => ({
+    ngay: String(_pick(d, ['ngay', 'date', 'day', 'work_date', 'ngay_lam', 'checkin_date']) || ''),
+    thu: String(_pick(d, ['thu', 'weekday', 'day_of_week', 'dow']) || ''),
+    vao: String(_pick(d, ['vao', 'gio_vao', 'checkin', 'check_in', 'time_in', 'gioVao']) || ''),
+    ra: String(_pick(d, ['ra', 'gio_ra', 'checkout', 'check_out', 'time_out', 'gioRa']) || ''),
+    ngayCong: M._tkNum(_pick(d, ['ngay_cong', 'ngayCong', 'work_day', 'workday', 'cong', 'day_count'])) || 0,
+    soGio: M._tkNum(_pick(d, ['so_gio', 'soGio', 'hours', 'work_hours', 'gio_lam'])) || 0,
+    diMuon: M._tkNum(_pick(d, ['di_muon', 'diMuon', 'late', 'late_count', 'so_lan_muon', 'late_minutes', 'phut_di_muon'])) || 0,
+    tangCa: M._tkNum(_pick(d, ['tang_ca', 'tangCa', 'ot', 'ot_hours', 'overtime', 'overtime_hours'])) || 0,
+    phat: M._tkNum(_pick(d, ['phat', 'fine', 'late_fine', 'tien_phat'])) || 0,
+  })).filter(d => d.ngay || d.vao || d.ngayCong || d.soGio);
+  return { rows: rows, lateUnit: lateUnit };
 };
 
 function _norm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
@@ -447,9 +480,12 @@ M.tkApplyAndReport = function (p, rawList, silent, chiTiet) {
       if (rec.lateFine != null && rec.lateFine > 0) line.lateFine = rec.lateFine;
       // Lưu chi tiết ngày công (sheet "Chi tiết") vào chính dòng lương -> phiếu lương
       // in kèm được. Trước đây dữ liệu này chỉ sống trong wizard rồi mất.
-      if (chiTiet) {
+      if (chiTiet) {                       // nguồn: file Excel (sheet Chi tiết)
         const ct = chiTiet[_norm(rec.code)] || chiTiet[_norm(rec.name)];
         if (ct && ct.rows && ct.rows.length) { line.tkDays = ct.rows; line.tkLateUnit = ct.lateUnit || 'phút'; }
+      } else {                             // nguồn: API phần mềm chấm công
+        const dd = M.tkExtractDays(rec._raw);
+        if (dd.rows.length) { line.tkDays = dd.rows; line.tkLateUnit = dd.lateUnit; }
       }
       matched++;
     } else {
@@ -486,7 +522,35 @@ M.payrollImportServer = async function (p) {
   if (r.data.raw != null) {
     return U.toast('Nguồn chấm công trả về không phải JSON. Hãy gửi tôi mẫu dữ liệu để chỉnh.', 'error');
   }
-  M.tkApplyAndReport(p, M.tkExtractList(r.data.data));
+  const list = M.tkExtractList(r.data.data);
+  const coChiTiet = list.some(x => M.tkExtractDays(x).rows.length);
+  M.tkApplyAndReport(p, list);
+  if (!coChiTiet) {
+    U.toast('Đã lấy SỐ TỔNG. API chấm công chưa trả chi tiết từng ngày nên phiếu lương sẽ '
+      + 'không có mục "Chi tiết chấm công" — bấm "🔍 Dữ liệu thô" để xem API đang trả gì.', 'error');
+  }
+};
+
+/* Xem nguyên văn JSON mà API chấm công trả về — để biết cần map thêm trường nào
+   khi phiếu lương thiếu chi tiết ngày. */
+M.payrollRawTk = async function (p) {
+  if (PW.mode !== 'server') return U.toast('Chỉ xem được khi chạy trên server.', 'error');
+  const r = await PW.api('timekeeping.php?month=' + p.month);
+  if (r.status !== 200 || !r.data) return U.toast('Không gọi được API chấm công', 'error');
+  const txt = r.data.raw != null ? String(r.data.raw) : JSON.stringify(r.data.data, null, 2);
+  const list = r.data.raw != null ? [] : M.tkExtractList(r.data.data);
+  const ta = U.el('textarea', { style: 'width:100%;height:340px;font-family:monospace;font-size:12px' });
+  ta.value = txt.length > 60000 ? txt.slice(0, 60000) + '\n... (đã cắt bớt)' : txt;
+  const dd = list.length ? M.tkExtractDays(list[0]) : { rows: [], lateUnit: '' };
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' }, 'Tháng ' + p.month + ' · ' + list.length + ' bản ghi nhân viên · '
+      + (dd.rows.length ? '✓ CÓ chi tiết ngày (' + dd.rows.length + ' dòng ở NV đầu tiên, đi muộn tính theo ' + dd.lateUnit + ')'
+                        : '✗ KHÔNG thấy chi tiết từng ngày — API chỉ trả số tổng')),
+    ta,
+  ]);
+  C.modal({ title: '🔍 Dữ liệu thô từ API chấm công', wide: true, body,
+    footer: [C.btn('Sao chép', () => { ta.select(); document.execCommand('copy'); U.toast('Đã sao chép'); }),
+             C.btn('Đóng', C.closeModal, 'primary')] });
 };
 
 // Dán JSON chấm công thủ công (dùng được cả offline)
