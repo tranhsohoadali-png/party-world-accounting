@@ -228,19 +228,92 @@ M.payrollDetail = function (id) {
 M.payslip = function (p, ln) {
   const e = empById(ln.employeeId) || {};
   const r = M.payrollCompute(e, ln, p.standardDays);
-  const row = (no, name, val, note) => `<tr><td style="text-align:center">${no}</td><td>${name}</td><td style="text-align:right">${val === '' ? '' : U.money(val)}</td><td>${note || ''}</td></tr>`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Phiếu lương ${U.esc(e.name || '')}</title>
-    <style>body{font-family:'Segoe UI',Arial;padding:30px;color:#222}
-    .company{text-align:center;color:#1a3a6b;font-weight:700;font-size:18px}
-    h2{text-align:center;margin:6px 0} table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{border:1px solid #999;padding:6px 9px;font-size:13px} th{background:#eaf2fc}
-    .sec{background:#f0f0f0;font-weight:700} .meta{margin-top:8px;font-size:14px;line-height:1.6}
-    .big{text-align:right;margin-top:10px;font-size:16px;font-weight:700;color:#1a3a6b}</style></head><body>
-    <div class="company">DALI — Tô điểm cuộc sống</div>
-    <h2>PHIẾU LƯƠNG THÁNG ${p.month.slice(5)}/${p.month.slice(0, 4)}</h2>
-    <div class="meta"><b>Họ và tên:</b> ${U.esc(e.name || '')} &nbsp;|&nbsp; <b>Mã NV:</b> ${U.esc(e.code || '')} &nbsp;|&nbsp; <b>Chức vụ:</b> ${U.esc(e.position || '')}</div>
+  const mm = p.month.slice(5), yy = p.month.slice(0, 4);
+  const logo = (typeof M._logoUrl === 'function') ? M._logoUrl() : '';
+  const r2 = x => Math.round((Number(x) || 0) * 100) / 100;
+
+  /* Mục D — chi tiết chấm công, chỉ in khi bảng lương đã nạp từ file Excel
+     (lưu ở ln.tkDays). Không có dữ liệu thì bỏ hẳn mục, không in bảng rỗng. */
+  const days = Array.isArray(ln.tkDays) ? ln.tkDays : [];
+  let detail = '';
+  if (days.length) {
+    const sum = k => days.reduce((s, d) => s + (Number(d[k]) || 0), 0);
+    const tGio = sum('soGio'), tTang = sum('tangCa'), tMuon = sum('diMuon'), tPhat = sum('phat');
+    const nCong = days.filter(d => Number(d.soGio) > 0).length;
+    detail = `
+    <div class="sec-h">D. CHI TIẾT CHẤM CÔNG THÁNG ${mm}/${yy}</div>
+    <table class="tk">
+      <thead><tr>
+        <th style="width:76px">Ngày</th><th style="width:50px">Thứ</th>
+        <th style="width:56px">Vào</th><th style="width:56px">Ra</th>
+        <th class="r" style="width:62px">Số giờ</th><th class="r" style="width:76px">Đi muộn (ph)</th>
+        <th class="r" style="width:72px">Tăng ca (h)</th><th class="r" style="width:86px">Phạt (đ)</th>
+      </tr></thead>
+      <tbody>${days.map(d => `<tr>
+        <td class="c">${U.esc(String(d.ngay || ''))}</td><td class="c">${U.esc(String(d.thu || ''))}</td>
+        <td class="c">${U.esc(String(d.vao || ''))}</td><td class="c">${U.esc(String(d.ra || ''))}</td>
+        <td class="r">${r2(d.soGio) || ''}</td><td class="r">${Number(d.diMuon) || ''}</td>
+        <td class="r">${r2(d.tangCa) || ''}</td><td class="r">${Number(d.phat) ? U.money(d.phat) : ''}</td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr>
+        <td colspan="4">Cộng: <b>${nCong}</b> ngày có công</td>
+        <td class="r"><b>${r2(tGio)}</b></td><td class="r"><b>${tMuon || ''}</b></td>
+        <td class="r"><b>${r2(tTang)}</b></td><td class="r"><b>${U.money(tPhat)}</b></td>
+      </tr></tfoot>
+    </table>`;
+  }
+
+  const row = (no, name, val, note) => `<tr><td class="c">${no}</td><td>${name}</td><td class="r">${val === '' ? '' : U.money(val)}</td><td class="c">${note || ''}</td></tr>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Phieu luong ${U.esc(e.name || '')} ${mm}-${yy}</title>
+    <style>
+    @page{size:A4 portrait;margin:12mm}
+    *{box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#222;margin:0;padding:18px;background:#fff}
+    .head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #7cb342;padding-bottom:10px}
+    .head img{height:46px;width:auto}
+    .brand{font-weight:700;font-size:17px;color:#5a8e2e;line-height:1.25}
+    .brand small{display:block;font-weight:400;font-size:11px;color:#666;letter-spacing:.5px}
+    .head .right{margin-left:auto;text-align:right;font-size:11px;color:#666}
+    h2{text-align:center;margin:14px 0 4px;font-size:19px;letter-spacing:.4px}
+    .period{text-align:center;color:#666;font-size:12px;margin-bottom:12px}
+    .info{border:1px solid #d8d8d8;border-radius:6px;padding:9px 12px;font-size:13px;
+          display:flex;flex-wrap:wrap;gap:6px 26px;background:#fafcf7}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid #d0d0d0;padding:5px 8px;font-size:12.5px;vertical-align:top}
+    th{background:#eef5e4;font-weight:600;text-align:left}
+    .c{text-align:center} .r{text-align:right;white-space:nowrap}
+    .sec{background:#f4f4f4;font-weight:700;letter-spacing:.3px}
+    .net{margin-top:12px;text-align:right;font-size:16px;font-weight:700;color:#5a8e2e;
+         border:2px solid #7cb342;border-radius:6px;padding:9px 14px;background:#f5faee}
+    .sec-h{margin-top:20px;font-weight:700;font-size:13.5px;color:#5a8e2e;
+           border-left:4px solid #7cb342;padding-left:8px}
+    .tk th{background:#f4f8ee;text-align:center}
+    .tk tfoot td{background:#f4f4f4;font-weight:600}
+    .sign{display:flex;justify-content:space-around;margin-top:34px;text-align:center;font-size:13px}
+    .sign i{color:#666;font-size:11.5px}
+    .foot{margin-top:22px;border-top:1px solid #e2e2e2;padding-top:6px;font-size:10.5px;color:#888;text-align:center}
+    .btnbar{text-align:center;margin-bottom:14px}
+    .btnbar button{padding:8px 18px;font-size:14px;border:0;border-radius:6px;background:#7cb342;color:#fff;cursor:pointer}
+    tr{break-inside:avoid;page-break-inside:avoid}
+    thead{display:table-header-group}
+    .sec-h,.net{break-after:avoid;page-break-after:avoid}
+    @media print{.btnbar{display:none}body{padding:0}}
+    </style></head><body>
+    <div class="btnbar"><button onclick="window.print()">🖨️ In / Lưu PDF</button></div>
+    <div class="head">
+      ${logo ? `<img src="${logo}" alt="DALI">` : ''}
+      <div class="brand">DALI<small>TÔ ĐIỂM CUỘC SỐNG</small></div>
+      <div class="right">Mã NV: <b>${U.esc(e.code || '')}</b><br>Kỳ lương: <b>${mm}/${yy}</b></div>
+    </div>
+    <h2>PHIẾU LƯƠNG THÁNG ${mm}/${yy}</h2>
+    <div class="period">Kỳ tính lương: 01/${mm}/${yy} — hết tháng ${mm}/${yy}</div>
+    <div class="info">
+      <span><b>Họ và tên:</b> ${U.esc(e.name || '')}</span>
+      <span><b>Mã NV:</b> ${U.esc(e.code || '')}</span>
+      <span><b>Chức vụ:</b> ${U.esc(e.position || '')}</span>
+    </div>
     <table>
-      <tr><th style="width:36px">STT</th><th>Nội dung</th><th style="width:130px">Số tiền</th><th style="width:160px">Ghi chú</th></tr>
+      <thead><tr><th class="c" style="width:36px">STT</th><th>Nội dung</th><th class="r" style="width:120px">Số tiền</th><th class="c" style="width:120px">Ghi chú</th></tr></thead>
       <tr><td colspan="4" class="sec">A. THÔNG TIN CÔNG / MỨC LƯƠNG</td></tr>
       ${row(1, Number(e.dayWage || 0) > 0 ? 'Đơn giá ngày công' : 'Lương cơ bản', Number(e.dayWage || 0) > 0 ? e.dayWage : (e.salaryBase || 0), '')}
       ${row(2, 'Ngày công chuẩn trong tháng', '', String(p.standardDays))}
@@ -262,9 +335,13 @@ M.payslip = function (p, ln) {
       ${row(3, 'Ứng lương', r.ung, '')}
       ${row(4, 'Dùng ĐT trong giờ làm', r.dt, '')}
     </table>
-    <div class="big">THỰC LĨNH: ${U.money(r.thucLinh)} đ</div>
-    <div style="display:flex;justify-content:space-around;margin-top:50px;text-align:center">
-      <div>Người nhận<br/><i>(Ký, ghi rõ họ tên)</i></div><div>Người lập<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
+    <div class="net">THỰC LĨNH: ${U.money(r.thucLinh)} đ</div>
+    ${detail}
+    <div class="sign">
+      <div>Người nhận<br><i>(Ký, ghi rõ họ tên)</i></div>
+      <div>Người lập<br><i>(Ký, ghi rõ họ tên)</i></div>
+    </div>
+    <div class="foot">Phiếu lương do phần mềm kế toán DALI lập ngày ${U.date(U.today())} · Vui lòng đối chiếu và phản hồi trong 03 ngày làm việc.</div>
     <script>window.onload=function(){window.print();}</script></body></html>`;
   const w = window.open('', '_blank');
   if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
@@ -333,7 +410,7 @@ function _norm(s) { return String(s == null ? '' : s).trim().toLowerCase().repla
 
 // Ghép dữ liệu chấm công vào các dòng lương + báo cáo
 // silent=true: không hiện thông báo (dùng cho tự động làm mới)
-M.tkApplyAndReport = function (p, rawList, silent) {
+M.tkApplyAndReport = function (p, rawList, silent, chiTiet) {
   const recs = (rawList || []).map(M.tkNormalize);
   if (!recs.length) { if (!silent) U.toast('Không đọc được dữ liệu nhân viên từ nguồn chấm công', 'error'); return; }
   // Đồng bộ: thêm dòng cho nhân viên hiện tại CHƯA có trong bảng lương (để nạp được chấm công của NV mới thêm)
@@ -360,6 +437,12 @@ M.tkApplyAndReport = function (p, rawList, silent) {
       line.allowDays = (rec.allowDays != null) ? rec.allowDays : (rec.totalDays != null ? rec.totalDays : line.allowDays);
       if (rec.otHours != null) line.otHours = rec.otHours;
       if (rec.lateFine != null && rec.lateFine > 0) line.lateFine = rec.lateFine;
+      // Lưu chi tiết ngày công (sheet "Chi tiết") vào chính dòng lương -> phiếu lương
+      // in kèm được. Trước đây dữ liệu này chỉ sống trong wizard rồi mất.
+      if (chiTiet) {
+        const ct = chiTiet[_norm(rec.code)] || chiTiet[_norm(rec.name)];
+        if (ct && ct.rows && ct.rows.length) line.tkDays = ct.rows;
+      }
       matched++;
     } else {
       unmatched.push(rec.name || rec.code || '(không rõ)');
@@ -714,7 +797,7 @@ M.payrollImportExcel = function (p) {
       if (ackRow && !ackChk.checked) return U.toast('Tích xác nhận đã kiểm tra cảnh báo vàng.', 'error');
       C.closeModal();
       p._congSource = { file: file.name, sheet: read.sheetName };
-      M.tkApplyAndReport(p, recs);   // TÁI DÙNG: khớp + tự thêm NV + chỉ ghi 4 trường; KHÔNG cộng đôi OT
+      M.tkApplyAndReport(p, recs, false, chiTiet);   // TÁI DÙNG: khớp + tự thêm NV + ghi 4 trường + chi tiết ngày; KHÔNG cộng đôi OT
     }, 'primary');
     if (audit.counts.red) { applyBtn.disabled = true; applyBtn.title = 'Còn ' + audit.counts.red + ' lỗi chặn — không thể áp dụng'; }
     host.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right' }, [ackRow, applyBtn].filter(Boolean)));
