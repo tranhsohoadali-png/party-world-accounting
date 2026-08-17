@@ -1,11 +1,16 @@
-/* ============================================================
+﻿/* ============================================================
    modules7.js — Tính lương nhân viên (theo bảng lương Google Sheet)
    ============================================================ */
 
 /* ---------- Công thức tính lương 1 nhân viên trong 1 kỳ ---------- */
-M.payrollCompute = function (emp, line, standardDays) {
+/* otRate: hệ số làm thêm giờ. Bộ luật Lao động 2019 Điều 98 — làm thêm ngày thường
+   tối thiểu 150%, ngày nghỉ tuần 200%, ngày lễ/tết 300%. Mặc định 1.5.
+   Trước 14/08/2026 phần này nhân 1.0 (trả thiếu); nay bảng lương cũ không có
+   trường otRate cũng được tính lại theo 1.5. Muốn khác thì khai p.otRate. */
+M.payrollCompute = function (emp, line, standardDays, otRate) {
   emp = emp || {};
   const sd = Number(standardDays) || 26;
+  const otR = Number(otRate) > 0 ? Number(otRate) : 1.5;
   const base = Number(emp.salaryBase || 0);
   const totalDays = Number(line.totalDays || 0);   // tổng ngày công thực tế (gồm cả ngày lễ)
   const allowDays = Number(line.allowDays || 0);   // ngày công có phụ cấp (ngày đi làm thực tế)
@@ -17,7 +22,7 @@ M.payrollCompute = function (emp, line, standardDays) {
   const pcXang = (Number(emp.allowTransport || 0) / sd) * allowDays;
   const pcAn = (Number(emp.allowLunch || 0) / sd) * allowDays;
   const pcTN = (Number(emp.allowSeniority || 0) / sd) * allowDays;
-  const lamThem = hourWage * Number(line.otHours || 0);
+  const lamThem = hourWage * otR * Number(line.otHours || 0);
   const thuong = Number(line.bonus || 0);
   const extra = Number(line.extra || 0);
   const congThem = thuong + lamThem + pcXang + pcAn + pcTN + extra;
@@ -25,13 +30,13 @@ M.payrollCompute = function (emp, line, standardDays) {
         ung = Number(line.advance || 0), dt = Number(line.phoneUse || 0);
   const tongTru = phat + bhxh + ung + dt;
   const thucLinh = luongChinh + luongTN + congThem - tongTru;
-  return { dayWage, hourWage, luongChinh, luongTN, pcXang, pcAn, pcTN, lamThem, thuong, extra,
+  return { dayWage, hourWage, otRate: otR, luongChinh, luongTN, pcXang, pcAn, pcTN, lamThem, thuong, extra,
     congThem, phat, bhxh, ung, dt, tongTru, thucLinh };
 };
 
 function empById(id) { return PW.data.employees.find(e => e.id === id); }
 M.payrollNetTotal = function (p) {
-  return p.lines.reduce((s, ln) => s + M.payrollCompute(empById(ln.employeeId), ln, p.standardDays).thucLinh, 0);
+  return p.lines.reduce((s, ln) => s + M.payrollCompute(empById(ln.employeeId), ln, p.standardDays, p.otRate).thucLinh, 0);
 };
 
 /* ---------- Danh sách bảng lương theo tháng ---------- */
@@ -73,9 +78,14 @@ M.payrolls = function (root) {
 M.payrollCreate = function () {
   const monthI = C.input({ type: 'month', value: U.today().slice(0, 7) });
   const sdI = C.input({ type: 'number', value: 26, min: 1 });
+  const otI = C.select([{ value: 1.5, label: '×1,5 — ngày thường (luật tối thiểu 150%)' },
+                        { value: 2, label: '×2 — ngày nghỉ hằng tuần (200%)' },
+                        { value: 3, label: '×3 — ngày lễ, tết (300%)' },
+                        { value: 1, label: '×1 — không nhân hệ số' }], 1.5);
   const body = U.el('div', { class: 'form-grid' }, [
     C.field('Kỳ lương (tháng)', monthI, { required: true }),
     C.field('Ngày công chuẩn trong tháng', sdI, { required: true }),
+    C.field('Hệ số làm thêm giờ', otI),
     U.el('div', { class: 'section-sub full' }, 'Hệ thống sẽ tạo dòng lương cho tất cả nhân viên. Bạn nhập ngày công & các khoản cộng/trừ ở bước sau.'),
   ]);
   C.modal({
@@ -86,7 +96,7 @@ M.payrollCreate = function () {
       if (PW.data.payrolls.some(p => p.month === month)) return U.toast('Đã có bảng lương tháng này', 'error');
       const sd = Number(sdI.value) || 26;
       const p = {
-        id: PW.uid(), month, standardDays: sd, note: '',
+        id: PW.uid(), month, standardDays: sd, otRate: Number(otI.value) || 1.5, note: '',
         lines: PW.data.employees.map(e => ({
           employeeId: e.id, totalDays: sd, allowDays: sd, otHours: 0,
           bonus: 0, extra: 0, lateFine: 0, bhxh: 0, advance: 0, phoneUse: 0, note: '',
@@ -114,7 +124,9 @@ M.payrollDetail = function (id) {
   const toolbar = U.el('div', { class: 'toolbar' });
   toolbar.appendChild(U.el('button', { class: 'btn ghost', onclick: () => App.go('payroll') }, '← Danh sách'));
   toolbar.appendChild(U.el('div', { class: 'card-title', style: 'margin:0' },
-    '💰 Bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4) + ' (ngày công chuẩn: ' + p.standardDays + ')'));
+    '💰 Bảng lương tháng ' + p.month.slice(5) + '/' + p.month.slice(0, 4)
+    + ' (ngày công chuẩn: ' + p.standardDays
+    + ' · tăng ca ×' + String(Number(p.otRate) > 0 ? p.otRate : 1.5).replace('.', ',') + ')'));
   toolbar.appendChild(U.el('div', { class: 'spacer' }));
   toolbar.appendChild(C.btn('📄 Nhập Excel bảng công', () => M.payrollImportExcel(p), 'sm'));
   toolbar.appendChild(C.btn('📥 Lấy chấm công', () => M.payrollImportServer(p), 'sm'));
@@ -157,7 +169,7 @@ M.payrollDetail = function (id) {
   function recalc() {
     let total = 0;
     netCells.forEach(nc => {
-      const r = M.payrollCompute(empById(nc.ln.employeeId), nc.ln, p.standardDays);
+      const r = M.payrollCompute(empById(nc.ln.employeeId), nc.ln, p.standardDays, p.otRate);
       nc.luongChinh.textContent = U.money(r.luongChinh);
       nc.tn.textContent = U.money(r.luongTN);
       nc.pc.textContent = U.money(r.pcXang + r.pcAn + r.pcTN);
@@ -216,7 +228,7 @@ M.payrollDetail = function (id) {
     const headers = ['Nhân viên', 'Lương CB', 'Tổng NC', 'NC có PC', 'Tăng ca (h)', 'Lương chính', 'Trách nhiệm', 'Phụ cấp', 'Làm thêm', 'Thưởng', 'Phạt', 'BHXH', 'Ứng', 'ĐT', 'Thực lĩnh'];
     const rows = p.lines.map(ln => {
       const e = empById(ln.employeeId) || {};
-      const r = M.payrollCompute(e, ln, p.standardDays);
+      const r = M.payrollCompute(e, ln, p.standardDays, p.otRate);
       return [e.name || '', Number(e.dayWage || 0) > 0 ? e.dayWage : (e.salaryBase || 0), ln.totalDays, ln.allowDays, ln.otHours,
         Math.round(r.luongChinh), Math.round(r.luongTN), Math.round(r.pcXang + r.pcAn + r.pcTN),
         Math.round(r.lamThem), ln.bonus, ln.lateFine, ln.bhxh, ln.advance, ln.phoneUse, Math.round(r.thucLinh)];
@@ -228,7 +240,7 @@ M.payrollDetail = function (id) {
 /* ---------- Phiếu lương cá nhân (in) ---------- */
 M.payslip = function (p, ln) {
   const e = empById(ln.employeeId) || {};
-  const r = M.payrollCompute(e, ln, p.standardDays);
+  const r = M.payrollCompute(e, ln, p.standardDays, p.otRate);
   const mm = p.month.slice(5), yy = p.month.slice(0, 4);
   const logo = (typeof M._logoUrl === 'function') ? M._logoUrl() : '';
   const r2 = x => Math.round((Number(x) || 0) * 100) / 100;
@@ -334,7 +346,7 @@ M.payslip = function (p, ln) {
       ${row(1, 'Lương chính', Math.round(r.luongChinh), '')}
       ${row(2, 'Lương trách nhiệm', Math.round(r.luongTN), '')}
       ${row(3, 'Thưởng doanh số', r.thuong, '')}
-      ${row(4, 'Làm thêm giờ', Math.round(r.lamThem), ln.otHours ? ln.otHours + ' giờ' : '')}
+      ${row(4, 'Làm thêm giờ', Math.round(r.lamThem), ln.otHours ? ln.otHours + ' giờ × ' + String(r.otRate).replace('.', ',') : '')}
       ${row(5, 'Phụ cấp xăng xe', Math.round(r.pcXang), '')}
       ${row(6, 'Phụ cấp ăn trưa', Math.round(r.pcAn), '')}
       ${row(7, 'Phụ cấp thâm niên', Math.round(r.pcTN), '')}
@@ -810,7 +822,7 @@ M.payrollAudit = function (p, ctx) {
     if (ad > td) push(red, 'NC05', e.name + ': ngày có phụ cấp (' + ad + ') > tổng ngày công (' + td + ') — vô lý.', e.id);
     if (td > 0 && !(Number(e.salaryBase) > 0) && !(Number(e.dayWage) > 0)) push(red, 'CH01', e.name + ': có ' + td + ' ngày công nhưng chưa khai "Lương cơ bản/tháng" lẫn "Lương theo ngày" → lương chính = 0đ.', e.id);
     else if (Number(e.salaryBase) > 0 && Number(e.dayWage) > 0) push(orange, 'CH02', e.name + ': khai cả Lương cơ bản/tháng lẫn Lương theo ngày — phần mềm chỉ dùng Lương theo ngày.', e.id);
-    const r = M.payrollCompute(e, ln, p.standardDays);
+    const r = M.payrollCompute(e, ln, p.standardDays, p.otRate);
     if (r.thucLinh < 0) push(red, 'TL01', e.name + ': THỰC LĨNH ÂM (' + U.money(r.thucLinh) + 'đ) — các khoản trừ vượt thu nhập.', e.id);
     else if (r.thucLinh === 0 && td > 0) push(orange, 'TL02', e.name + ': thực lĩnh 0đ dù có ' + td + ' ngày công.', e.id);
     if (ctx.recs && td === 0 && !ctx.recs.some(rc => M.payrollMatchEmp(rc.code) === e))
@@ -876,7 +888,7 @@ M.payrollImportExcel = function (p) {
           allowDays: r.allowDays != null ? r.allowDays : (ln.allowDays || 0),
           otHours: r.otHours != null ? r.otHours : (ln.otHours || 0),
           lateFine: (r.lateFine != null && r.lateFine > 0) ? r.lateFine : (ln.lateFine || 0) });
-        net = M.payrollCompute(emp, sim, p.standardDays).thucLinh;
+        net = M.payrollCompute(emp, sim, p.standardDays, p.otRate).thucLinh;
       }
       return { r: r, emp: emp, ln: ln, net: net };
     });
