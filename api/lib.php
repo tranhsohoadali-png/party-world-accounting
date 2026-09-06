@@ -65,12 +65,17 @@ function pw_mcp_pdo(int $ws): ?PDO {
   static $cache = [];
   if (array_key_exists($ws, $cache)) return $cache[$ws];
 
-  if ($ws === 1) return $cache[$ws] = pdo();          // cơ sở gốc: CSDL của app
-
+  // Tra bản đồ TRƯỚC: bản cài riêng (vd ktparty) có cơ sở #1 nhưng sổ MCP nằm ở
+  // CSDL khác. Nếu chặn cứng ws===1 -> CSDL app thì bản đó luôn thấy sổ rỗng.
   $mapFile = __DIR__ . '/mcp-ws-map.php';
   $map = file_exists($mapFile) ? require $mapFile : [];
   $cfgFile = (is_array($map) && isset($map[$ws])) ? $map[$ws] : null;
-  if ($cfgFile === null || !file_exists($cfgFile)) return $cache[$ws] = null;
+
+  if ($cfgFile === null) {
+    // Không khai báo riêng: cơ sở gốc dùng CSDL của app, cơ sở khác coi như chưa có sổ
+    return $cache[$ws] = ($ws === 1) ? pdo() : null;
+  }
+  if (!file_exists($cfgFile)) return $cache[$ws] = null;
 
   $cfg = require $cfgFile;
   $charset = $cfg['db_charset'] ?? 'utf8mb4';
