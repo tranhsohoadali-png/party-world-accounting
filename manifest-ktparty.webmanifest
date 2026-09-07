@@ -1,0 +1,21 @@
+{
+  "id": "dali-bongbay",
+  "name": "Bóng bay Party — Kế toán",
+  "short_name": "Bóng bay",
+  "description": "Sổ kế toán riêng của cơ sở Bóng bay Party: bán hàng, mua hàng, kho, công nợ, báo cáo.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#e8467c",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "assets/icon-bongbay-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-bongbay-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-bongbay-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon-bongbay-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
