@@ -1134,10 +1134,12 @@ M.partnerForm = function (kind, x, opts) {
 /* =====================================================================
    SỔ CHI TIẾT CÔNG NỢ (theo từng khách hàng / nhà cung cấp)
    ===================================================================== */
-M.debtLedgerData = function (kind, id) {
+/* from/to là TUỲ CHỌN (yyyy-mm-dd). Bỏ trống -> giữ nguyên hành vi cũ: lấy toàn bộ
+   lịch sử và số dư đầu kỳ chính là openingDebt. Hai nơi gọi cũ (M.debtLedger,
+   M.printLedger) không truyền gì nên không đổi kết quả. */
+M.debtLedgerData = function (kind, id, from, to) {
   const isCus = kind === 'customer';
   const partner = isCus ? PW.customer(id) : PW.supplier(id);
-  const opening = Number(partner.openingDebt || 0);
   const rows = [];
   if (isCus) {
     PW.data.salesInvoices.filter(si => si.customerId === id).forEach(si =>
@@ -1162,11 +1164,24 @@ M.debtLedgerData = function (kind, id) {
       rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng mua' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   }
   rows.sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code));
+
+  /* Số dư đầu kỳ phải phản ánh ĐÚNG tình trạng nợ tại thời điểm `from`: nếu chỉ lấy
+     openingDebt thì mọi hóa đơn/phiếu thu phát sinh trước `from` sẽ biến mất khỏi
+     số dư, biên bản đối chiếu ra số sai. Vì vậy dồn hết phát sinh trước kỳ vào đầu kỳ. */
+  let opening = Number(partner.openingDebt || 0);
+  const inRange = [];
+  rows.forEach(r => {
+    const d = r.date || '';
+    if (from && d < from) { opening += r.tang - r.giam; return; }
+    if (to && d > to) return;                       // phát sinh sau kỳ: không thuộc biên bản
+    inRange.push(r);
+  });
+
   let bal = opening;
   const display = [{ date: '', code: '', desc: 'Số dư đầu kỳ', tang: 0, giam: 0, bal: opening, opening: true }];
-  rows.forEach(r => { bal += r.tang - r.giam; display.push(Object.assign({}, r, { bal })); });
-  return { partner, isCus, display, opening, closing: bal,
-    totalTang: rows.reduce((s, r) => s + r.tang, 0), totalGiam: rows.reduce((s, r) => s + r.giam, 0) };
+  inRange.forEach(r => { bal += r.tang - r.giam; display.push(Object.assign({}, r, { bal })); });
+  return { partner, isCus, display, opening, closing: bal, from: from || '', to: to || '',
+    totalTang: inRange.reduce((s, r) => s + r.tang, 0), totalGiam: inRange.reduce((s, r) => s + r.giam, 0) };
 };
 
 M.debtLedger = function (kind, id) {
@@ -1194,9 +1209,18 @@ M.debtLedger = function (kind, id) {
       html: (d.isCus ? 'Số dư cuối kỳ (còn phải thu): ' : 'Số dư cuối kỳ (còn phải trả): ') +
         `<span class="${d.closing > 0 ? 'text-red' : 'text-green'}">${U.money(d.closing)} đ</span>` }),
   ]);
+  /* Khoảng ngày chỉ dùng cho BIÊN BẢN ĐỐI CHIẾU (văn bản gửi đối tác ký), không đụng
+     tới bảng sổ phía trên — sổ vẫn hiển thị toàn bộ lịch sử như trước nay. */
+  const fromI = C.input({ type: 'date', style: 'width:140px', title: 'Từ ngày (để trống = từ đầu)' });
+  const toI = C.input({ type: 'date', value: U.today(), style: 'width:140px', title: 'Đến ngày' });
+  const rangeBar = U.el('div', { style: 'display:flex;align-items:center;gap:6px;margin-right:auto;flex-wrap:wrap;font-size:13px' },
+    [U.el('span', { class: 'text-muted' }, 'Kỳ đối chiếu:'), fromI, U.el('span', { class: 'text-muted' }, '→'), toI]);
+
   C.modal({
     title: '📒 Sổ chi tiết công nợ — ' + d.partner.code, wide: true, body,
-    footer: [C.btn('Đóng', C.closeModal), C.btn('🖨 In sổ', () => M.printLedger(kind, id), 'primary')],
+    footer: [rangeBar, C.btn('Đóng', C.closeModal),
+      C.btn('📄 Biên bản đối chiếu', () => M.debtReconcile(kind, id, fromI.value, toI.value)),
+      C.btn('🖨 In sổ', () => M.printLedger(kind, id), 'primary')],
   });
 };
 
@@ -1226,6 +1250,222 @@ M.printLedger = function (kind, id) {
   const w = window.open('', '_blank');
   if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
   w.document.write(html); w.document.close();
+};
+
+/* =====================================================================
+   BIÊN BẢN ĐỐI CHIẾU CÔNG NỢ
+   Khác "Sổ chi tiết công nợ" ở chỗ đây là VĂN BẢN gửi đối tác ký xác nhận:
+   có kỳ đối chiếu, thông tin hai bên, lời cam kết và hai khối ký đóng dấu.
+   ===================================================================== */
+
+/* Gom sẵn dữ liệu + mọi câu chữ dùng chung cho cả bản in lẫn bản Excel. Nếu mỗi nơi
+   tự diễn đạt "bên nào nợ bên nào" thì rất dễ lệch nhau -> đối tác mất tin tưởng. */
+M._reconcileData = function (kind, id, from, to) {
+  const d = M.debtLedgerData(kind, id, from, to);
+  const co = M.company();
+  // Bán cho khách -> mình là bên bán; mua của NCC -> mình là bên mua.
+  const roleA = d.isCus ? 'Bên bán' : 'Bên mua';
+  const roleB = d.isCus ? 'Bên mua' : 'Bên bán';
+  const period = (d.from ? 'Từ ngày ' + U.date(d.from) : 'Từ khi phát sinh giao dịch') +
+    ' đến ngày ' + U.date(d.to || U.today());
+  const abs = Math.abs(d.closing);
+  // d.closing > 0 nghĩa là đối tác đang nợ mình (khách) hoặc mình đang nợ đối tác (NCC).
+  let owe;
+  if (abs === 0) owe = 'Hai bên KHÔNG còn công nợ với nhau';
+  else if (d.closing > 0) owe = d.isCus ? 'Bên B còn phải thanh toán cho Bên A' : 'Bên A còn phải thanh toán cho Bên B';
+  else owe = d.isCus ? 'Bên A còn phải hoàn trả Bên B (thanh toán thừa)' : 'Bên B còn phải hoàn trả Bên A (thanh toán thừa)';
+  return {
+    d, co, roleA, roleB, period, owe, abs,
+    partyA: { name: co.name, address: co.address, phone: co.phone, mst: co.mst },
+    partyB: { name: d.partner.name, address: d.partner.address, phone: d.partner.phone, mst: d.partner.taxCode },
+    colTang: d.isCus ? 'Phát sinh nợ' : 'Phát sinh phải trả',
+    colGiam: d.isCus ? 'Đã thu' : 'Đã trả',
+    title: 'BIÊN BẢN ĐỐI CHIẾU CÔNG NỢ ' + (d.isCus ? 'PHẢI THU' : 'PHẢI TRẢ'),
+  };
+};
+
+// Xem trước trước khi in / xuất — kế toán soát lại số liệu rồi mới gửi đối tác.
+M.debtReconcile = function (kind, id, from, to) {
+  const R = M._reconcileData(kind, id, from, to), d = R.d;
+  const cols = [
+    { label: 'Ngày', render: r => r.opening ? '' : U.date(r.date) },
+    { label: 'Số CT', render: r => U.esc(r.code) },
+    { label: 'Diễn giải', render: r => r.opening ? '<b>' + U.esc(r.desc) + '</b>' : U.esc(r.desc) },
+    { label: R.colTang, num: true, render: r => r.tang ? U.money(r.tang) : '' },
+    { label: R.colGiam, num: true, render: r => r.giam ? `<span class="text-green">${U.money(r.giam)}</span>` : '' },
+    { label: 'Số dư', num: true, render: r => `<b>${U.money(r.bal)}</b>` },
+  ];
+  const party = (tag, p, role) => U.el('div', { class: 'mt8', html:
+    `<b>${tag} (${role}):</b> ${U.esc(p.name || '')}` +
+    (p.address ? `<div class="text-muted">Địa chỉ: ${U.esc(p.address)}</div>` : '') +
+    (p.phone ? `<div class="text-muted">Điện thoại: ${U.esc(p.phone)}</div>` : '') +
+    (p.mst ? `<div class="text-muted">Mã số thuế: ${U.esc(p.mst)}</div>` : '') });
+  const body = U.el('div', null, [
+    U.el('div', { class: 'section-sub' }, 'Kỳ đối chiếu: ' + R.period),
+    party('BÊN A', R.partyA, R.roleA), party('BÊN B', R.partyB, R.roleB),
+    C.table(d.display, cols, { footer: [
+      { html: 'CỘNG PHÁT SINH TRONG KỲ', colspan: 3 },
+      { html: U.money(d.totalTang), num: true },
+      { html: U.money(d.totalGiam), num: true },
+      { html: U.money(d.closing), num: true },
+    ] }),
+    U.el('div', { class: 'mt16', style: 'text-align:right;font-weight:700;font-size:15px',
+      html: R.owe + ': <span class="' + (d.closing > 0 ? 'text-red' : 'text-green') + '">' + U.money(R.abs) + ' đ</span>' }),
+  ]);
+  C.miniModal({
+    title: '📄 Biên bản đối chiếu công nợ — ' + d.partner.code, wide: true, body,
+    footer: [C.btn('Đóng', C.closeMini),
+      C.btn('📊 Xuất Excel', () => M.debtReconcileExcel(kind, id, from, to)),
+      C.btn('🖨 In biên bản (A4)', () => M.debtReconcilePrint(kind, id, from, to), 'primary')],
+  });
+};
+
+M.debtReconcilePrint = function (kind, id, from, to) {
+  const R = M._reconcileData(kind, id, from, to), d = R.d;
+  const logo = (typeof M._logoUrl === 'function') ? M._logoUrl() : '';
+  const today = U.today().split('-');
+  const line = (label, val) => val ? `<div><span class="lb">${label}:</span> ${U.esc(val)}</div>` : '';
+  const party = (tag, p, role) => `<div class="party">
+    <div class="pt">${tag} (${role}): ${U.esc(p.name || '')}</div>
+    ${line('Địa chỉ', p.address)}${line('Điện thoại', p.phone)}${line('Mã số thuế', p.mst)}
+    <div><span class="lb">Đại diện:</span> ……………………………………  <span class="lb">Chức vụ:</span> ……………………………</div>
+  </div>`;
+  const rows = d.display.map(r => `<tr>
+    <td class="c">${r.opening ? '' : U.date(r.date)}</td>
+    <td class="c">${U.esc(r.code)}</td>
+    <td>${r.opening ? '<b>' + U.esc(r.desc) + '</b>' : U.esc(r.desc)}</td>
+    <td class="r">${r.tang ? U.money(r.tang) : ''}</td>
+    <td class="r">${r.giam ? U.money(r.giam) : ''}</td>
+    <td class="r"><b>${U.money(r.bal)}</b></td></tr>`).join('');
+
+  const html = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Bien ban doi chieu cong no ${U.esc(d.partner.code)}</title>
+    <style>
+    @page{size:A4 portrait;margin:13mm}
+    *{box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;color:#222;margin:0;padding:18px;background:#fff;font-size:13px}
+    .head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #7cb342;padding-bottom:10px}
+    .head img{height:46px;width:auto}
+    .brand{font-weight:700;font-size:17px;color:#5a8e2e;line-height:1.25}
+    .brand small{display:block;font-weight:400;font-size:11px;color:#666;letter-spacing:.5px}
+    .head .right{margin-left:auto;text-align:right;font-size:11px;color:#666;line-height:1.6}
+    h2{text-align:center;margin:16px 0 4px;font-size:19px;letter-spacing:.4px}
+    .period{text-align:center;color:#666;font-size:12px;margin-bottom:6px}
+    .intro{margin:12px 0 4px}
+    .party{border:1px solid #d8d8d8;border-left:4px solid #7cb342;border-radius:6px;
+           padding:8px 12px;margin-top:8px;background:#fafcf7;line-height:1.65}
+    .party .pt{font-weight:700;color:#5a8e2e}
+    .party .lb{color:#666}
+    .sec-h{margin-top:18px;font-weight:700;font-size:13.5px;color:#5a8e2e;
+           border-left:4px solid #7cb342;padding-left:8px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border:1px solid #d0d0d0;padding:5px 8px;font-size:12.5px;vertical-align:top}
+    th{background:#eef5e4;font-weight:600;text-align:center}
+    .c{text-align:center} .r{text-align:right;white-space:nowrap}
+    tfoot td{background:#f4f4f4;font-weight:700}
+    .net{margin-top:12px;text-align:right;font-size:15px;font-weight:700;color:#5a8e2e;
+         border:2px solid #7cb342;border-radius:6px;padding:9px 14px;background:#f5faee}
+    .words{margin-top:6px;text-align:right;font-style:italic;color:#555;font-size:12.5px}
+    .confirm{margin-top:14px;line-height:1.8}
+    .sign{display:flex;justify-content:space-around;margin-top:26px;text-align:center;font-size:13px}
+    .sign>div{width:46%}
+    .sign b{display:block;letter-spacing:.3px}
+    .sign i{color:#666;font-size:11.5px}
+    .sign .space{height:78px}
+    .foot{margin-top:20px;border-top:1px solid #e2e2e2;padding-top:6px;font-size:10.5px;color:#888;text-align:center}
+    .btnbar{text-align:center;margin-bottom:14px}
+    .btnbar button{padding:8px 18px;font-size:14px;border:0;border-radius:6px;background:#7cb342;color:#fff;cursor:pointer}
+    tr{break-inside:avoid;page-break-inside:avoid}
+    thead{display:table-header-group}
+    tfoot{display:table-row-group}
+    .sec-h,.net{break-after:avoid;page-break-after:avoid}
+    .confirm,.sign{break-inside:avoid;page-break-inside:avoid}
+    @media print{.btnbar{display:none}body{padding:0}}
+    </style></head><body>
+    <div class="btnbar"><button onclick="window.print()">🖨️ In / Lưu PDF</button></div>
+    <div class="head">
+      ${logo ? `<img src="${logo}" alt="Logo">` : ''}
+      <div class="brand">${U.esc(R.co.name)}<small>TÔ ĐIỂM CUỘC SỐNG</small></div>
+      <div class="right">Số: ĐC/${U.esc(d.partner.code)}/${today[0]}<br>Ngày lập: ${U.date(U.today())}</div>
+    </div>
+    <h2>${R.title}</h2>
+    <div class="period">Kỳ đối chiếu: ${U.esc(R.period)}</div>
+    <div class="intro">Hôm nay, ngày ${today[2]} tháng ${today[1]} năm ${today[0]}, tại ${U.esc(R.co.address || '……………………………')},
+      chúng tôi gồm hai bên:</div>
+    ${party('BÊN A', R.partyA, R.roleA)}
+    ${party('BÊN B', R.partyB, R.roleB)}
+    <div class="sec-h">CÙNG NHAU ĐỐI CHIẾU CÔNG NỢ NHƯ SAU</div>
+    <table>
+      <thead><tr>
+        <th style="width:76px">Ngày</th><th style="width:92px">Số CT</th><th>Diễn giải</th>
+        <th class="r" style="width:104px">${R.colTang}</th>
+        <th class="r" style="width:104px">${R.colGiam}</th>
+        <th class="r" style="width:110px">Số dư</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td colspan="3">CỘNG PHÁT SINH TRONG KỲ</td>
+        <td class="r">${U.money(d.totalTang)}</td>
+        <td class="r">${U.money(d.totalGiam)}</td>
+        <td class="r">${U.money(d.closing)}</td>
+      </tr></tfoot>
+    </table>
+    <div class="net">SỐ DƯ CUỐI KỲ — ${U.esc(R.owe)}: ${U.money(R.abs)} đ</div>
+    <div class="words">Bằng chữ: ${U.esc(U.readMoneyVN(R.abs))}</div>
+    <div class="confirm">
+      Hai bên đã cùng nhau kiểm tra, đối chiếu và <b>thống nhất xác nhận</b> số liệu công nợ nêu trên là đúng và đầy đủ
+      tính đến hết ngày ${U.date(d.to || U.today())}.<br>
+      Biên bản này được lập thành <b>02 bản</b> có giá trị pháp lý như nhau, mỗi bên giữ <b>01 bản</b> làm cơ sở cho việc
+      theo dõi và thanh toán công nợ.
+    </div>
+    <div class="sign">
+      <div><b>ĐẠI DIỆN BÊN A</b><i>(Ký, ghi rõ họ tên, đóng dấu)</i><div class="space"></div>${U.esc(R.partyA.name || '')}</div>
+      <div><b>ĐẠI DIỆN BÊN B</b><i>(Ký, ghi rõ họ tên, đóng dấu)</i><div class="space"></div>${U.esc(R.partyB.name || '')}</div>
+    </div>
+    <div class="foot">Biên bản do phần mềm kế toán DALI lập ngày ${U.date(U.today())} · Vui lòng ký xác nhận và gửi lại trong 05 ngày làm việc.</div>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
+  w.document.write(html); w.document.close();
+};
+
+M.debtReconcileExcel = function (kind, id, from, to) {
+  const R = M._reconcileData(kind, id, from, to), d = R.d;
+  const columns = [
+    { header: 'Ngày', width: 12, align: 'center' },
+    { header: 'Số CT', width: 14, align: 'center' },
+    { header: 'Diễn giải', width: 42 },
+    { header: R.colTang, width: 16, money: true },
+    { header: R.colGiam, width: 16, money: true },
+    { header: 'Số dư', width: 16, money: true },
+  ];
+  /* Các dòng chữ của biên bản (hai bên, cộng phát sinh, xác nhận, chỗ ký) nằm NGAY
+     trong `rows` chứ không dùng `totals`: exportListExcel luôn đặt `totals` xuống
+     dòng cuối cùng, làm dòng cộng phát sinh rơi xuống dưới cả khối chữ ký -> sai
+     trật tự văn bản. Đổi lại file Excel gửi đi là một biên bản hoàn chỉnh. */
+  const txt = s => [s, '', '', null, null, null];
+  const party = p => (p.name || '') + (p.mst ? ' — MST: ' + p.mst : '') +
+    (p.phone ? ' — ĐT: ' + p.phone : '') + (p.address ? ' — ' + p.address : '');
+  const rows = [
+    txt('BÊN A (' + R.roleA + '): ' + party(R.partyA)),
+    txt('BÊN B (' + R.roleB + '): ' + party(R.partyB)),
+    txt(''),
+  ];
+  // null (không phải 0) cho ô không phát sinh -> Excel để trống như bản in, đỡ rối mắt.
+  d.display.forEach(r => rows.push([r.opening ? '' : U.date(r.date), r.code || '', r.desc, r.tang || null, r.giam || null, r.bal]));
+  rows.push(['', '', 'CỘNG PHÁT SINH TRONG KỲ', d.totalTang, d.totalGiam, d.closing]);
+  rows.push(txt(''));
+  rows.push(txt('SỐ DƯ CUỐI KỲ — ' + R.owe + ': ' + U.money(R.abs) + ' đ (bằng chữ: ' + U.readMoneyVN(R.abs) + ')'));
+  rows.push(txt('Hai bên thống nhất xác nhận số liệu nêu trên là đúng và đầy đủ. Biên bản lập thành 02 bản, mỗi bên giữ 01 bản.'));
+  rows.push(txt(''));
+  rows.push(['ĐẠI DIỆN BÊN A', '', 'ĐẠI DIỆN BÊN B', null, null, null]);
+  rows.push(['(Ký, ghi rõ họ tên, đóng dấu)', '', '(Ký, ghi rõ họ tên, đóng dấu)', null, null, null]);
+  M.exportListExcel({
+    title: R.title,
+    subtitle: 'Đối tác: ' + (d.partner.name || '') + ' (' + (d.partner.code || '') + ')     ·     Kỳ đối chiếu: ' +
+      R.period + '     ·     Ngày lập: ' + U.date(U.today()),
+    fname: 'BienBanDoiChieu-' + (d.partner.code || 'CongNo'),
+    columns: columns, rows: rows,
+  });
 };
 
 /* =====================================================================
