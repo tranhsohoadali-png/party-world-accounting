@@ -1220,36 +1220,18 @@ M.debtLedger = function (kind, id) {
     title: '📒 Sổ chi tiết công nợ — ' + d.partner.code, wide: true, body,
     footer: [rangeBar, C.btn('Đóng', C.closeModal),
       C.btn('📄 Biên bản đối chiếu', () => M.debtReconcile(kind, id, fromI.value, toI.value)),
-      C.btn('🖨 In sổ', () => M.printLedger(kind, id), 'primary')],
+      C.btn('🖨 In biên bản (A4)', () => M.printLedger(kind, id, fromI.value, toI.value), 'primary')],
   });
 };
 
-M.printLedger = function (kind, id) {
-  const d = M.debtLedgerData(kind, id);
-  const rows = d.display.map(r => `<tr>
-    <td style="text-align:center">${r.opening ? '' : U.date(r.date)}</td>
-    <td>${U.esc(r.code)}</td><td>${U.esc(r.desc)}</td>
-    <td style="text-align:right">${r.tang ? U.money(r.tang) : ''}</td>
-    <td style="text-align:right">${r.giam ? U.money(r.giam) : ''}</td>
-    <td style="text-align:right"><b>${U.money(r.bal)}</b></td></tr>`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>So cong no ${d.partner.code}</title>
-    <style>body{font-family:'Segoe UI',Arial;padding:30px;color:#222}
-    .company{text-align:center;color:#1ea7a0;font-weight:700;font-size:18px}
-    h2{text-align:center;margin:6px 0} table{width:100%;border-collapse:collapse;margin-top:14px}
-    th,td{border:1px solid #999;padding:6px 9px;font-size:13px} th{background:#f0f0f0}
-    .meta{margin-top:8px;font-size:14px;line-height:1.6} .tot{text-align:right;margin-top:12px;font-size:15px}</style></head><body>
-    <div class="company">DALI — Tô điểm cuộc sống</div>
-    <h2>SỔ CHI TIẾT CÔNG NỢ ${d.isCus ? 'PHẢI THU' : 'PHẢI TRẢ'}</h2>
-    <div class="meta"><div><b>${d.isCus ? 'Khách hàng' : 'Nhà cung cấp'}:</b> ${U.esc(d.partner.name)} (${U.esc(d.partner.code)})</div>
-      <div><b>Điện thoại:</b> ${U.esc(d.partner.phone || '')} &nbsp; <b>Địa chỉ:</b> ${U.esc(d.partner.address || '')}</div></div>
-    <table><thead><tr><th>Ngày</th><th>Số CT</th><th>Diễn giải</th><th>${d.isCus ? 'Phát sinh nợ' : 'Phải trả tăng'}</th><th>${d.isCus ? 'Đã thu' : 'Đã trả'}</th><th>Số dư</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div class="tot">Cộng phát sinh: ${U.money(d.totalTang)} / ${U.money(d.totalGiam)} đ</div>
-    <div class="tot">SỐ DƯ CUỐI KỲ (còn ${d.isCus ? 'phải thu' : 'phải trả'}): <b>${U.money(d.closing)} đ</b></div>
-    <script>window.onload=function(){window.print();}</script></body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) return U.toast('Trình duyệt chặn cửa sổ in. Hãy cho phép pop-up.', 'error');
-  w.document.write(html); w.document.close();
+/* In sổ công nợ = IN BIÊN BẢN ĐỐI CHIẾU.
+   Trước đây hàm này dựng một mẫu riêng: không logo, còn màu teal từ thời Party World,
+   và khi đối tác thiếu số điện thoại thì nhãn "Điện thoại:" dính liền "Địa chỉ:".
+   Nay dùng chung đúng một tài liệu với nút "Biên bản đối chiếu" — gửi đối tác chỉ nên
+   có một mẫu, và mẫu đó phải là bản trang trọng có đủ hai bên, chữ ký, đóng dấu.
+   Giữ nguyên tên hàm vì còn nơi khác gọi. */
+M.printLedger = function (kind, id, from, to) {
+  return M.debtReconcilePrint(kind, id, from || null, to || null);
 };
 
 /* =====================================================================
