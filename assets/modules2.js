@@ -892,6 +892,11 @@ M.docForm = function (cfg) {
     suggestFee(); drawItems(); calc();
   });
   // Thuế GTGT (cả bán & mua)
+  /* Số hóa đơn thuế (hóa đơn điện tử đã phát hành trên cổng thuế). App có sẵn
+     PW.data.taxInvoices tải từ cổng, nhưng KHÔNG có gì nối nó với hóa đơn bán —
+     ghi tay số ở đây để sổ công nợ và biên bản đối chiếu chỉ ra được hóa đơn này
+     ứng với hóa đơn thuế nào. */
+  const taxNoI = C.input({ value: doc.taxNo || '', placeholder: 'VD: 1C26TAA/00012345' });
   const vatRateI = C.select([{ value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }], doc.vatRate || 0);
   const vatCell = U.el('span');
   vatRateI.addEventListener('change', calc);
@@ -1100,6 +1105,7 @@ M.docForm = function (cfg) {
     C.field('Hạn thanh toán (để trống = không hạn)', dueI),
     C.field(partnerLabel, partnerField, { required: true, full: true }),
     C.field('Thuế GTGT (%)', vatRateI),
+    C.field('Số hóa đơn thuế', taxNoI),
     isSale ? C.field('Kênh bán', channelSel) : null,
     isSale ? C.field('Nhân viên bán', empField) : null,
   ]);
@@ -1178,6 +1184,7 @@ M.docForm = function (cfg) {
         platformFee: platformFeeI ? (Number(platformFeeI.value) || 0) : (doc.platformFee || 0),
         shippingFee: shippingFeeI ? (Number(shippingFeeI.value) || 0) : (doc.shippingFee || 0),
         vatRate: Number(vatRateI.value) || 0,
+        taxNo: taxNoI.value.trim(),
         items: valid.map(it => ({ productId: it.productId, qty: Number(it.qty), [unitField]: Number(it[unitField]) })),
         discount: Number(discountI.value) || 0,
         paid: Number(paidI.value) || 0,

@@ -1143,7 +1143,7 @@ M.debtLedgerData = function (kind, id, from, to) {
   const rows = [];
   if (isCus) {
     PW.data.salesInvoices.filter(si => si.customerId === id).forEach(si =>
-      rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0) }));
+      rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0), taxNo: si.taxNo || '', ref: { t: 'sale', id: si.id } }));
     // CHỈ liệt kê phiếu thu KHÔNG gắn hóa đơn: phiếu thu thu-cho-1-hóa-đơn đã được
     // tính vào cột "Đã thu" của dòng hóa đơn gốc (qua si.paid) -> liệt kê lại sẽ trừ 2 lần,
     // lệch với PW.customerDebt (đã sửa ở db.js). Phiếu thu cũ không có invoiceId vẫn hiện như trước.
@@ -1155,7 +1155,7 @@ M.debtLedgerData = function (kind, id, from, to) {
       rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng bán' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   } else {
     PW.data.purchases.filter(pu => pu.supplierId === id).forEach(pu =>
-      rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0) }));
+      rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0), taxNo: pu.taxNo || '', ref: { t: 'purchase', id: pu.id } }));
     PW.data.payments.filter(p => p.supplierId === id).forEach(p =>
       rows.push({ date: p.date, code: p.code, desc: p.reason || 'Trả tiền', tang: 0, giam: Number(p.amount) }));
     PW.data.purchaseReturns.filter(pr => pr.supplierId === id).forEach(pr =>
@@ -1188,8 +1188,19 @@ M.debtLedger = function (kind, id) {
   const d = M.debtLedgerData(kind, id);
   const cols = [
     { label: 'Ngày', render: r => r.opening ? '' : U.date(r.date) },
-    { label: 'Số CT', render: r => U.esc(r.code) },
+    /* Bấm số chứng từ để mở thẳng hóa đơn — sửa diễn giải / số hóa đơn thuế rồi
+       quay lại, khỏi phải tự đi tìm trong danh sách hóa đơn. */
+    { label: 'Số CT', render: r => {
+        if (!r.ref) return U.esc(r.code);
+        return U.el('a', { href: '#', style: 'font-weight:600;color:var(--teal-d);text-decoration:underline',
+          title: 'Mở chứng từ để sửa', onclick: e => {
+            e.preventDefault(); C.closeModal();
+            if (r.ref.t === 'sale') M.salesForm(PW.data.salesInvoices.find(x => x.id === r.ref.id));
+            else M.purchaseForm(PW.data.purchases.find(x => x.id === r.ref.id));
+          } }, r.code);
+      } },
     { label: 'Diễn giải', render: r => r.opening ? '<b>' + U.esc(r.desc) + '</b>' : U.esc(r.desc) },
+    { label: 'Số HĐ thuế', render: r => r.taxNo ? U.esc(r.taxNo) : '' },
     { label: d.isCus ? 'Phát sinh nợ' : 'Phải trả tăng', num: true, render: r => r.tang ? U.money(r.tang) : '' },
     { label: d.isCus ? 'Đã thu' : 'Đã trả', num: true, render: r => r.giam ? `<span class="text-green">${U.money(r.giam)}</span>` : '' },
     { label: 'Số dư', num: true, render: r => `<b>${U.money(r.bal)}</b>` },
@@ -1200,7 +1211,7 @@ M.debtLedger = function (kind, id) {
       d.partner.phone ? U.el('div', null, 'Điện thoại: ' + d.partner.phone) : null,
     ].filter(Boolean)),
     C.table(d.display, cols, { footer: [
-      { html: 'CỘNG PHÁT SINH', colspan: 3 },
+      { html: 'CỘNG PHÁT SINH', colspan: 4 },
       { html: U.money(d.totalTang), num: true },
       { html: U.money(d.totalGiam), num: true },
       { html: U.money(d.closing), num: true },
@@ -1269,14 +1280,16 @@ M._reconcileData = function (kind, id, from, to) {
 // Xem trước trước khi in / xuất — kế toán soát lại số liệu rồi mới gửi đối tác.
 M.debtReconcile = function (kind, id, from, to) {
   const R = M._reconcileData(kind, id, from, to), d = R.d;
+  const coThue = R.d.display.some(r => r.taxNo);   // giống bản in: không hiện cột rỗng
   const cols = [
     { label: 'Ngày', render: r => r.opening ? '' : U.date(r.date) },
     { label: 'Số CT', render: r => U.esc(r.code) },
     { label: 'Diễn giải', render: r => r.opening ? '<b>' + U.esc(r.desc) + '</b>' : U.esc(r.desc) },
+  ].concat(coThue ? [{ label: 'Số HĐ thuế', render: r => U.esc(r.taxNo || '') }] : []).concat([
     { label: R.colTang, num: true, render: r => r.tang ? U.money(r.tang) : '' },
     { label: R.colGiam, num: true, render: r => r.giam ? `<span class="text-green">${U.money(r.giam)}</span>` : '' },
     { label: 'Số dư', num: true, render: r => `<b>${U.money(r.bal)}</b>` },
-  ];
+  ]);
   const party = (tag, p, role) => U.el('div', { class: 'mt8', html:
     `<b>${tag} (${role}):</b> ${U.esc(p.name || '')}` +
     (p.address ? `<div class="text-muted">Địa chỉ: ${U.esc(p.address)}</div>` : '') +
@@ -1286,7 +1299,7 @@ M.debtReconcile = function (kind, id, from, to) {
     U.el('div', { class: 'section-sub' }, 'Kỳ đối chiếu: ' + R.period),
     party('BÊN A', R.partyA, R.roleA), party('BÊN B', R.partyB, R.roleB),
     C.table(d.display, cols, { footer: [
-      { html: 'CỘNG PHÁT SINH TRONG KỲ', colspan: 3 },
+      { html: 'CỘNG PHÁT SINH TRONG KỲ', colspan: coThue ? 4 : 3 },
       { html: U.money(d.totalTang), num: true },
       { html: U.money(d.totalGiam), num: true },
       { html: U.money(d.closing), num: true },
@@ -1312,10 +1325,14 @@ M.debtReconcilePrint = function (kind, id, from, to) {
     ${line('Địa chỉ', p.address)}${line('Điện thoại', p.phone)}${line('Mã số thuế', p.mst)}
     <div><span class="lb">Đại diện:</span> ……………………………………  <span class="lb">Chức vụ:</span> ……………………………</div>
   </div>`;
+  /* Cột "Số HĐ thuế" chỉ in khi thực sự có dữ liệu — văn bản gửi đối tác không nên
+     mang một cột rỗng chạy suốt trang. */
+  const coThue = d.display.some(r => r.taxNo);
   const rows = d.display.map(r => `<tr>
     <td class="c">${r.opening ? '' : U.date(r.date)}</td>
     <td class="c">${U.esc(r.code)}</td>
     <td>${r.opening ? '<b>' + U.esc(r.desc) + '</b>' : U.esc(r.desc)}</td>
+    ${coThue ? `<td class="c">${U.esc(r.taxNo || '')}</td>` : ''}
     <td class="r">${r.tang ? U.money(r.tang) : ''}</td>
     <td class="r">${r.giam ? U.money(r.giam) : ''}</td>
     <td class="r"><b>${U.money(r.bal)}</b></td></tr>`).join('');
@@ -1379,13 +1396,14 @@ M.debtReconcilePrint = function (kind, id, from, to) {
     <table>
       <thead><tr>
         <th style="width:76px">Ngày</th><th style="width:92px">Số CT</th><th>Diễn giải</th>
+        ${coThue ? '<th style="width:110px">Số HĐ thuế</th>' : ''}
         <th class="r" style="width:104px">${R.colTang}</th>
         <th class="r" style="width:104px">${R.colGiam}</th>
         <th class="r" style="width:110px">Số dư</th>
       </tr></thead>
       <tbody>${rows}</tbody>
       <tfoot><tr>
-        <td colspan="3">CỘNG PHÁT SINH TRONG KỲ</td>
+        <td colspan="${coThue ? 4 : 3}">CỘNG PHÁT SINH TRONG KỲ</td>
         <td class="r">${U.money(d.totalTang)}</td>
         <td class="r">${U.money(d.totalGiam)}</td>
         <td class="r">${U.money(d.closing)}</td>
