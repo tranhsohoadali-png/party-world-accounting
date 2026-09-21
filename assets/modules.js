@@ -1140,26 +1140,31 @@ M.partnerForm = function (kind, x, opts) {
 M.debtLedgerData = function (kind, id, from, to) {
   const isCus = kind === 'customer';
   const partner = isCus ? PW.customer(id) : PW.supplier(id);
+  /* Diễn giải phải LẤY TỪ CHỨNG TỪ chứ không ghi cứng: người dùng nhập gì ở ô
+     "Diễn giải" của hóa đơn thì sổ công nợ và biên bản đối chiếu phải hiện y như vậy.
+     Trước đây luôn in "Hóa đơn bán hàng" nên biên bản gửi đối tác khác với hóa đơn
+     họ đang cầm — rất khó đối chiếu. Không nhập gì thì mới dùng nhãn mặc định. */
+  const dien = (doc, macDinh) => ((doc.note || '').trim() || macDinh);
   const rows = [];
   if (isCus) {
     PW.data.salesInvoices.filter(si => si.customerId === id).forEach(si =>
-      rows.push({ date: si.date, code: si.code, desc: 'Hóa đơn bán hàng' + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0), taxNo: si.taxNo || '', ref: { t: 'sale', id: si.id } }));
+      rows.push({ date: si.date, code: si.code, desc: dien(si, 'Hóa đơn bán hàng') + (si.dueDate ? ' (hạn ' + U.date(si.dueDate) + ')' : ''), tang: PW.invoiceGrand(si), giam: Number(si.paid || 0), taxNo: si.taxNo || '', ref: { t: 'sale', id: si.id } }));
     // CHỈ liệt kê phiếu thu KHÔNG gắn hóa đơn: phiếu thu thu-cho-1-hóa-đơn đã được
     // tính vào cột "Đã thu" của dòng hóa đơn gốc (qua si.paid) -> liệt kê lại sẽ trừ 2 lần,
     // lệch với PW.customerDebt (đã sửa ở db.js). Phiếu thu cũ không có invoiceId vẫn hiện như trước.
     PW.data.receipts.filter(r => r.customerId === id && !r.invoiceId).forEach(r =>
       rows.push({ date: r.date, code: r.code, desc: r.reason || 'Thu tiền', tang: 0, giam: Number(r.amount) }));
     PW.data.salesReturns.filter(sr => sr.customerId === id).forEach(sr =>
-      rows.push({ date: sr.date, code: sr.code, desc: 'Trả lại hàng bán', tang: 0, giam: PW.returnGrand(sr) }));
+      rows.push({ date: sr.date, code: sr.code, desc: dien(sr, 'Trả lại hàng bán'), tang: 0, giam: PW.returnGrand(sr) }));
     PW.data.salesDiscounts.filter(g => g.customerId === id).forEach(g =>
       rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng bán' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   } else {
     PW.data.purchases.filter(pu => pu.supplierId === id).forEach(pu =>
-      rows.push({ date: pu.date, code: pu.code, desc: 'Phiếu nhập mua' + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0), taxNo: pu.taxNo || '', ref: { t: 'purchase', id: pu.id } }));
+      rows.push({ date: pu.date, code: pu.code, desc: dien(pu, 'Phiếu nhập mua') + (pu.dueDate ? ' (hạn ' + U.date(pu.dueDate) + ')' : ''), tang: PW.purchaseGrand(pu), giam: Number(pu.paid || 0), taxNo: pu.taxNo || '', ref: { t: 'purchase', id: pu.id } }));
     PW.data.payments.filter(p => p.supplierId === id).forEach(p =>
       rows.push({ date: p.date, code: p.code, desc: p.reason || 'Trả tiền', tang: 0, giam: Number(p.amount) }));
     PW.data.purchaseReturns.filter(pr => pr.supplierId === id).forEach(pr =>
-      rows.push({ date: pr.date, code: pr.code, desc: 'Trả lại hàng mua', tang: 0, giam: PW.purchaseReturnGrand(pr) }));
+      rows.push({ date: pr.date, code: pr.code, desc: dien(pr, 'Trả lại hàng mua'), tang: 0, giam: PW.purchaseReturnGrand(pr) }));
     PW.data.purchaseDiscounts.filter(g => g.supplierId === id).forEach(g =>
       rows.push({ date: g.date, code: g.code, desc: 'Giảm giá hàng mua' + (g.reason ? ': ' + g.reason : ''), tang: 0, giam: PW.discountGrand(g) }));
   }
