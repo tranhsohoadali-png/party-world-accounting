@@ -1433,44 +1433,138 @@ M.debtReconcilePrint = function (kind, id, from, to) {
   w.document.write(html); w.document.close();
 };
 
-M.debtReconcileExcel = function (kind, id, from, to) {
+/* Xuất Excel biên bản — dựng THẲNG bằng ExcelJS thay vì mượn M.exportListExcel.
+   Hàm đó sinh ra để xuất DANH SÁCH: nó tự chèn tiêu đề bảng kèm nút lọc ở đầu, nên
+   khối "Bên A / Bên B" bị đẩy xuống DƯỚI dòng tiêu đề cột, các dòng chữ dài bị cắt,
+   và không có chỗ cho cột "Số HĐ thuế". Biên bản là văn bản trang trọng gửi đối tác
+   nên phải tự bố cục. */
+M.debtReconcileExcel = async function (kind, id, from, to) {
   const R = M._reconcileData(kind, id, from, to), d = R.d;
-  const columns = [
-    { header: 'Ngày', width: 12, align: 'center' },
-    { header: 'Số CT', width: 14, align: 'center' },
-    { header: 'Diễn giải', width: 42 },
-    { header: R.colTang, width: 16, money: true },
-    { header: R.colGiam, width: 16, money: true },
-    { header: 'Số dư', width: 16, money: true },
-  ];
-  /* Các dòng chữ của biên bản (hai bên, cộng phát sinh, xác nhận, chỗ ký) nằm NGAY
-     trong `rows` chứ không dùng `totals`: exportListExcel luôn đặt `totals` xuống
-     dòng cuối cùng, làm dòng cộng phát sinh rơi xuống dưới cả khối chữ ký -> sai
-     trật tự văn bản. Đổi lại file Excel gửi đi là một biên bản hoàn chỉnh. */
-  const txt = s => [s, '', '', null, null, null];
-  const party = p => (p.name || '') + (p.mst ? ' — MST: ' + p.mst : '') +
-    (p.phone ? ' — ĐT: ' + p.phone : '') + (p.address ? ' — ' + p.address : '');
-  const rows = [
-    txt('BÊN A (' + R.roleA + '): ' + party(R.partyA)),
-    txt('BÊN B (' + R.roleB + '): ' + party(R.partyB)),
-    txt(''),
-  ];
-  // null (không phải 0) cho ô không phát sinh -> Excel để trống như bản in, đỡ rối mắt.
-  d.display.forEach(r => rows.push([r.opening ? '' : U.date(r.date), r.code || '', r.desc, r.tang || null, r.giam || null, r.bal]));
-  rows.push(['', '', 'CỘNG PHÁT SINH TRONG KỲ', d.totalTang, d.totalGiam, d.closing]);
-  rows.push(txt(''));
-  rows.push(txt('SỐ DƯ CUỐI KỲ — ' + R.owe + ': ' + U.money(R.abs) + ' đ (bằng chữ: ' + U.readMoneyVN(R.abs) + ')'));
-  rows.push(txt('Hai bên thống nhất xác nhận số liệu nêu trên là đúng và đầy đủ. Biên bản lập thành 02 bản, mỗi bên giữ 01 bản.'));
-  rows.push(txt(''));
-  rows.push(['ĐẠI DIỆN BÊN A', '', 'ĐẠI DIỆN BÊN B', null, null, null]);
-  rows.push(['(Ký, ghi rõ họ tên, đóng dấu)', '', '(Ký, ghi rõ họ tên, đóng dấu)', null, null, null]);
-  M.exportListExcel({
-    title: R.title,
-    subtitle: 'Đối tác: ' + (d.partner.name || '') + ' (' + (d.partner.code || '') + ')     ·     Kỳ đối chiếu: ' +
-      R.period + '     ·     Ngày lập: ' + U.date(U.today()),
-    fname: 'BienBanDoiChieu-' + (d.partner.code || 'CongNo'),
-    columns: columns, rows: rows,
+  const coThue = d.display.some(r => r.taxNo);      // giống bản in: không tạo cột rỗng
+  await M._ensureExcelJsLib();
+
+  const cols = [
+    { k: 'ngay', t: 'Ngày', w: 12 },
+    { k: 'ct', t: 'Số CT', w: 14 },
+    { k: 'dien', t: 'Diễn giải', w: 44 },
+  ].concat(coThue ? [{ k: 'thue', t: 'Số HĐ thuế', w: 20 }] : []).concat([
+    { k: 'tang', t: R.colTang, w: 17, money: true },
+    { k: 'giam', t: R.colGiam, w: 17, money: true },
+    { k: 'du', t: 'Số dư', w: 17, money: true },
+  ]);
+  const N = cols.length, LAST = String.fromCharCode(64 + N);   // 'F' hoặc 'G'
+
+  const wb = new window.ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Bien ban doi chieu', {
+    pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                 margins: { left: 0.5, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
   });
+  ws.columns = cols.map(c => ({ width: c.w }));
+
+  let r = 0;
+  const merge = (text, opt) => {
+    r++; ws.mergeCells('A' + r + ':' + LAST + r);
+    const c = ws.getCell('A' + r); c.value = text;
+    c.font = Object.assign({ name: 'Times New Roman', size: 11 }, (opt || {}).font);
+    c.alignment = Object.assign({ vertical: 'middle', wrapText: true }, (opt || {}).align);
+    if ((opt || {}).h) ws.getRow(r).height = opt.h;
+    return c;
+  };
+  const trong = () => { r++; };
+
+  // ----- Đầu văn bản: bên mình, rồi tiêu đề -----
+  merge(R.partyA.name || '', { font: { bold: true, size: 12 }, align: { horizontal: 'left' } });
+  const dcA = [R.partyA.address ? 'Địa chỉ: ' + R.partyA.address : '', R.partyA.mst ? 'MST: ' + R.partyA.mst : '']
+    .filter(Boolean).join('    ');
+  if (dcA) merge(dcA, { font: { size: 10, italic: true }, align: { horizontal: 'left' } });
+  trong();
+  merge(R.title, { font: { bold: true, size: 15 }, align: { horizontal: 'center' }, h: 24 });
+  merge('Kỳ đối chiếu: ' + R.period + '        Ngày lập: ' + U.date(U.today()),
+        { font: { size: 10, italic: true }, align: { horizontal: 'center' } });
+  trong();
+
+  // ----- Hai bên, mỗi bên một khối, ĐẶT TRƯỚC bảng -----
+  const ben = (tag, p, role) => {
+    merge(tag + ' (' + role + '): ' + (p.name || ''), { font: { bold: true }, align: { horizontal: 'left' } });
+    const l = [p.address ? 'Địa chỉ: ' + p.address : '', p.phone ? 'Điện thoại: ' + p.phone : '',
+               p.mst ? 'MST: ' + p.mst : ''].filter(Boolean).join('    ');
+    if (l) merge(l, { font: { size: 10 }, align: { horizontal: 'left' } });
+    merge('Đại diện: ……………………………………    Chức vụ: ……………………………', { font: { size: 10 }, align: { horizontal: 'left' } });
+  };
+  ben('BÊN A', R.partyA, R.roleA);
+  trong();
+  ben('BÊN B', R.partyB, R.roleB);
+  trong();
+
+  // ----- Bảng đối chiếu -----
+  const vien = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  r++;
+  const hdr = ws.getRow(r);
+  cols.forEach((c, k) => {
+    const cell = hdr.getCell(k + 1);
+    cell.value = c.t;
+    cell.font = { name: 'Times New Roman', size: 11, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF5E4' } };
+    cell.border = vien;
+  });
+  hdr.height = 22;
+
+  const dong = (vals, dam) => {
+    r++;
+    const row = ws.getRow(r);
+    vals.forEach((v, k) => {
+      const cell = row.getCell(k + 1);
+      cell.value = (v === '' || v === null || v === undefined) ? null : v;
+      cell.font = { name: 'Times New Roman', size: 11, bold: !!dam };
+      cell.border = vien;
+      if (cols[k].money) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
+      else if (cols[k].k === 'ngay' || cols[k].k === 'ct' || cols[k].k === 'thue') cell.alignment = { horizontal: 'center' };
+      else cell.alignment = { horizontal: 'left', wrapText: true };
+    });
+  };
+  d.display.forEach(x => {
+    const v = [x.opening ? '' : U.date(x.date), x.code || '', x.desc];
+    if (coThue) v.push(x.taxNo || '');
+    v.push(x.tang || null, x.giam || null, x.bal);
+    dong(v, !!x.opening);
+  });
+  const vCong = ['', '', 'CỘNG PHÁT SINH TRONG KỲ'];
+  if (coThue) vCong.push('');
+  vCong.push(d.totalTang, d.totalGiam, d.closing);
+  dong(vCong, true);
+
+  // ----- Kết luận + xác nhận + chỗ ký -----
+  trong();
+  merge('SỐ DƯ CUỐI KỲ — ' + R.owe + ': ' + U.money(R.abs) + ' đ',
+        { font: { bold: true, size: 12 }, align: { horizontal: 'right' } });
+  merge('Bằng chữ: ' + U.readMoneyVN(R.abs), { font: { italic: true, size: 10 }, align: { horizontal: 'right' } });
+  trong();
+  merge('Hai bên thống nhất xác nhận số liệu nêu trên là đúng và đầy đủ. Biên bản được lập thành 02 (hai) bản '
+      + 'có giá trị pháp lý như nhau, mỗi bên giữ 01 (một) bản làm cơ sở đối chiếu và thanh toán.',
+        { align: { horizontal: 'left' }, h: 30 });
+  trong(); trong();
+
+  // Hai khối ký: nửa trái / nửa phải để khi in ra cân đối
+  const nuaTrai = 'A:' + String.fromCharCode(64 + Math.floor(N / 2));
+  const nuaPhai = String.fromCharCode(64 + Math.floor(N / 2) + 1) + ':' + LAST;
+  const hangKy = (a, b, dam) => {
+    r++;
+    ws.mergeCells(nuaTrai.split(':')[0] + r + ':' + nuaTrai.split(':')[1] + r);
+    ws.mergeCells(nuaPhai.split(':')[0] + r + ':' + nuaPhai.split(':')[1] + r);
+    [[nuaTrai.split(':')[0], a], [nuaPhai.split(':')[0], b]].forEach(([colL, text]) => {
+      const c = ws.getCell(colL + r);
+      c.value = text;
+      c.font = { name: 'Times New Roman', size: 11, bold: !!dam };
+      c.alignment = { horizontal: 'center' };
+    });
+  };
+  hangKy('ĐẠI DIỆN BÊN A', 'ĐẠI DIỆN BÊN B', true);
+  hangKy('(Ký, ghi rõ họ tên, đóng dấu)', '(Ký, ghi rõ họ tên, đóng dấu)');
+
+  const buf = await wb.xlsx.writeBuffer();
+  M._download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    'BienBanDoiChieu-' + (d.partner.code || 'DoiTac') + '.xlsx');
 };
 
 /* =====================================================================
