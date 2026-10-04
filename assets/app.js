@@ -47,6 +47,10 @@ App.menu = [
     { id: 'production', label: 'Lệnh sản xuất', icon: 'factory', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
     { id: 'productivity', label: 'Năng suất', icon: 'trending-up', title: 'Năng suất theo nhân viên' },
   ]},
+  // Phân hệ góp vốn: chỉ hiện ở sổ nào bật cờ meta.features.capital (xem Dữ liệu & Sao lưu)
+  { group: 'GÓP VỐN', items: [
+    { id: 'capital', label: 'Vốn góp & chia lãi', icon: 'handshake', title: 'Góp vốn — Cơ cấu vốn, tỷ lệ sở hữu, chia lợi nhuận', roles: ['admin', 'ketoan'], feat: 'capital' },
+  ]},
   { group: 'NHÂN SỰ', items: [
     { id: 'payroll', label: 'Tính lương', icon: 'coins', title: 'Tính lương nhân viên', roles: ['admin', 'ketoan'] },
   ]},
@@ -70,8 +74,15 @@ App.menu = [
   ]},
 ];
 
+// Phân hệ có được bật cho sổ này không (cờ meta.features.<tên>).
+App.featOn = function (name) {
+  if (!name) return true;
+  return !!(PW.data && PW.data.meta && PW.data.meta.features && PW.data.meta.features[name]);
+};
+
 // Có được xem mục này không (theo vai trò). Chế độ offline (không đăng nhập) thấy tất cả.
 App.canSee = function (item) {
+  if (!App.featOn(item.feat)) return false;   // phân hệ tắt -> ẩn, kể cả admin
   if (PW.mode !== 'server' || !PW.user) return true;
   if (!item.roles) return true;
   return item.roles.includes(PW.user.role);
@@ -148,8 +159,11 @@ App.refresh = function () {
   // Chặn truy cập mục không đủ quyền (kể cả gõ thẳng #hash)
   const item = App.findItem(App.current);
   if (!App.canSee(item)) {
-    document.getElementById('page-title').textContent = 'Không đủ quyền';
-    root.appendChild(U.el('div', { class: 'card' }, U.el('div', { class: 'empty' }, 'Bạn không có quyền truy cập mục này.')));
+    const tatPhanHe = !App.featOn(item.feat);
+    document.getElementById('page-title').textContent = tatPhanHe ? 'Phân hệ đang tắt' : 'Không đủ quyền';
+    root.appendChild(U.el('div', { class: 'card' }, U.el('div', { class: 'empty' }, tatPhanHe
+      ? 'Phân hệ này chưa được bật cho sổ hiện tại. Vào "Dữ liệu & Sao lưu" để bật.'
+      : 'Bạn không có quyền truy cập mục này.')));
     return;
   }
   // Tiêu đề trang
@@ -198,6 +212,7 @@ App.refresh = function () {
     case 'settings': return App.settings(root);
     case 'users': return M.usersAdmin(root);
     case 'payroll': return M.payrolls(root);
+    case 'capital': return M.capital(root);
     case 'production': return M.production(root);
   }
 };
@@ -251,6 +266,31 @@ App.settings = function (root) {
     }),
   ]));
   root.appendChild(coCard);
+
+  // ----- Phân hệ tùy chọn (bật/tắt theo từng sổ) -----
+  const feats = (PW.data.meta.features = PW.data.meta.features || {});
+  const featCard = U.el('div', { class: 'card' });
+  featCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Phân hệ tùy chọn'));
+  featCard.appendChild(U.el('p', { class: 'section-sub' },
+    'Bật thêm phân hệ cho riêng sổ này. Sổ nào không dùng thì để tắt cho menu gọn.'));
+  const capChk = U.el('input', { type: 'checkbox' });
+  if (feats.capital) capChk.checked = true;
+  capChk.addEventListener('change', () => {
+    PW.data.meta.features.capital = capChk.checked;
+    PW.save();
+    App.render(); App.refresh();
+    U.toast(capChk.checked ? 'Đã bật phân hệ Góp vốn' : 'Đã tắt phân hệ Góp vốn');
+  });
+  featCard.appendChild(U.el('label', { style: 'display:flex;gap:10px;align-items:flex-start;cursor:pointer' }, [
+    capChk,
+    U.el('div', null, [
+      U.el('div', { style: 'font-weight:600' }, '🤝 Góp vốn & chia lợi nhuận'),
+      U.el('div', { class: 'text-muted', style: 'font-size:12px' },
+        'Dành cho dự án nhiều người cùng bỏ vốn: theo dõi ai góp tiền / máy móc / ý tưởng, '
+        + 'tự tính tỷ lệ sở hữu, chia lợi nhuận theo tỷ lệ và in biên bản để các bên ký.'),
+    ]),
+  ]));
+  root.appendChild(featCard);
 
   const card = U.el('div', { class: 'card' });
   card.appendChild(U.el('div', { class: 'card-title' }, '⚙️ Dữ liệu & Sao lưu'));

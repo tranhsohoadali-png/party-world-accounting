@@ -373,7 +373,7 @@ M.dashboard = function (root) {
 
   // Chi phí (donut theo loại)
   const expAgg = {};
-  PW.data.payments.filter(p => !p.supplierId && p.date >= period.from && p.date <= period.to).forEach(p => {
+  PW.data.payments.filter(p => !p.supplierId && !p.isCapital && p.date >= period.from && p.date <= period.to).forEach(p => {
     const k = (p.reason || '').trim() || 'Chi phí khác';
     expAgg[k] = (expAgg[k] || 0) + Number(p.amount);
   });

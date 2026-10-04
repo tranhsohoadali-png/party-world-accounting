@@ -1,0 +1,21 @@
+{
+  "id": "dali-in3d",
+  "name": "Xưởng in 3D — Kế toán",
+  "short_name": "In 3D",
+  "description": "Sổ kế toán riêng của dự án in 3D: góp vốn & tỷ lệ sở hữu, bán hàng, mua hàng, kho, công nợ, chia lợi nhuận.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#263238",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "assets/icon-in3d-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-in3d-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-in3d-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icon-in3d-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

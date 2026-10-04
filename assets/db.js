@@ -30,7 +30,8 @@ PW._normalize = function () {
     'quotations', 'salesOrders', 'salesReturns', 'salesDiscounts',
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
-    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog', 'cashCounts'];
+    'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog', 'cashCounts',
+    'capitalMembers', 'capitalContributions', 'capitalWithdrawals', 'profitShares'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -688,9 +689,11 @@ PW.cogs = function (fromYmd, toYmd) {
 };
 
 // Chi phí (phiếu chi không gắn NCC = chi phí hoạt động)
+// Phiếu chi có isCapital (rút vốn / chia lợi nhuận) là giao dịch VỐN, không phải
+// chi phí hoạt động -> phải loại ra, nếu không lợi nhuận bị trừ oan hai lần.
 PW.expenses = function (fromYmd, toYmd) {
   return PW.data.payments
-    .filter(p => !p.supplierId)
+    .filter(p => !p.supplierId && !p.isCapital)
     .filter(p => (!fromYmd || p.date >= fromYmd) && (!toYmd || p.date <= toYmd))
     .reduce((s, p) => s + Number(p.amount), 0);
 };
@@ -881,6 +884,7 @@ PW.seedEmpty = function (name) {
     purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
     employees: [], payrolls: [], productionOrders: [], stockAdjustments: [],
     productivityEntries: [], productAliases: [], taxInvoices: [], activityLog: [], cashCounts: [],
+    capitalMembers: [], capitalContributions: [], capitalWithdrawals: [], profitShares: [],
     productGroups: [],
     units: [
       { id: uid(), name: 'Cái' }, { id: uid(), name: 'Gói' }, { id: uid(), name: 'Bộ' },
