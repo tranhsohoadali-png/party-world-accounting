@@ -103,11 +103,42 @@ M._capCashSync = function (loai, ref, info) {
   arr.push(obj);
   return obj.id;
 };
-// Xóa mọi chứng từ quỹ gắn với ref (kể cả các dòng con "ref:memberId" của phiếu chia lợi nhuận).
+/* ---------- Đồng bộ PHIẾU NHẬP KHO cho khoản góp bằng vật tư ----------
+   Vật tư góp vào là hàng có thật, phải nằm trong kho chứ không chỉ là một con
+   số trên bảng vốn — nếu không thì sản xuất không trừ được nguyên liệu và giá
+   thành tính sai. Ghi thành PHIẾU NHẬP MUA, nhưng:
+     supplierId = null  -> không sinh công nợ phải trả (PW.totalPayable cộng
+                           theo từng nhà cung cấp nên phiếu này vô hình)
+     paid = 0, paidAccountId = null -> quỹ tiền không đổi
+   Đúng bản chất: hàng vào kho, tiền không đi đâu cả, đối ứng là vốn góp. */
+M._capStockSync = function (ref, info) {
+  const i = PW.data.purchases.findIndex(x => x.capitalRef === ref);
+  const items = (info && info.items || []).filter(it => it.productId && Number(it.qty) > 0);
+  if (!items.length) {                       // đổi sang hình thức góp khác -> bỏ phiếu nhập cũ
+    if (i >= 0) PW.data.purchases.splice(i, 1);
+    return null;
+  }
+  const base = {
+    date: info.date, supplierId: null, items: items.map(it => ({
+      productId: it.productId, qty: Number(it.qty) || 0, cost: Number(it.cost) || 0,
+    })),
+    discount: 0, paid: 0, paidAccountId: null,
+    note: 'Vật tư góp vốn — ' + info.tenThanhVien + ' (' + info.code + ')',
+    isCapital: true, capitalRef: ref,
+  };
+  if (i >= 0) { Object.assign(PW.data.purchases[i], base); return PW.data.purchases[i].code; }
+  const obj = Object.assign({ id: PW.uid(), code: PW.nextCode('PN') }, base);
+  PW.data.purchases.push(obj);
+  return obj.code;
+};
+M._capPhieuNhap = ref => PW.data.purchases.find(x => x.capitalRef === ref);
+
+// Xóa mọi chứng từ gắn với ref (kể cả các dòng con "ref:memberId" của phiếu chia lợi nhuận).
 M._capCashDrop = function (ref) {
   const hit = x => x.capitalRef === ref || (typeof x.capitalRef === 'string' && x.capitalRef.indexOf(ref + ':') === 0);
   PW.data.receipts = PW.data.receipts.filter(x => !hit(x));
   PW.data.payments = PW.data.payments.filter(x => !hit(x));
+  PW.data.purchases = PW.data.purchases.filter(x => !hit(x));   // phiếu nhập kho của vật tư góp vốn
 };
 
 M._capBar = function (pct, color) {
@@ -307,12 +338,23 @@ M._capContribTab = function () {
           + (c.note ? '<div class="text-muted" style="font-size:11px">' + U.esc(c.note) + '</div>' : '') },
       { label: 'SL', num: true, render: c => c.qty ? U.num(c.qty) + ' ' + U.esc(c.unit || '') : '' },
       { label: 'Giá trị', num: true, render: c => '<b>' + U.money(c.amount) + '</b>' },
-      { label: 'Vào quỹ', center: true, render: c => c.accountId
-          ? '<span class="text-green" title="Đã tạo phiếu thu">✔</span>' : '<span class="text-muted">—</span>' },
+      { label: 'Chứng từ kèm', center: true, render: c => {
+          if (c.accountId) return '<span class="text-green" title="Đã tạo phiếu thu vào quỹ">✔ phiếu thu</span>';
+          const pn = M._capPhieuNhap(c.id);
+          if (!pn) return '<span class="text-muted">—</span>';
+          // Bấm vào mở thẳng phiếu nhập để soát lại số lượng / đơn giá
+          return U.el('a', {
+            href: '#', title: 'Đã nhập kho — bấm để mở phiếu nhập',
+            onclick: e => { e.preventDefault(); M.purchaseForm(pn); },
+          }, '📦 ' + pn.code);
+        } },
       { label: '', render: c => C.actions([
           { label: 'Sửa', onClick: () => M.capitalContribForm(c) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
-              if (!U.confirm('Xóa khoản góp vốn ' + c.code + ' (' + U.money(c.amount) + ' đ)?\n\nPhiếu thu quỹ gắn kèm (nếu có) cũng bị xóa.')) return;
+              const pn = M._capPhieuNhap(c.id);
+              if (!U.confirm('Xóa khoản góp vốn ' + c.code + ' (' + U.money(c.amount) + ' đ)?\n\n'
+                + (pn ? 'Phiếu nhập kho ' + pn.code + ' cũng bị xóa — tồn kho sẽ giảm tương ứng.'
+                      : 'Phiếu thu quỹ gắn kèm (nếu có) cũng bị xóa.'))) return;
               M._capCashDrop(c.id);
               PW.data.capitalContributions = PW.data.capitalContributions.filter(x => x.id !== c.id);
               PW.logActivity('delete', 'capital', c.code, M._capName(c.memberId) + ' · ' + U.money(c.amount));
@@ -347,6 +389,59 @@ M.capitalContribForm = function (c) {
   const accI = C.select(M._capAccOpts(), c.accountId || '');
   const noteI = C.textarea({ value: c.note || '', placeholder: 'Căn cứ định giá, số máy, tình trạng…', style: 'width:100%' });
 
+  /* ----- Bảng vật tư: góp bằng vật tư thì phải khai từng món để nhập kho ----- */
+  let items = (c.items || []).map(x => Object.assign({}, x));
+  const itemBody = U.el('tbody');
+  const tongItemEl = U.el('b');
+  const tongItems = () => items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.cost) || 0), 0);
+
+  function dongBoTongVatTu() {
+    const t = tongItems();
+    tongItemEl.textContent = U.money(t) + ' đ';
+    amtI.datSoTien(t);                       // giá trị góp = đúng tổng hàng nhập kho
+    amtI.dispatchEvent(new Event('input'));  // cập nhật dòng "Bằng chữ"
+  }
+  function veItems() {
+    itemBody.innerHTML = '';
+    items.forEach((it, idx) => {
+      const pick = M.productPicker(it.productId, () => { it.productId = pick.ppValue(); veItems(); dongBoTongVatTu(); }, { isSale: false });
+      const qty = U.el('input', { type: 'number', value: it.qty || 0, min: 0, step: '0.01', style: 'text-align:right' });
+      const gia = C.money({ value: it.cost || 0, style: 'text-align:right' });
+      const tt = U.el('span');
+      const lai = () => { tt.textContent = U.money((Number(it.qty) || 0) * (Number(it.cost) || 0)); dongBoTongVatTu(); };
+      qty.addEventListener('input', () => { it.qty = Number(qty.value) || 0; lai(); });
+      gia.addEventListener('input', () => { it.cost = gia.soTien(); lai(); });
+      lai();
+      const p = PW.product(it.productId);
+      itemBody.appendChild(U.el('tr', null, [
+        U.el('td', { class: 'center', style: 'width:32px' }, String(idx + 1)),
+        U.el('td', null, [pick, p ? U.el('div', { style: 'font-size:11px;color:#7b8794' },
+          'Tồn hiện tại: ' + U.num(PW.stockOf(p.id)) + ' ' + (p.unit || '')) : null].filter(Boolean)),
+        U.el('td', { style: 'width:92px' }, qty),
+        U.el('td', { style: 'width:130px' }, gia),
+        U.el('td', { class: 'num', style: 'width:120px' }, tt),
+        U.el('td', { class: 'center', style: 'width:38px' },
+          U.el('button', { class: 'btn sm danger', type: 'button', onclick: () => { items.splice(idx, 1); veItems(); dongBoTongVatTu(); } }, '×')),
+      ]));
+    });
+  }
+  const itemTbl = U.el('table', { class: 'items-tbl' });
+  itemTbl.appendChild(U.el('thead', null, U.el('tr', null, [
+    U.el('th', { style: 'width:32px' }, '#'), U.el('th', null, 'Vật tư / hàng hóa'),
+    U.el('th', null, 'Số lượng'), U.el('th', null, 'Đơn giá'),
+    U.el('th', { class: 'num' }, 'Thành tiền'), U.el('th', null, ''),
+  ])));
+  itemTbl.appendChild(itemBody);
+  const vatTuBox = U.el('div', null, [
+    U.el('div', { class: 'toolbar', style: 'margin:14px 0 4px' }, [
+      U.el('div', { style: 'font-weight:600' }, '📦 Vật tư góp vào (sẽ nhập kho)'),
+      U.el('div', { class: 'spacer' }),
+      C.btn('+ Thêm dòng', () => { items.push({ productId: '', qty: 0, cost: 0 }); veItems(); dongBoTongVatTu(); }, 'sm'),
+    ]),
+    U.el('div', { class: 'table-wrap' }, itemTbl),
+    U.el('div', { style: 'text-align:right;margin-top:6px' }, [U.el('span', { class: 'text-muted' }, 'Tổng giá trị vật tư: '), tongItemEl]),
+  ]);
+
   // Chỉ góp bằng TIỀN mới có chuyện vào quỹ. Máy móc / ý tưởng không làm quỹ tăng.
   const accField = C.field('Ghi vào quỹ tiền (tạo phiếu thu)', accI, { full: true });
   const qtyField = C.field('Số lượng', qtyI);
@@ -354,19 +449,31 @@ M.capitalContribForm = function (c) {
   const hint = U.el('p', { class: 'section-sub' });
   function syncKind() {
     const isTien = kindI.value === 'tien';
+    const isVatTu = kindI.value === 'vattu';
     accField.style.display = isTien ? '' : 'none';
     if (!isTien) accI.value = '';
     // Góp bằng tiền thì "2 cái" là vô nghĩa -> giấu hai ô này đi, khỏi lọt vào biên bản.
-    qtyField.style.display = unitField.style.display = isTien ? 'none' : '';
+    // Góp vật tư thì số lượng nằm ở bảng bên dưới, ô này cũng thừa.
+    qtyField.style.display = unitField.style.display = (isTien || isVatTu) ? 'none' : '';
     if (isTien) { qtyI.value = 0; unitI.value = ''; }
+    // Vật tư: giá trị góp PHẢI bằng tổng hàng nhập kho, không cho gõ tay lệch đi
+    vatTuBox.style.display = isVatTu ? '' : 'none';
+    amtI.readOnly = isVatTu;
+    amtI.style.background = isVatTu ? '#f4f7ee' : '';
+    if (isVatTu) { if (!items.length) items.push({ productId: '', qty: 0, cost: 0 }); veItems(); dongBoTongVatTu(); }
     if (kindI.value === 'tsvh') {
       hint.innerHTML = '💡 Khoản vô hình: <b>không có tiền thật vào quỹ</b>. Giá trị dưới đây là mức '
         + 'hai bên tự thỏa thuận — nhớ in biên bản góp vốn và cùng ký để sau này không tranh chấp.';
     } else if (isTien) {
       hint.innerHTML = '💵 Chọn tài khoản quỹ để phần mềm tự tạo <b>phiếu thu</b> tương ứng — quỹ tiền tăng đúng, '
         + 'và khoản này <b>không</b> bị tính thành doanh thu.';
+    } else if (isVatTu) {
+      hint.innerHTML = '📦 Khai từng món ở bảng trên — phần mềm tự lập <b>phiếu nhập kho</b> để vật tư có mặt '
+        + 'trong kho và sản xuất trừ được nguyên liệu. Phiếu đó <b>không</b> sinh công nợ phải trả và '
+        + '<b>không</b> động vào quỹ tiền: hàng vào kho, đối ứng là vốn góp.';
     } else {
-      hint.innerHTML = '📦 Tài sản mang vào dự án: nhập giá trị hai bên thống nhất. Quỹ tiền không đổi.';
+      hint.innerHTML = '📦 Tài sản mang vào dự án: nhập giá trị hai bên thống nhất. Quỹ tiền không đổi. '
+        + 'Máy móc <b>không</b> vào kho hàng hóa (đó là tài sản cố định, không phải hàng để bán hay để sản xuất).';
     }
   }
   kindI.addEventListener('change', syncKind);
@@ -380,6 +487,9 @@ M.capitalContribForm = function (c) {
       C.field('Hình thức góp', kindI, { required: true }),
       C.field('Tài sản góp / diễn giải', nameI, { full: true, required: true }),
       qtyField, unitField,
+    ]),
+    vatTuBox,
+    U.el('div', { class: 'form-grid', style: 'margin-top:14px' }, [
       C.field('Giá trị ghi nhận (đ)', U.el('div', null, [amtI, C.moneyWords(amtI)]), { full: true, required: true }),
       accField,
       C.field('Ghi chú / căn cứ định giá', noteI, { full: true }),
@@ -396,10 +506,17 @@ M.capitalContribForm = function (c) {
         kind: kindI.value, assetName: nameI.value.trim(), qty: Number(qtyI.value) || 0,
         unit: unitI.value.trim(), amount: amtI.soTien(),
         accountId: accI.value || '', note: noteI.value.trim(),
+        // Góp bằng vật tư: giữ lại chi tiết từng món để còn sửa và để dựng lại phiếu nhập
+        items: kindI.value === 'vattu'
+          ? items.filter(it => it.productId && Number(it.qty) > 0)
+              .map(it => ({ productId: it.productId, qty: Number(it.qty) || 0, cost: Number(it.cost) || 0 }))
+          : [],
       };
       if (!obj.date) return U.toast('Chọn ngày góp', 'error');
       if (!obj.memberId) return U.toast('Chọn thành viên góp', 'error');
       if (!obj.assetName) return U.toast('Nhập tài sản góp / diễn giải', 'error');
+      if (obj.kind === 'vattu' && !obj.items.length)
+        return U.toast('Khai ít nhất một dòng vật tư (chọn hàng và nhập số lượng)', 'error');
       if (!(obj.amount > 0)) return U.toast('Giá trị góp phải lớn hơn 0', 'error');
 
       if (isNew) PW.data.capitalContributions.push(obj);
@@ -409,10 +526,15 @@ M.capitalContribForm = function (c) {
         date: obj.date, accountId: obj.accountId, amount: obj.amount,
         reason: 'Góp vốn — ' + M._capName(obj.memberId), note: obj.code + ' · ' + obj.assetName,
       } : null);
+      // Vật tư -> phiếu nhập kho. Đổi sang hình thức khác thì items rỗng -> phiếu cũ bị gỡ.
+      const maPN = M._capStockSync(obj.id, {
+        date: obj.date, code: obj.code, items: obj.items, tenThanhVien: M._capName(obj.memberId),
+      });
 
       PW.logActivity(isNew ? 'create' : 'update', 'capital', obj.code,
         M._capName(obj.memberId) + ' · ' + M.capitalKind(obj.kind).t + ' · ' + U.money(obj.amount));
-      PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu khoản góp vốn');
+      PW.save(); C.closeModal(); App.refresh();
+      U.toast(maPN ? 'Đã lưu và nhập kho theo phiếu ' + maPN : 'Đã lưu khoản góp vốn');
     }, 'primary')],
   });
 };
