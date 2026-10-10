@@ -407,11 +407,33 @@ M.capitalContribForm = function (c) {
       const pick = M.productPicker(it.productId, () => { it.productId = pick.ppValue(); veItems(); dongBoTongVatTu(); }, { isSale: false });
       const qty = U.el('input', { type: 'number', value: it.qty || 0, min: 0, step: '0.01', style: 'text-align:right' });
       const gia = C.money({ value: it.cost || 0, style: 'text-align:right' });
-      const tt = U.el('span');
-      const lai = () => { tt.textContent = U.money((Number(it.qty) || 0) * (Number(it.cost) || 0)); dongBoTongVatTu(); };
-      qty.addEventListener('input', () => { it.qty = Number(qty.value) || 0; lai(); });
-      gia.addEventListener('input', () => { it.cost = gia.soTien(); lai(); });
-      lai();
+      // Thành tiền cũng NHẬP ĐƯỢC: mua cả lô thì thường biết tổng tiền trước,
+      // còn đơn giá là phép chia — để máy chia, đỡ bấm máy tính rồi gõ nhầm.
+      const tt = C.money({ value: Math.round((Number(it.qty) || 0) * (Number(it.cost) || 0)), style: 'text-align:right' });
+      const ghiChu = U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' });
+
+      // Đơn giá là cái bất biến: đổi số lượng thì tổng tiền chạy theo.
+      // Chỉ khi người dùng tự gõ Thành tiền mới suy ngược ra đơn giá.
+      function veTong() {
+        tt.datSoTien(Math.round((Number(it.qty) || 0) * (Number(it.cost) || 0)));
+        ghiChu.textContent = '';
+        dongBoTongVatTu();
+      }
+      qty.addEventListener('input', () => { it.qty = Number(qty.value) || 0; veTong(); });
+      gia.addEventListener('input', () => { it.cost = gia.soTien(); veTong(); });
+      tt.addEventListener('input', () => {
+        const q = Number(it.qty) || 0;
+        if (q <= 0) { ghiChu.textContent = 'Nhập số lượng trước thì mới chia ra đơn giá được'; return; }
+        // Giữ ĐÚNG số lẻ: 2.000.000 chia 3 là 666.666,67 — làm tròn đơn giá rồi
+        // nhân lại sẽ lệch mất mấy đồng so với số tiền thật đã trả.
+        it.cost = tt.soTien() / q;
+        gia.datSoTien(it.cost);
+        const lam = Math.round(it.cost) !== it.cost;
+        ghiChu.textContent = lam ? 'Đơn giá lẻ ' + it.cost.toLocaleString('vi-VN', { maximumFractionDigits: 2 })
+          + ' — giữ nguyên số lẻ để tổng tiền khớp' : '';
+        dongBoTongVatTu();
+      });
+      veTong();
       const p = PW.product(it.productId);
       itemBody.appendChild(U.el('tr', null, [
         U.el('td', { class: 'center', style: 'width:32px' }, String(idx + 1)),
@@ -419,7 +441,7 @@ M.capitalContribForm = function (c) {
           'Tồn hiện tại: ' + U.num(PW.stockOf(p.id)) + ' ' + (p.unit || '')) : null].filter(Boolean)),
         U.el('td', { style: 'width:92px' }, qty),
         U.el('td', { style: 'width:130px' }, gia),
-        U.el('td', { class: 'num', style: 'width:120px' }, tt),
+        U.el('td', { style: 'width:140px' }, [tt, ghiChu]),
         U.el('td', { class: 'center', style: 'width:38px' },
           U.el('button', { class: 'btn sm danger', type: 'button', onclick: () => { items.splice(idx, 1); veItems(); dongBoTongVatTu(); } }, '×')),
       ]));
