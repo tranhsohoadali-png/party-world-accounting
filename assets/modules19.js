@@ -591,8 +591,14 @@ M._capWithdrawTab = function () {
   wrap.appendChild(U.el('p', { class: 'section-sub' },
     'Thành viên lấy lại phần vốn đã góp. Rút vốn làm giảm vốn ròng nên <b>tỷ lệ sở hữu tự tính lại</b>. '
     + 'Đây không phải chi phí của dự án nên không bị trừ vào lợi nhuận.'));
+  const rutHienTai = () => ({
+    rows: (PW.data.capitalWithdrawals || []).slice().sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code)),
+    moTa: 'Toàn bộ các lần rút vốn',
+  });
   wrap.appendChild(U.el('div', { class: 'toolbar' }, [
     U.el('div', { class: 'spacer' }),
+    C.btn('📊 Xuất Excel', () => { const d = rutHienTai(); M.capitalRutExcel(d.rows, d.moTa); }),
+    C.btn('🖨 In / PDF', () => { const d = rutHienTai(); M.capitalRutPrint(d.rows, d.moTa); }),
     C.btn('+ Ghi rút vốn', () => M.capitalWithdrawForm(), 'primary'),
   ]));
   wrap.appendChild(listHost);
@@ -707,8 +713,15 @@ M._capProfitTab = function () {
   wrap.appendChild(U.el('p', { class: 'section-sub' },
     'Chốt lợi nhuận một kỳ rồi chia cho các thành viên. Mặc định chia <b>theo tỷ lệ vốn góp</b>, '
     + 'nhưng sửa được nếu hai bên thỏa thuận khác (vd người trực tiếp vận hành ăn thêm phần công).'));
+  const laiHienTai = () => ({
+    rows: M._capPhangLoiNhuan((PW.data.profitShares || []).slice()
+            .sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code))),
+    moTa: 'Toàn bộ các lần chia lợi nhuận — mỗi thành viên một dòng',
+  });
   wrap.appendChild(U.el('div', { class: 'toolbar' }, [
     U.el('div', { class: 'spacer' }),
+    C.btn('📊 Xuất Excel', () => { const d = laiHienTai(); M.capitalLaiExcel(d.rows, d.moTa); }),
+    C.btn('🖨 In / PDF', () => { const d = laiHienTai(); M.capitalLaiPrint(d.rows, d.moTa); }),
     C.btn('+ Lập phiếu chia lợi nhuận', () => M.capitalProfitForm(), 'primary'),
   ]));
   wrap.appendChild(listHost);
@@ -903,6 +916,8 @@ M._capMemberTab = function () {
   wrap.appendChild(U.el('div', { class: 'toolbar' }, [
     U.el('div', { class: 'card-title', style: 'margin:0' }, '👥 Thành viên góp vốn'),
     U.el('div', { class: 'spacer' }),
+    C.btn('📊 Xuất Excel', () => M.capitalTVExcel(M.capitalSummary().rows, 'Tính đến ngày ' + U.date(U.today()))),
+    C.btn('🖨 In / PDF', () => M.capitalTVPrint(M.capitalSummary().rows, 'Tính đến ngày ' + U.date(U.today()))),
     C.btn('+ Thêm thành viên', () => M.capitalMemberForm(), 'primary'),
   ]));
   wrap.appendChild(U.el('p', { class: 'section-sub' },
@@ -1355,46 +1370,42 @@ M.capitalExcel = async function () {
 };
 
 /* =====================================================================
-   XUẤT DANH SÁCH KHOẢN GÓP VỐN — Excel và In/PDF
+   XUẤT DANH SÁCH — Excel và In/PDF, dùng chung cho cả 4 thẻ
+   Mỗi thẻ chỉ khai CỘT, phần dựng file giống nhau nên gom về một chỗ.
    Xuất ĐÚNG những dòng đang hiển thị (đã qua bộ lọc), và in luôn điều kiện
    lọc lên đầu văn bản: cầm tờ giấy lên phải biết nó lọc theo cái gì, nếu
    không người nhận tưởng đó là toàn bộ sổ.
+
+   cfg = {
+     tieuDe,  moTa,  tenFile,  sheet,  huong: 'portrait'|'landscape',
+     rows,    cols: [{ t, w, get(r), money, pct, center }],
+     congNhan: nhãn dòng cộng (bỏ trống thì không có dòng cộng),
+     tongCot:  chỉ số cột dùng làm SỐ TỔNG NỔI BẬT (mặc định: cột tiền đầu tiên),
+     tongNhan: nhãn của số đó,
+   }
+   tongCot quan trọng khi bảng có nhiều cột tiền: bảng thành viên có cả "Tổng
+   đã góp" lẫn "Vốn ròng", lấy nhầm cột đầu thì người đọc tưởng vốn dự án là
+   800 triệu trong khi thực còn 730 triệu.
    ===================================================================== */
 
-// Một dòng dữ liệu -> các ô, dùng chung cho cả Excel lẫn bản in.
-M._capDongXuat = function (c) {
-  const pn = M._capPhieuNhap(c.id);
-  const kem = c.accountId ? 'Phiếu thu' : (pn ? pn.code : '');
-  return {
-    ngay: U.date(c.date),
-    ct: c.code || '',
-    thanhVien: M._capName(c.memberId),
-    hinhThuc: M.capitalKind(c.kind).t,
-    dienGiai: (c.assetName || '') + (c.note ? ' — ' + c.note : ''),
-    sl: c.qty ? U.num(c.qty) + ' ' + (c.unit || '') : '',
-    giaTri: Number(c.amount) || 0,
-    kem: kem,
-  };
+M._capCong = function (cols, rows) {
+  const t = {};
+  cols.forEach((c, i) => { if (c.money) t[i] = rows.reduce((s, r) => s + (Number(c.get(r)) || 0), 0); });
+  return t;
 };
 
-M.capitalListExcel = async function (rows, moTa) {
-  if (!rows || !rows.length) return U.toast('Không có dòng nào để xuất', 'error');
+M._capExcel = async function (cfg) {
+  if (!cfg.rows || !cfg.rows.length) return U.toast('Không có dòng nào để xuất', 'error');
   const co = M.company();
   await M._ensureExcelJsLib();
-
-  const cols = [
-    { t: 'Ngày', w: 12 }, { t: 'Số CT', w: 13 }, { t: 'Thành viên', w: 22 },
-    { t: 'Hình thức góp', w: 26 }, { t: 'Tài sản góp / diễn giải', w: 46 },
-    { t: 'Số lượng', w: 13 }, { t: 'Giá trị (đ)', w: 17, money: true }, { t: 'Chứng từ kèm', w: 15 },
-  ];
-  const N = cols.length, LAST = String.fromCharCode(64 + N);
+  const cols = cfg.cols, N = cols.length, LAST = String.fromCharCode(64 + N);
 
   const wb = new window.ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Khoan gop von', {
-    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+  const ws = wb.addWorksheet(cfg.sheet || 'Danh sach', {
+    pageSetup: { paperSize: 9, orientation: cfg.huong || 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
                  margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
   });
-  ws.columns = cols.map(c => ({ width: c.w }));
+  ws.columns = cols.map(c => ({ width: c.w || 16 }));
 
   let r = 0;
   const merge = (text, opt) => {
@@ -1409,8 +1420,8 @@ M.capitalListExcel = async function (rows, moTa) {
   merge(co.name, { font: { bold: true, size: 12 }, align: { horizontal: 'left' } });
   if (co.address) merge('Địa chỉ: ' + co.address, { font: { size: 10, italic: true }, align: { horizontal: 'left' } });
   r++;
-  merge('DANH SÁCH CÁC KHOẢN GÓP VỐN', { font: { bold: true, size: 15 }, align: { horizontal: 'center' }, h: 24 });
-  merge(moTa || '', { font: { size: 10, italic: true }, align: { horizontal: 'center' }, h: 18 });
+  merge(cfg.tieuDe.toUpperCase(), { font: { bold: true, size: 15 }, align: { horizontal: 'center' }, h: 24 });
+  if (cfg.moTa) merge(cfg.moTa, { font: { size: 10, italic: true }, align: { horizontal: 'center' }, h: 18 });
   merge('Lập ngày: ' + U.date(U.today()), { font: { size: 10, italic: true }, align: { horizontal: 'center' } });
   r++;
 
@@ -1435,68 +1446,178 @@ M.capitalListExcel = async function (rows, moTa) {
       cell.font = { name: 'Times New Roman', size: 11, bold: !!dam };
       cell.border = vien;
       if (cols[k].money) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
-      else if (k <= 1 || k === 5 || k === 7) cell.alignment = { horizontal: 'center', wrapText: true };
-      else cell.alignment = { horizontal: 'left', wrapText: true };
+      else if (cols[k].pct) { cell.numFmt = '0.00"%"'; cell.alignment = { horizontal: 'right' }; }
+      else cell.alignment = { horizontal: cols[k].center ? 'center' : 'left', wrapText: true };
     });
   };
 
-  let tong = 0;
-  rows.forEach(c => {
-    const d = M._capDongXuat(c);
-    tong += d.giaTri;
-    dong([d.ngay, d.ct, d.thanhVien, d.hinhThuc, d.dienGiai, d.sl, d.giaTri, d.kem]);
-  });
-  dong(['', '', '', '', 'CỘNG ' + rows.length + ' khoản', '', tong, ''], true);
+  cfg.rows.forEach(x => dong(cols.map(c => c.get(x))));
+  const tong = M._capCong(cols, cfg.rows);
+  if (cfg.congNhan) {
+    const v = cols.map((c, i) => (i in tong) ? tong[i] : '');
+    // Nhãn dòng cộng đặt ở cột cuối cùng TRƯỚC cột tiền đầu tiên, cho dễ đọc
+    const iTien = cols.findIndex(c => c.money);
+    v[Math.max(0, iTien - 1)] = cfg.congNhan + ' ' + cfg.rows.length + ' dòng';
+    dong(v, true);
+  }
 
-  r++;
-  merge('Tổng giá trị: ' + U.money(tong) + ' đ — bằng chữ: ' + U.readMoneyVN(tong),
-        { font: { bold: true, size: 11 }, align: { horizontal: 'left' }, h: 20 });
+  const iTien = (cfg.tongCot != null) ? cfg.tongCot : cols.findIndex(c => c.money);
+  if (iTien >= 0 && (iTien in tong)) {
+    r++;
+    merge((cfg.tongNhan || 'Tổng cộng') + ': ' + U.money(tong[iTien]) + ' đ — bằng chữ: ' + U.readMoneyVN(tong[iTien]),
+          { font: { bold: true, size: 11 }, align: { horizontal: 'left' }, h: 20 });
+  }
 
   const buf = await wb.xlsx.writeBuffer();
   M._download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    'KhoanGopVon-' + U.today() + '.xlsx');
-  U.toast('Đã xuất ' + rows.length + ' khoản ra Excel');
+    (cfg.tenFile || 'DanhSach') + '-' + U.today() + '.xlsx');
+  U.toast('Đã xuất ' + cfg.rows.length + ' dòng ra Excel');
 };
 
-M.capitalListPrint = function (rows, moTa) {
-  if (!rows || !rows.length) return U.toast('Không có dòng nào để in', 'error');
-  const co = M.company();
-  let tong = 0;
-  const tr = rows.map((c, i) => {
-    const d = M._capDongXuat(c);
-    tong += d.giaTri;
-    return '<tr>'
-      + '<td class="c">' + (i + 1) + '</td>'
-      + '<td class="c">' + U.esc(d.ngay) + '</td>'
-      + '<td class="c">' + U.esc(d.ct) + '</td>'
-      + '<td>' + U.esc(d.thanhVien) + '</td>'
-      + '<td>' + U.esc(d.hinhThuc) + '</td>'
-      + '<td>' + U.esc(d.dienGiai) + '</td>'
-      + '<td class="c">' + U.esc(d.sl) + '</td>'
-      + '<td class="r"><b>' + U.money(d.giaTri) + '</b></td>'
-      + '<td class="c">' + U.esc(d.kem) + '</td>'
-      + '</tr>';
-  }).join('');
+M._capIn = function (cfg) {
+  if (!cfg.rows || !cfg.rows.length) return U.toast('Không có dòng nào để in', 'error');
+  const co = M.company(), cols = cfg.cols;
+  const o = (c, r) => {
+    const v = c.get(r);
+    if (c.money) return '<td class="r"><b>' + U.money(v) + '</b></td>';
+    if (c.pct) return '<td class="r">' + Number(v || 0).toFixed(2) + '%</td>';
+    return '<td' + (c.center ? ' class="c"' : '') + '>' + U.esc(v == null ? '' : v) + '</td>';
+  };
+  const tr = cfg.rows.map((x, i) =>
+    '<tr><td class="c">' + (i + 1) + '</td>' + cols.map(c => o(c, x)).join('') + '</tr>').join('');
 
-  const inner = M._capHead(co, 'DSGV/' + U.today().slice(0, 4))
-    + '<h2>Danh sách các khoản góp vốn</h2>'
-    + '<div class="sub">' + U.esc(moTa || '') + '</div>'
-    + '<table style="margin-top:12px"><thead><tr>'
-      + '<th style="width:30px">TT</th><th style="width:72px">Ngày</th><th style="width:78px">Số CT</th>'
-      + '<th style="width:110px">Thành viên</th><th style="width:140px">Hình thức góp</th>'
-      + '<th>Tài sản góp / diễn giải</th><th style="width:70px">Số lượng</th>'
-      + '<th class="r" style="width:110px">Giá trị (đ)</th><th style="width:84px">Chứng từ kèm</th>'
-    + '</tr></thead><tbody>' + tr + '</tbody>'
-    + '<tfoot><tr><td colspan="7">CỘNG ' + rows.length + ' khoản</td>'
-      + '<td class="r">' + U.money(tong) + '</td><td></td></tr></tfoot></table>'
-    + '<div class="net">TỔNG GIÁ TRỊ GÓP VỐN: ' + U.money(tong) + ' đ</div>'
-    + '<div class="words">Bằng chữ: ' + U.esc(U.readMoneyVN(tong)) + '</div>'
+  const tong = M._capCong(cols, cfg.rows);
+  const iTien = (cfg.tongCot != null) ? cfg.tongCot : cols.findIndex(c => c.money);
+  let tfoot = '';
+  if (cfg.congNhan) {
+    const truoc = Math.max(0, cols.findIndex(c => c.money));
+    tfoot = '<tfoot><tr><td colspan="' + (truoc + 1) + '">' + U.esc(cfg.congNhan) + ' ' + cfg.rows.length + ' dòng</td>'
+      + cols.slice(truoc).map((c, k) => {
+          const i = truoc + k;
+          return '<td class="r">' + ((i in tong) ? U.money(tong[i]) : '') + '</td>';
+        }).join('') + '</tr></tfoot>';
+  }
+
+  const inner = M._capHead(co, U.esc(cfg.soCT || ''))
+    + '<h2>' + U.esc(cfg.tieuDe) + '</h2>'
+    + (cfg.moTa ? '<div class="sub">' + U.esc(cfg.moTa) + '</div>' : '')
+    + '<table style="margin-top:12px"><thead><tr><th style="width:30px">TT</th>'
+      + cols.map(c => '<th' + (c.w ? ' style="width:' + Math.round(c.w * 7) + 'px"' : '') + '>' + U.esc(c.t) + '</th>').join('')
+    + '</tr></thead><tbody>' + tr + '</tbody>' + tfoot + '</table>'
+    + ((iTien >= 0 && (iTien in tong))
+      ? '<div class="net">' + U.esc(cfg.tongNhan || 'TỔNG CỘNG') + ': ' + U.money(tong[iTien]) + ' đ</div>'
+        + '<div class="words">Bằng chữ: ' + U.esc(U.readMoneyVN(tong[iTien])) + '</div>'
+      : '')
     + '<div class="sign">'
       + '<div><b>NGƯỜI LẬP BIỂU</b><i>(Ký, ghi rõ họ tên)</i><div class="space"></div></div>'
       + '<div><b>XÁC NHẬN CỦA CÁC THÀNH VIÊN</b><i>(Ký, ghi rõ họ tên)</i><div class="space"></div></div>'
     + '</div>'
     + '<div class="foot">Danh sách do phần mềm kế toán ' + U.esc(co.name) + ' lập ngày ' + U.date(U.today())
-      + ' · Bấm "In / Lưu PDF" rồi chọn máy in là "Save as PDF" nếu muốn file PDF.</div>';
+      + ' · Muốn file PDF: bấm "In / Lưu PDF" rồi chọn máy in là "Save as PDF".</div>';
 
-  M._capOpenPrint('Danh sach khoan gop von', inner, 'landscape');
+  M._capOpenPrint(cfg.tieuDe, inner, cfg.huong || 'landscape');
 };
+
+/* ---------- Khai cột cho từng thẻ ---------- */
+
+// 1. Khoản góp vốn
+M._capColsGop = function () {
+  const kem = c => c.accountId ? 'Phiếu thu' : ((M._capPhieuNhap(c.id) || {}).code || '');
+  return [
+    { t: 'Ngày', w: 12, center: true, get: c => U.date(c.date) },
+    { t: 'Số CT', w: 13, center: true, get: c => c.code || '' },
+    { t: 'Thành viên', w: 22, get: c => M._capName(c.memberId) },
+    { t: 'Hình thức góp', w: 26, get: c => M.capitalKind(c.kind).t },
+    { t: 'Tài sản góp / diễn giải', w: 46, get: c => (c.assetName || '') + (c.note ? ' — ' + c.note : '') },
+    { t: 'Số lượng', w: 13, center: true, get: c => c.qty ? U.num(c.qty) + ' ' + (c.unit || '') : '' },
+    { t: 'Giá trị (đ)', w: 17, money: true, get: c => Number(c.amount) || 0 },
+    { t: 'Chứng từ kèm', w: 15, center: true, get: kem },
+  ];
+};
+M.capitalListExcel = (rows, moTa) => M._capExcel({
+  tieuDe: 'Danh sách các khoản góp vốn', moTa, rows, cols: M._capColsGop(),
+  tenFile: 'KhoanGopVon', sheet: 'Khoan gop von', congNhan: 'CỘNG', tongNhan: 'TỔNG GIÁ TRỊ GÓP VỐN',
+});
+M.capitalListPrint = (rows, moTa) => M._capIn({
+  tieuDe: 'Danh sách các khoản góp vốn', moTa, rows, cols: M._capColsGop(),
+  soCT: 'DSGV/' + U.today().slice(0, 4), congNhan: 'CỘNG', tongNhan: 'TỔNG GIÁ TRỊ GÓP VỐN',
+});
+
+// 2. Rút vốn
+M._capColsRut = function () {
+  return [
+    { t: 'Ngày', w: 12, center: true, get: w => U.date(w.date) },
+    { t: 'Số CT', w: 13, center: true, get: w => w.code || '' },
+    { t: 'Thành viên', w: 22, get: w => M._capName(w.memberId) },
+    { t: 'Lý do', w: 42, get: w => (w.reason || '') + (w.note ? ' — ' + w.note : '') },
+    { t: 'Chi từ quỹ', w: 24, get: w => { const a = PW.account(w.accountId); return a ? a.name : '(không ghi quỹ)'; } },
+    { t: 'Số tiền (đ)', w: 17, money: true, get: w => Number(w.amount) || 0 },
+  ];
+};
+M.capitalRutExcel = (rows, moTa) => M._capExcel({
+  tieuDe: 'Danh sách rút vốn', moTa, rows, cols: M._capColsRut(),
+  tenFile: 'RutVon', sheet: 'Rut von', congNhan: 'CỘNG', huong: 'portrait', tongNhan: 'TỔNG SỐ ĐÃ RÚT',
+});
+M.capitalRutPrint = (rows, moTa) => M._capIn({
+  tieuDe: 'Danh sách rút vốn', moTa, rows, cols: M._capColsRut(),
+  soCT: 'DSRV/' + U.today().slice(0, 4), congNhan: 'CỘNG', huong: 'portrait', tongNhan: 'TỔNG SỐ ĐÃ RÚT',
+});
+
+// 3. Phân chia lợi nhuận — TRẢI PHẲNG mỗi thành viên một dòng.
+// Gộp cả phiếu vào một ô thì không lọc, không cộng, không dò lại được.
+M._capPhangLoiNhuan = function (shares) {
+  const out = [];
+  (shares || []).forEach(ps => (ps.lines || []).forEach(l => out.push({ ps, l })));
+  return out;
+};
+M._capColsLai = function () {
+  return [
+    { t: 'Ngày', w: 12, center: true, get: x => U.date(x.ps.date) },
+    { t: 'Số CT', w: 13, center: true, get: x => x.ps.code || '' },
+    { t: 'Kỳ chia', w: 30, get: x => x.ps.label || '' },
+    { t: 'Lợi nhuận kỳ (đ)', w: 18, money: true, get: x => Number(x.ps.profit) || 0 },
+    { t: 'Thành viên', w: 22, get: x => M._capName(x.l.memberId) },
+    { t: 'Tỷ lệ', w: 10, pct: true, get: x => Number(x.l.percent) || 0 },
+    { t: 'Được chia (đ)', w: 17, money: true, get: x => Number(x.l.amount) || 0 },
+    { t: 'Tình trạng', w: 14, center: true, get: x => x.l.paid ? 'Đã nhận' : 'Chưa nhận' },
+  ];
+};
+// Cột "Lợi nhuận kỳ" lặp lại ở mọi dòng cùng phiếu nên KHÔNG được cộng dồn
+// (cộng vào là nhân đôi). Bỏ cờ money ở dòng tổng bằng cách tính riêng.
+M._capColsLaiChoTong = function () {
+  const c = M._capColsLai();
+  c[3] = Object.assign({}, c[3], { money: false, get: x => U.money(Number(x.ps.profit) || 0) });
+  return c;
+};
+M.capitalLaiExcel = (rows, moTa) => M._capExcel({
+  tieuDe: 'Bảng phân chia lợi nhuận', moTa, rows, cols: M._capColsLaiChoTong(),
+  tenFile: 'PhanChiaLoiNhuan', sheet: 'Phan chia loi nhuan', congNhan: 'CỘNG', tongNhan: 'TỔNG LỢI NHUẬN ĐÃ CHIA',
+});
+M.capitalLaiPrint = (rows, moTa) => M._capIn({
+  tieuDe: 'Bảng phân chia lợi nhuận', moTa, rows, cols: M._capColsLaiChoTong(),
+  soCT: 'PCLN/' + U.today().slice(0, 4), congNhan: 'CỘNG', tongNhan: 'TỔNG LỢI NHUẬN ĐÃ CHIA',
+});
+
+// 4. Thành viên — kèm luôn vốn ròng và tỷ lệ sở hữu
+M._capColsTV = function () {
+  return [
+    { t: 'Mã', w: 12, center: true, get: r => r.m.code || '' },
+    { t: 'Họ và tên', w: 24, get: r => r.m.name || '' },
+    { t: 'Chức danh', w: 20, get: r => r.m.title || '' },
+    { t: 'Số CCCD', w: 16, center: true, get: r => r.m.idNo || '' },
+    { t: 'Điện thoại', w: 14, center: true, get: r => r.m.phone || '' },
+    { t: 'Địa chỉ thường trú', w: 36, get: r => r.m.address || '' },
+    { t: 'Tổng đã góp (đ)', w: 17, money: true, get: r => r.gop },
+    { t: 'Đã rút (đ)', w: 15, money: true, get: r => r.rut },
+    { t: 'Vốn ròng (đ)', w: 17, money: true, get: r => r.net },
+    { t: 'Tỷ lệ sở hữu', w: 13, pct: true, get: r => r.percent },
+  ];
+};
+M.capitalTVExcel = (rows, moTa) => M._capExcel({
+  tieuDe: 'Danh sách thành viên góp vốn', moTa, rows, cols: M._capColsTV(),
+  tenFile: 'ThanhVienGopVon', sheet: 'Thanh vien', congNhan: 'CỘNG', tongCot: 8, tongNhan: 'TỔNG VỐN GÓP CỦA DỰ ÁN (vốn ròng)',
+});
+M.capitalTVPrint = (rows, moTa) => M._capIn({
+  tieuDe: 'Danh sách thành viên góp vốn', moTa, rows, cols: M._capColsTV(),
+  soCT: 'DSTV/' + U.today().slice(0, 4), congNhan: 'CỘNG', tongCot: 8, tongNhan: 'TỔNG VỐN GÓP CỦA DỰ ÁN (vốn ròng)',
+});
