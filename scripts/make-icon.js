@@ -1,13 +1,13 @@
 /* ============================================================
    make-icon.js — sinh icon PNG cho một bản cài PWA mới.
 
-   Mỗi bản cài (ketoan / ktparty / in3d…) cần icon riêng, nếu không cài
+   Mỗi bản cài (ketoan / ktparty / kt3d…) cần icon riêng, nếu không cài
    nhiều bản lên một điện thoại sẽ ra mấy icon giống hệt nhau. Script này
    vẽ icon bằng tay rồi tự đóng gói PNG qua zlib có sẵn trong Node —
    không cần cài thư viện ảnh nào.
 
-   Dùng:  node scripts/make-icon.js in3d
-   Ra:    assets/icon-in3d-180.png, -192.png, -512.png
+   Dùng:  node scripts/make-icon.js kt3d
+   Ra:    assets/icon-kt3d-180.png, -192.png, -512.png
    ============================================================ */
 const zlib = require('zlib');
 const fs = require('fs');
@@ -96,7 +96,7 @@ function inPoly(x, y, pts) {
 /* ---------- Các mẫu icon ---------- */
 const MAU = {
   // Khối lập phương đẳng cự — biểu tượng quen thuộc của in 3D.
-  in3d: {
+  kt3d: {
     nenTren: [0x37, 0x47, 0x4f], nenDuoi: [0x15, 0x1e, 0x22],
     ve(ctx) {
       const R = 0.22;                                        // bán kính góc bo (maskable: nền đầy khung)
