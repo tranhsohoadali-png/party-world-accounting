@@ -314,9 +314,29 @@ M._capContribTab = function () {
       { type: 'select', key: 'kind', label: 'Hình thức', options: [{ value: '', label: 'Tất cả' }].concat(M.CAPITAL_KINDS.map(k => ({ value: k.v, label: k.t }))) },
       { type: 'search', key: 'q', placeholder: 'Tìm tài sản / diễn giải...' },
     ],
-    actions: [C.btn('+ Ghi khoản góp vốn', () => M.capitalContribForm(), 'primary')],
+    actions: [
+      // Xuất đúng những gì đang nhìn thấy: dùng lại bộ lọc hiện hành, không xuất cả sổ
+      C.btn('📊 Xuất Excel', () => { const d = locHienTai(); M.capitalListExcel(d.rows, d.moTa); }),
+      C.btn('🖨 In / PDF', () => { const d = locHienTai(); M.capitalListPrint(d.rows, d.moTa); }),
+      C.btn('+ Ghi khoản góp vốn', () => M.capitalContribForm(), 'primary'),
+    ],
     onChange: draw,
   });
+
+  // Danh sách đang hiển thị + mô tả bộ lọc để in lên đầu file
+  function locHienTai() {
+    const s = flt.getState();
+    const rows = M.applyFilter((PW.data.capitalContributions || []).slice(), s, {
+      date: c => c.date, memberId: c => c.memberId, kind: c => c.kind,
+      text: c => (c.assetName || '') + ' ' + (c.note || '') + ' ' + (c.code || ''),
+    }).sort((a, b) => (a.date + a.code).localeCompare(b.date + b.code));   // in thì xếp từ cũ -> mới
+    const ph = [];
+    ph.push('Kỳ: ' + (s.from || s.to ? (s.from ? U.date(s.from) : '…') + ' – ' + (s.to ? U.date(s.to) : '…') : 'Tất cả'));
+    ph.push('Thành viên: ' + (s.memberId ? M._capName(s.memberId) : 'Tất cả'));
+    ph.push('Hình thức: ' + (s.kind ? M.capitalKind(s.kind).t : 'Tất cả'));
+    if (s.q) ph.push('Tìm: "' + s.q + '"');
+    return { rows: rows, moTa: ph.join('   ·   ') };
+  }
   wrap.appendChild(U.el('div', { class: 'card-title' }, '➕ Các khoản góp vốn'));
   wrap.appendChild(flt.el);
   wrap.appendChild(listHost);
@@ -1010,9 +1030,13 @@ tfoot{display:table-row-group}
 `;
 
 // Mở cửa sổ in với nội dung thân văn bản đã dựng sẵn.
-M._capOpenPrint = function (title, inner) {
+// huong: 'portrait' (mặc định) | 'landscape' — bảng nhiều cột phải nằm ngang,
+// in dọc thì các cột bị bóp lại không đọc nổi.
+M._capOpenPrint = function (title, inner, huong) {
+  const css = M._capPrintCSS + (huong === 'landscape'
+    ? '@page{size:A4 landscape;margin:10mm}' : '');
   const html = '<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>' + U.esc(title) + '</title>'
-    + '<style>' + M._capPrintCSS + '</style></head><body>'
+    + '<style>' + css + '</style></head><body>'
     + '<div class="btnbar"><button onclick="window.print()">🖨️ In / Lưu PDF</button></div>'
     + inner
     + '<script>window.onload=function(){window.print();}<\/script></body></html>';
@@ -1328,4 +1352,151 @@ M.capitalExcel = async function () {
   M._download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     'CoCauVonGop-' + U.today() + '.xlsx');
   U.toast('Đã xuất file Excel cơ cấu vốn');
+};
+
+/* =====================================================================
+   XUẤT DANH SÁCH KHOẢN GÓP VỐN — Excel và In/PDF
+   Xuất ĐÚNG những dòng đang hiển thị (đã qua bộ lọc), và in luôn điều kiện
+   lọc lên đầu văn bản: cầm tờ giấy lên phải biết nó lọc theo cái gì, nếu
+   không người nhận tưởng đó là toàn bộ sổ.
+   ===================================================================== */
+
+// Một dòng dữ liệu -> các ô, dùng chung cho cả Excel lẫn bản in.
+M._capDongXuat = function (c) {
+  const pn = M._capPhieuNhap(c.id);
+  const kem = c.accountId ? 'Phiếu thu' : (pn ? pn.code : '');
+  return {
+    ngay: U.date(c.date),
+    ct: c.code || '',
+    thanhVien: M._capName(c.memberId),
+    hinhThuc: M.capitalKind(c.kind).t,
+    dienGiai: (c.assetName || '') + (c.note ? ' — ' + c.note : ''),
+    sl: c.qty ? U.num(c.qty) + ' ' + (c.unit || '') : '',
+    giaTri: Number(c.amount) || 0,
+    kem: kem,
+  };
+};
+
+M.capitalListExcel = async function (rows, moTa) {
+  if (!rows || !rows.length) return U.toast('Không có dòng nào để xuất', 'error');
+  const co = M.company();
+  await M._ensureExcelJsLib();
+
+  const cols = [
+    { t: 'Ngày', w: 12 }, { t: 'Số CT', w: 13 }, { t: 'Thành viên', w: 22 },
+    { t: 'Hình thức góp', w: 26 }, { t: 'Tài sản góp / diễn giải', w: 46 },
+    { t: 'Số lượng', w: 13 }, { t: 'Giá trị (đ)', w: 17, money: true }, { t: 'Chứng từ kèm', w: 15 },
+  ];
+  const N = cols.length, LAST = String.fromCharCode(64 + N);
+
+  const wb = new window.ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Khoan gop von', {
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                 margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+  });
+  ws.columns = cols.map(c => ({ width: c.w }));
+
+  let r = 0;
+  const merge = (text, opt) => {
+    r++; ws.mergeCells('A' + r + ':' + LAST + r);
+    const c = ws.getCell('A' + r); c.value = text;
+    c.font = Object.assign({ name: 'Times New Roman', size: 11 }, (opt || {}).font);
+    c.alignment = Object.assign({ vertical: 'middle', wrapText: true }, (opt || {}).align);
+    if ((opt || {}).h) ws.getRow(r).height = opt.h;
+  };
+  const vien = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+
+  merge(co.name, { font: { bold: true, size: 12 }, align: { horizontal: 'left' } });
+  if (co.address) merge('Địa chỉ: ' + co.address, { font: { size: 10, italic: true }, align: { horizontal: 'left' } });
+  r++;
+  merge('DANH SÁCH CÁC KHOẢN GÓP VỐN', { font: { bold: true, size: 15 }, align: { horizontal: 'center' }, h: 24 });
+  merge(moTa || '', { font: { size: 10, italic: true }, align: { horizontal: 'center' }, h: 18 });
+  merge('Lập ngày: ' + U.date(U.today()), { font: { size: 10, italic: true }, align: { horizontal: 'center' } });
+  r++;
+
+  r++;
+  const hdr = ws.getRow(r);
+  cols.forEach((c, k) => {
+    const cell = hdr.getCell(k + 1);
+    cell.value = c.t;
+    cell.font = { name: 'Times New Roman', size: 11, bold: true };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF5E4' } };
+    cell.border = vien;
+  });
+  hdr.height = 24;
+
+  const dong = (vals, dam) => {
+    r++;
+    const row = ws.getRow(r);
+    vals.forEach((v, k) => {
+      const cell = row.getCell(k + 1);
+      cell.value = (v === '' || v === null || v === undefined) ? null : v;
+      cell.font = { name: 'Times New Roman', size: 11, bold: !!dam };
+      cell.border = vien;
+      if (cols[k].money) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
+      else if (k <= 1 || k === 5 || k === 7) cell.alignment = { horizontal: 'center', wrapText: true };
+      else cell.alignment = { horizontal: 'left', wrapText: true };
+    });
+  };
+
+  let tong = 0;
+  rows.forEach(c => {
+    const d = M._capDongXuat(c);
+    tong += d.giaTri;
+    dong([d.ngay, d.ct, d.thanhVien, d.hinhThuc, d.dienGiai, d.sl, d.giaTri, d.kem]);
+  });
+  dong(['', '', '', '', 'CỘNG ' + rows.length + ' khoản', '', tong, ''], true);
+
+  r++;
+  merge('Tổng giá trị: ' + U.money(tong) + ' đ — bằng chữ: ' + U.readMoneyVN(tong),
+        { font: { bold: true, size: 11 }, align: { horizontal: 'left' }, h: 20 });
+
+  const buf = await wb.xlsx.writeBuffer();
+  M._download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    'KhoanGopVon-' + U.today() + '.xlsx');
+  U.toast('Đã xuất ' + rows.length + ' khoản ra Excel');
+};
+
+M.capitalListPrint = function (rows, moTa) {
+  if (!rows || !rows.length) return U.toast('Không có dòng nào để in', 'error');
+  const co = M.company();
+  let tong = 0;
+  const tr = rows.map((c, i) => {
+    const d = M._capDongXuat(c);
+    tong += d.giaTri;
+    return '<tr>'
+      + '<td class="c">' + (i + 1) + '</td>'
+      + '<td class="c">' + U.esc(d.ngay) + '</td>'
+      + '<td class="c">' + U.esc(d.ct) + '</td>'
+      + '<td>' + U.esc(d.thanhVien) + '</td>'
+      + '<td>' + U.esc(d.hinhThuc) + '</td>'
+      + '<td>' + U.esc(d.dienGiai) + '</td>'
+      + '<td class="c">' + U.esc(d.sl) + '</td>'
+      + '<td class="r"><b>' + U.money(d.giaTri) + '</b></td>'
+      + '<td class="c">' + U.esc(d.kem) + '</td>'
+      + '</tr>';
+  }).join('');
+
+  const inner = M._capHead(co, 'DSGV/' + U.today().slice(0, 4))
+    + '<h2>Danh sách các khoản góp vốn</h2>'
+    + '<div class="sub">' + U.esc(moTa || '') + '</div>'
+    + '<table style="margin-top:12px"><thead><tr>'
+      + '<th style="width:30px">TT</th><th style="width:72px">Ngày</th><th style="width:78px">Số CT</th>'
+      + '<th style="width:110px">Thành viên</th><th style="width:140px">Hình thức góp</th>'
+      + '<th>Tài sản góp / diễn giải</th><th style="width:70px">Số lượng</th>'
+      + '<th class="r" style="width:110px">Giá trị (đ)</th><th style="width:84px">Chứng từ kèm</th>'
+    + '</tr></thead><tbody>' + tr + '</tbody>'
+    + '<tfoot><tr><td colspan="7">CỘNG ' + rows.length + ' khoản</td>'
+      + '<td class="r">' + U.money(tong) + '</td><td></td></tr></tfoot></table>'
+    + '<div class="net">TỔNG GIÁ TRỊ GÓP VỐN: ' + U.money(tong) + ' đ</div>'
+    + '<div class="words">Bằng chữ: ' + U.esc(U.readMoneyVN(tong)) + '</div>'
+    + '<div class="sign">'
+      + '<div><b>NGƯỜI LẬP BIỂU</b><i>(Ký, ghi rõ họ tên)</i><div class="space"></div></div>'
+      + '<div><b>XÁC NHẬN CỦA CÁC THÀNH VIÊN</b><i>(Ký, ghi rõ họ tên)</i><div class="space"></div></div>'
+    + '</div>'
+    + '<div class="foot">Danh sách do phần mềm kế toán ' + U.esc(co.name) + ' lập ngày ' + U.date(U.today())
+      + ' · Bấm "In / Lưu PDF" rồi chọn máy in là "Save as PDF" nếu muốn file PDF.</div>';
+
+  M._capOpenPrint('Danh sach khoan gop von', inner, 'landscape');
 };
