@@ -79,6 +79,49 @@ C.select = function (options, value, attrs) {
 };
 C.textarea = function (attrs) { return U.el('textarea', Object.assign({ class: 'inp', rows: 2 }, attrs)); };
 
+/* ---------- Ô nhập TIỀN có dấu chấm ngăn nghìn ----------
+   "7313889" nhìn rất dễ đếm nhầm một số 0; "7.313.889" thì không.
+   Phải dùng type="text" chứ KHÔNG dùng type="number": trình duyệt coi dấu chấm
+   là ký tự không hợp lệ trong ô number nên không thể hiển thị nhóm nghìn.
+
+   Vì .value giờ là chuỗi có dấu chấm, Number(inp.value) sẽ ra NaN.
+   ĐỌC SỐ BẰNG inp.soTien(), ĐẶT SỐ BẰNG inp.datSoTien(n) — đừng đọc .value.
+   Mỗi lần gõ phát sinh sự kiện 'input' như ô thường, cứ nghe bình thường. */
+C.money = function (attrs) {
+  const chiSo = s => String(s == null ? '' : s).replace(/\D/g, '');
+  const cham = s => (s ? String(Number(s)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '');
+  const inp = U.el('input', Object.assign(
+    { class: 'inp', type: 'text', inputmode: 'numeric', autocomplete: 'off' },
+    attrs || {}, { value: '' }));
+
+  inp.soTien = () => Number(chiSo(inp.value)) || 0;
+  inp.datSoTien = n => { inp.value = cham(chiSo(Math.round(Number(n) || 0))); };
+
+  inp.addEventListener('input', () => {
+    // Định dạng lại làm con trỏ nhảy về cuối nếu không xử lý: đếm số CHỮ SỐ bên
+    // trái con trỏ, định dạng xong thì đặt con trỏ lại sau đúng bấy nhiêu chữ số.
+    const caret = inp.selectionStart;
+    const soChuSoTruoc = chiSo(inp.value.slice(0, caret)).length;
+    inp.value = cham(chiSo(inp.value));
+    let i = 0, dem = 0;
+    while (i < inp.value.length && dem < soChuSoTruoc) { if (/\d/.test(inp.value[i])) dem++; i++; }
+    try { inp.setSelectionRange(i, i); } catch (e) { /* ô đang ẩn */ }
+  });
+
+  inp.datSoTien((attrs && attrs.value) || 0);
+  return inp;
+};
+
+/* Dòng "Bằng chữ: ..." đi kèm ô tiền — đọc thành chữ thì sai số chữ số là lộ ngay.
+   Trả về phần tử để đặt ngay dưới ô nhập. */
+C.moneyWords = function (inp) {
+  const d = U.el('div', { class: 'text-muted', style: 'font-size:11.5px;font-style:italic;margin-top:4px;min-height:15px' });
+  const ve = () => { const v = inp.soTien(); d.textContent = v > 0 ? 'Bằng chữ: ' + U.readMoneyVN(v) : ''; };
+  inp.addEventListener('input', ve);
+  ve();
+  return d;
+};
+
 C.btn = function (label, onClick, cls) {
   return U.el('button', { class: 'btn ' + (cls || ''), onclick: onClick }, label);
 };

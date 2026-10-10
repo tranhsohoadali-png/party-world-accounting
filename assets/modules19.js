@@ -150,13 +150,14 @@ M._capSetup = function (root) {
 
   const n1 = C.input({ placeholder: 'Họ tên của bạn', style: 'width:100%' });
   const n2 = C.input({ value: 'Cường', placeholder: 'Họ tên thành viên thứ hai', style: 'width:100%' });
-  const ttVal = C.input({ type: 'number', value: 400000000, min: 0, style: 'width:100%;text-align:right' });
+  const ttVal = C.money({ value: 400000000, style: 'width:100%;text-align:right;font-weight:700' });
   const ttNote = C.input({ value: 'Ý tưởng, kinh nghiệm và quan hệ khách hàng đưa vào dự án', style: 'width:100%' });
 
   card.appendChild(U.el('div', { class: 'form-grid' }, [
     C.field('Thành viên 1 (bạn)', n1, { required: true }),
     C.field('Thành viên 2', n2, { required: true }),
-    C.field('Ghi cho thành viên 1 — giá trị ý tưởng & kinh nghiệm (đ)', ttVal, { full: true }),
+    C.field('Ghi cho thành viên 1 — giá trị ý tưởng & kinh nghiệm (đ)',
+      U.el('div', null, [ttVal, C.moneyWords(ttVal)]), { full: true }),
     C.field('Diễn giải khoản góp vô hình', ttNote, { full: true }),
   ]));
   card.appendChild(U.el('p', { class: 'section-sub mt8' },
@@ -168,7 +169,7 @@ M._capSetup = function (root) {
       const mk = name => ({ id: PW.uid(), code: PW.nextCode('TV'), name: name, phone: '', address: '', idNo: '', title: 'Thành viên sáng lập', note: '' });
       const m1 = mk(a), m2 = mk(b);
       PW.data.capitalMembers.push(m1, m2);
-      const v = Number(ttVal.value) || 0;
+      const v = ttVal.soTien();
       if (v > 0) PW.data.capitalContributions.push({
         id: PW.uid(), code: PW.nextCode('GV'), date: U.today(), memberId: m1.id, kind: 'tsvh',
         assetName: 'Ý tưởng, kinh nghiệm & know-how', qty: 1, unit: 'gói', amount: v,
@@ -342,7 +343,7 @@ M.capitalContribForm = function (c) {
   const nameI = C.input({ value: c.assetName || '', placeholder: 'VD: Máy in 3D Bambu Lab A1 + AMS lite', style: 'width:100%' });
   const qtyI = C.input({ type: 'number', value: c.qty, min: 0, step: '0.01', style: 'text-align:right' });
   const unitI = C.input({ value: c.unit || '', placeholder: 'cái / bộ / gói' });
-  const amtI = C.input({ type: 'number', value: c.amount, min: 0, style: 'text-align:right;font-weight:700' });
+  const amtI = C.money({ value: c.amount, style: 'text-align:right;font-weight:700' });
   const accI = C.select(M._capAccOpts(), c.accountId || '');
   const noteI = C.textarea({ value: c.note || '', placeholder: 'Căn cứ định giá, số máy, tình trạng…', style: 'width:100%' });
 
@@ -379,7 +380,7 @@ M.capitalContribForm = function (c) {
       C.field('Hình thức góp', kindI, { required: true }),
       C.field('Tài sản góp / diễn giải', nameI, { full: true, required: true }),
       qtyField, unitField,
-      C.field('Giá trị ghi nhận (đ)', amtI, { full: true, required: true }),
+      C.field('Giá trị ghi nhận (đ)', U.el('div', null, [amtI, C.moneyWords(amtI)]), { full: true, required: true }),
       accField,
       C.field('Ghi chú / căn cứ định giá', noteI, { full: true }),
     ]),
@@ -393,7 +394,7 @@ M.capitalContribForm = function (c) {
         id: isNew ? PW.uid() : src.id,
         code: codeI.value.trim() || c.code, date: dateI.value, memberId: memI.value,
         kind: kindI.value, assetName: nameI.value.trim(), qty: Number(qtyI.value) || 0,
-        unit: unitI.value.trim(), amount: Number(amtI.value) || 0,
+        unit: unitI.value.trim(), amount: amtI.soTien(),
         accountId: accI.value || '', note: noteI.value.trim(),
       };
       if (!obj.date) return U.toast('Chọn ngày góp', 'error');
@@ -474,7 +475,7 @@ M.capitalWithdrawForm = function (w) {
   const codeI = C.input({ value: w.code });
   const dateI = C.input({ type: 'date', value: w.date });
   const memI = C.select(M._capMemberOpts(), w.memberId);
-  const amtI = C.input({ type: 'number', value: w.amount, min: 0, style: 'text-align:right;font-weight:700' });
+  const amtI = C.money({ value: w.amount, style: 'text-align:right;font-weight:700' });
   const reasonI = C.input({ value: w.reason || '', style: 'width:100%' });
   const accI = C.select(M._capAccOpts(), w.accountId || '');
   const noteI = C.input({ value: w.note || '', style: 'width:100%' });
@@ -483,7 +484,7 @@ M.capitalWithdrawForm = function (w) {
   function syncAvail() {
     const r = S.rows.find(x => x.m.id === memI.value);
     const con = r ? r.net : 0;
-    const xin = Number(amtI.value) || 0;
+    const xin = amtI.soTien();
     avail.innerHTML = 'Vốn ròng hiện có của thành viên này: <b>' + U.money(con) + ' đ</b>'
       + (xin > con ? ' — <span class="text-red">rút ' + U.money(xin) + ' đ là vượt quá phần đã góp</span>' : '');
   }
@@ -496,7 +497,7 @@ M.capitalWithdrawForm = function (w) {
       C.field('Số chứng từ', codeI),
       C.field('Ngày rút', dateI, { required: true }),
       C.field('Thành viên', memI, { required: true }),
-      C.field('Số tiền rút (đ)', amtI, { required: true }),
+      C.field('Số tiền rút (đ)', U.el('div', null, [amtI, C.moneyWords(amtI)]), { required: true }),
       C.field('Lý do', reasonI, { full: true }),
       C.field('Chi từ quỹ (tạo phiếu chi)', accI, { full: true }),
       C.field('Ghi chú', noteI, { full: true }),
@@ -510,7 +511,7 @@ M.capitalWithdrawForm = function (w) {
       const obj = {
         id: isNew ? PW.uid() : src.id,
         code: codeI.value.trim() || w.code, date: dateI.value, memberId: memI.value,
-        amount: Number(amtI.value) || 0, reason: reasonI.value.trim() || 'Rút vốn góp',
+        amount: amtI.soTien(), reason: reasonI.value.trim() || 'Rút vốn góp',
         accountId: accI.value || '', note: noteI.value.trim(),
       };
       if (!obj.date) return U.toast('Chọn ngày rút', 'error');
@@ -599,7 +600,7 @@ M.capitalProfitForm = function (ps) {
   const labelI = C.input({ value: ps.label || '', style: 'width:100%' });
   const fromI = C.input({ type: 'date', value: ps.from || '' });
   const toI = C.input({ type: 'date', value: ps.to || '' });
-  const profitI = C.input({ type: 'number', value: ps.profit, style: 'text-align:right;font-weight:700' });
+  const profitI = C.money({ value: ps.profit, style: 'text-align:right;font-weight:700' });
   const accI = C.select(M._capAccOpts('— Chưa chi trả —'), ps.accountId || '');
 
   const lineBody = U.el('tbody');
@@ -617,7 +618,7 @@ M.capitalProfitForm = function (ps) {
     });
   }
   function recalc(fromPercent) {
-    const total = Number(profitI.value) || 0;
+    const total = profitI.soTien();
     if (fromPercent) chiaTheoTyLe(total);
     const sum = ps.lines.reduce((s, l) => s + (Number(l.amount) || 0), 0);
     const sumPct = ps.lines.reduce((s, l) => s + (Number(l.percent) || 0), 0);
@@ -629,15 +630,15 @@ M.capitalProfitForm = function (ps) {
     lineBody.innerHTML = '';
     ps.lines.forEach(l => {
       const pctI = U.el('input', { type: 'number', value: Number(l.percent || 0).toFixed(2), step: '0.01', min: 0, style: 'text-align:right' });
-      const amtI = U.el('input', { type: 'number', value: l.amount || 0, min: 0, style: 'text-align:right' });
+      const amtI = C.money({ value: l.amount || 0, style: 'text-align:right' });
       const paidI = U.el('input', { type: 'checkbox' });
       if (l.paid) paidI.checked = true;
       pctI.addEventListener('input', () => {
         l.percent = Number(pctI.value) || 0;
-        l.amount = Math.round((Number(profitI.value) || 0) * l.percent / 100);
-        amtI.value = l.amount; recalc(false);
+        l.amount = Math.round(profitI.soTien() * l.percent / 100);
+        amtI.datSoTien(l.amount); recalc(false);
       });
-      amtI.addEventListener('input', () => { l.amount = Number(amtI.value) || 0; recalc(false); });
+      amtI.addEventListener('input', () => { l.amount = amtI.soTien(); recalc(false); });
       paidI.addEventListener('change', () => { l.paid = paidI.checked; });
       const r = S.rows.find(x => x.m.id === l.memberId);
       lineBody.appendChild(U.el('tr', null, [
@@ -670,20 +671,21 @@ M.capitalProfitForm = function (ps) {
       C.field('Kỳ chia (ghi trên biên bản)', labelI, { full: true }),
       C.field('Từ ngày', fromI),
       C.field('Đến ngày', toI),
-      C.field('Lợi nhuận đem chia (đ)', profitI, { required: true }),
+      C.field('Lợi nhuận đem chia (đ)', U.el('div', null, [profitI, C.moneyWords(profitI)]), { required: true }),
       C.field('Chi trả từ quỹ (tạo phiếu chi cho dòng đã trả)', accI),
     ]),
     U.el('div', { class: 'pill-row mt8' }, [
       C.btn('📈 Lấy lợi nhuận từ sổ sách', () => {
         if (!fromI.value || !toI.value) return U.toast('Chọn từ ngày / đến ngày trước', 'error');
         const v = M.capitalNetProfit(fromI.value, toI.value);
-        profitI.value = Math.max(0, Math.round(v));
+        profitI.datSoTien(Math.max(0, v));
+        profitI.dispatchEvent(new Event('input'));   // để dòng "Bằng chữ" cập nhật theo
         recalc(true); drawLines();
         U.toast('Lợi nhuận thuần kỳ này: ' + U.money(v) + ' đ' + (v < 0 ? ' (đang lỗ)' : ''), v < 0 ? 'error' : 'success');
       }, 'sm'),
       C.btn('⚖️ Chia lại theo tỷ lệ vốn góp', () => {
         ps.lines = S.rows.map(r => ({ memberId: r.m.id, percent: r.percent, amount: 0, paid: false }));
-        chiaTheoTyLe(Number(profitI.value) || 0);
+        chiaTheoTyLe(profitI.soTien());
         recalc(false); drawLines();
       }, 'sm'),
     ]),
@@ -700,7 +702,7 @@ M.capitalProfitForm = function (ps) {
       const obj = {
         id: isNew ? PW.uid() : src.id,
         code: codeI.value.trim() || ps.code, date: dateI.value, label: labelI.value.trim(),
-        from: fromI.value || '', to: toI.value || '', profit: Number(profitI.value) || 0,
+        from: fromI.value || '', to: toI.value || '', profit: profitI.soTien(),
         accountId: accI.value || '',
         lines: ps.lines.map(l => ({ memberId: l.memberId, percent: Number(l.percent) || 0, amount: Number(l.amount) || 0, paid: !!l.paid })),
         note: ps.note || '',
