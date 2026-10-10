@@ -101,10 +101,14 @@ PW.detectSession = async function () {
 
 /* ---------- Nạp dữ liệu ---------- */
 PW.load = async function () {
-  // Cơ sở 1 = dữ liệu gốc -> seed mẫu (tranh) như cũ. Cơ sở mới -> seed SỔ TRỐNG mang tên cơ sở.
+  // Dữ liệu mẫu (xưởng tranh) CHỈ dành cho chế độ offline: mở thử app trên trình
+  // duyệt thì cần sẵn số liệu để bấm thử. BẢN CÀI THẬT trên máy chủ phải bắt đầu
+  // bằng SỔ TRỐNG — trước đây sổ số 1 của mọi bản cài mới đều bị nạp nguyên bộ
+  // tranh mẫu (khách "Shop Tranh Hồng Hà", tồn quỹ 35 triệu, 3 nhân viên...),
+  // chủ sổ mới mở ra tưởng có người nhập nhầm vào sổ của mình.
   const seedFor = () => {
-    if (PW.ws === 1) return PW.seed();
     const w = (PW.workspaces || []).find(x => x.id === PW.ws);
+    if (PW.mode !== 'server' && PW.ws === 1) return PW.seed();
     return PW.seedEmpty(w ? w.name : '');   // đặt companyName = tên cơ sở -> hóa đơn/báo cáo hiển thị đúng
   };
   if (PW.mode === 'server') {

@@ -340,23 +340,22 @@ App.settings = function (root) {
     }
   }, 'danger');
 
+  // Dùng lại PW.seedEmpty() thay vì tự chép danh sách bảng ra đây: bản chép tay
+  // cũ đã lạc hậu (thiếu productivityEntries, taxInvoices, cashCounts, 4 bảng góp
+  // vốn...) và còn đặt cứng companyName='DALI' nên xóa sổ ở bản cài khác là mất
+  // luôn tên công ty. Thêm bảng mới ở seedEmpty là chỗ này tự theo.
   const clearBtn = C.btn('🧹 Xóa trắng (bắt đầu sổ sách mới)', () => {
-    if (U.confirm('Xóa toàn bộ dữ liệu để bắt đầu sổ sách trống? Danh mục và chứng từ sẽ bị xóa hết.')) {
-      PW.data = {
-        meta: { companyName: 'DALI', counters: {} },
-        cashAccounts: [
-          { id: 'acc_cash', name: 'Tiền mặt', type: 'cash', opening: 0 },
-          { id: 'acc_bank', name: 'Tiền gửi ngân hàng', type: 'bank', opening: 0 },
-        ],
-        products: [], customers: [], suppliers: [],
-        receipts: [], payments: [], salesInvoices: [], purchases: [],
-        quotations: [], salesOrders: [], salesReturns: [], salesDiscounts: [],
-        purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
-        employees: [], productGroups: [], units: [], warehouses: [], expenseItems: [], paymentTerms: [], partnerGroups: [],
-        payrolls: [], productionOrders: [], channels: [], stockAdjustments: [], activityLog: [],
-      };
-      PW.save(true); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
-    }
+    if (!U.confirm('Xóa toàn bộ dữ liệu để bắt đầu sổ sách trống? Danh mục và chứng từ sẽ bị xóa hết.')) return;
+    // Giữ những thứ KHÔNG phải số liệu: thông tin doanh nghiệp đã khai và các phân
+    // hệ đã bật. Xóa sổ không có nghĩa là phải đi khai báo lại từ đầu.
+    const cu = PW.data.meta || {};
+    const ws = (PW.workspaces || []).find(x => x.id === PW.ws);
+    PW.data = PW.seedEmpty(cu.companyName || (ws ? ws.name : ''));
+    PW.data.meta.company = cu.company || {};
+    PW.data.meta.features = cu.features || {};
+    if (cu.deviceName) PW.data.meta.deviceName = cu.deviceName;
+    PW._normalize();
+    PW.save(true); App.render(); App.go('dashboard'); U.toast('Đã xóa trắng dữ liệu');
   });
 
   card.appendChild(U.el('div', { class: 'pill-row mt8' }, [exportBtn, importBtn, importInput, resetBtn, clearBtn]));
