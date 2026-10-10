@@ -830,10 +830,10 @@ M.docForm = function (cfg) {
       [partnerKey]: partnerI.value,
       employeeId: empSel ? (empSel.value || null) : undefined,
       channelId: channelSel ? (channelSel.value || null) : undefined,
-      platformFee: platformFeeI ? (Number(platformFeeI.value) || 0) : undefined,
-      shippingFee: shippingFeeI ? (Number(shippingFeeI.value) || 0) : undefined,
-      vatRate: Number(vatRateI.value) || 0, discount: Number(discountI.value) || 0,
-      paid: Number(paidI.value) || 0, paidAccountId: paidAccI.value, note: noteI.value,
+      platformFee: platformFeeI ? (platformFeeI.soTien()) : undefined,
+      shippingFee: shippingFeeI ? (shippingFeeI.soTien()) : undefined,
+      vatRate: Number(vatRateI.value) || 0, discount: discountI.soTien(),
+      paid: paidI.soTien(), paidAccountId: paidAccI.value, note: noteI.value,
       items: items.map(it => ({ productId: it.productId, qty: it.qty, [unitField]: it[unitField] })),
     };
   }
@@ -877,15 +877,15 @@ M.docForm = function (cfg) {
   const channelSel = isSale ? C.select(
     [{ value: '', label: '-- Chọn kênh --' }].concat((PW.data.channels || []).map(c => ({ value: c.id, label: c.name }))),
     doc.channelId || '') : null;
-  const platformFeeI = isSale ? C.input({ type: 'number', value: doc.platformFee || 0, min: 0, style: 'width:140px;text-align:right' }) : null;
-  const shippingFeeI = isSale ? C.input({ type: 'number', value: doc.shippingFee || 0, min: 0, style: 'width:140px;text-align:right' }) : null;
+  const platformFeeI = isSale ? C.money({ value: doc.platformFee || 0, style: 'width:140px;text-align:right' }) : null;
+  const shippingFeeI = isSale ? C.money({ value: doc.shippingFee || 0, style: 'width:140px;text-align:right' }) : null;
   const netCell = isSale ? U.el('span', { style: 'font-weight:700;color:var(--teal-d)' }) : null;
   function curChannel() { return channelSel ? channelSel.value : null; }
   function suggestFee() {
     const c = PW.channel(curChannel());
     let sub = 0; items.forEach(it => sub += (Number(it.qty) || 0) * (Number(it[unitField]) || 0));
-    const grand = sub - (Number(discountI.value) || 0);
-    if (c && Number(c.feePercent) > 0) platformFeeI.value = Math.round(grand * Number(c.feePercent) / 100);
+    const grand = sub - (discountI.soTien());
+    if (c && Number(c.feePercent) > 0) platformFeeI.datSoTien(Math.round(grand * Number(c.feePercent) / 100));
   }
   if (channelSel) channelSel.addEventListener('change', () => {
     items.forEach(it => { const p = PW.product(it.productId); if (p) it[unitField] = PW.channelPrice(p, curChannel()); });
@@ -908,8 +908,8 @@ M.docForm = function (cfg) {
 
   const itemsBody = U.el('tbody');
   const totalCell = U.el('span');
-  const discountI = C.input({ type: 'number', value: doc.discount || 0, min: 0, style: 'width:140px;text-align:right' });
-  const paidI = C.input({ type: 'number', value: doc.paid || 0, min: 0, style: 'width:140px;text-align:right' });
+  const discountI = C.money({ value: doc.discount || 0, style: 'width:140px;text-align:right' });
+  const paidI = C.money({ value: doc.paid || 0, style: 'width:140px;text-align:right' });
   const paidAccI = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name })), doc.paidAccountId || PW.data.cashAccounts[0].id);
   const grandCell = U.el('span', { style: 'font-weight:700' });
   const payCell = U.el('span', { style: 'font-weight:800;color:#5a8e2e' });   // TỔNG THANH TOÁN gồm thuế
@@ -918,11 +918,11 @@ M.docForm = function (cfg) {
   function calc() {
     let sub = 0;
     items.forEach(it => { sub += (Number(it.qty) || 0) * (Number(it[unitField]) || 0); });
-    const disc = Number(discountI.value) || 0;
+    const disc = discountI.soTien();
     const grand = sub - disc;                                            // thành tiền (trước thuế)
     const vat = Math.round(grand * (Number(vatRateI.value) || 0) / 100);
     const payable = grand + vat;                                          // tổng thanh toán (gồm thuế)
-    const paid = Number(paidI.value) || 0;
+    const paid = paidI.soTien();
     totalCell.textContent = U.money(sub);
     grandCell.textContent = U.money(grand) + ' đ';
     vatCell.textContent = U.money(vat) + ' đ';
@@ -930,7 +930,7 @@ M.docForm = function (cfg) {
     remainCell.textContent = U.money(payable - paid) + ' đ';
     remainCell.className = (payable - paid) > 0 ? 'text-red' : 'text-green';
     if (isSale && netCell) {
-      const fees = (Number(platformFeeI.value) || 0) + (Number(shippingFeeI.value) || 0);
+      const fees = (platformFeeI.soTien()) + (shippingFeeI.soTien());
       netCell.textContent = U.money(payable - fees) + ' đ';
     }
   }
@@ -961,15 +961,17 @@ M.docForm = function (cfg) {
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' });
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; updateLine(); });
       wireLineNav(qtyI, 'li-qty');
-      const priceI = U.el('input', { type: 'number', value: it[unitField], min: 0, style: 'text-align:right' });
-      priceI.addEventListener('input', () => { it[unitField] = Number(priceI.value) || 0; updateLine(); });
+      // Tiền -> ô có dấu chấm ngăn nghìn (C.money). Đọc số bằng .soTien(), KHÔNG
+      // dùng .value nữa vì .value giờ là chuỗi "60.000".
+      const priceI = C.money({ value: it[unitField], style: 'text-align:right' });
+      priceI.addEventListener('input', () => { it[unitField] = priceI.soTien(); updateLine(); });
       wireLineNav(priceI, 'li-price');
       // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
-      const lineTotal = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)), min: 0, style: 'text-align:right' });
-      function updateLine() { lineTotal.value = Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)); calc(); }
+      const lineTotal = C.money({ value: Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0)), style: 'text-align:right' });
+      function updateLine() { lineTotal.datSoTien(Math.round((Number(it.qty) || 0) * (Number(it[unitField]) || 0))); calc(); }
       lineTotal.addEventListener('input', () => {
-        const tt = Number(lineTotal.value) || 0, q = Number(it.qty) || 0;
-        if (q > 0) { it[unitField] = Math.round(tt / q * 100) / 100; priceI.value = it[unitField]; }
+        const tt = lineTotal.soTien(), q = Number(it.qty) || 0;
+        if (q > 0) { it[unitField] = Math.round(tt / q * 100) / 100; priceI.datSoTien(it[unitField]); }
         calc(); scheduleDraft();
       });
       wireLineNav(lineTotal, 'li-total');
@@ -1181,14 +1183,14 @@ M.docForm = function (cfg) {
         [partnerKey]: partnerI.value,
         employeeId: empSel ? (empSel.value || null) : (doc.employeeId || null),
         channelId: channelSel ? (channelSel.value || null) : (doc.channelId || null),
-        platformFee: platformFeeI ? (Number(platformFeeI.value) || 0) : (doc.platformFee || 0),
-        shippingFee: shippingFeeI ? (Number(shippingFeeI.value) || 0) : (doc.shippingFee || 0),
+        platformFee: platformFeeI ? (platformFeeI.soTien()) : (doc.platformFee || 0),
+        shippingFee: shippingFeeI ? (shippingFeeI.soTien()) : (doc.shippingFee || 0),
         vatRate: Number(vatRateI.value) || 0,
         taxNo: taxNoI.value.trim(),
         items: valid.map(it => ({ productId: it.productId, qty: Number(it.qty), [unitField]: Number(it[unitField]) })),
-        discount: Number(discountI.value) || 0,
-        paid: Number(paidI.value) || 0,
-        paidAccountId: (Number(paidI.value) || 0) > 0 ? paidAccI.value : null,
+        discount: discountI.soTien(),
+        paid: paidI.soTien(),
+        paidAccountId: (paidI.soTien()) > 0 ? paidAccI.value : null,
         note: noteI.value,
       };
       // Giữ lại trạng thái đối soát sàn + tham chiếu nguồn khi sửa lại hóa đơn

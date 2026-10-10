@@ -38,15 +38,16 @@ M.itemsEditor = function (items, opts) {
         draw(); onChange();
       }, { isSale: (opts.productPriceKey || 'price') === 'price' });
       const qtyI = U.el('input', { type: 'number', value: it.qty, min: 0, style: 'text-align:right' }); wireNav(qtyI, 'li-qty');
-      const priceI = U.el('input', { type: 'number', value: it[priceKey], min: 0, style: 'text-align:right' }); wireNav(priceI, 'li-price');
+      // Tiền -> ô có dấu chấm ngăn nghìn (C.money). Đọc bằng .soTien(), đặt bằng .datSoTien().
+      const priceI = C.money({ value: it[priceKey], style: 'text-align:right' }); wireNav(priceI, 'li-price');
       // Thành tiền nhập được: gõ thành tiền -> tự chia ra đơn giá = thành tiền / SL
-      const totalI = U.el('input', { type: 'number', value: Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)), min: 0, style: 'text-align:right' }); wireNav(totalI, 'li-total');
-      function syncTotal() { totalI.value = Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)); onChange(); }
+      const totalI = C.money({ value: Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0)), style: 'text-align:right' }); wireNav(totalI, 'li-total');
+      function syncTotal() { totalI.datSoTien(Math.round((Number(it.qty) || 0) * (Number(it[priceKey]) || 0))); onChange(); }
       qtyI.addEventListener('input', () => { it.qty = Number(qtyI.value) || 0; syncTotal(); });
-      priceI.addEventListener('input', () => { it[priceKey] = Number(priceI.value) || 0; syncTotal(); });
+      priceI.addEventListener('input', () => { it[priceKey] = priceI.soTien(); syncTotal(); });
       totalI.addEventListener('input', () => {
-        const tt = Number(totalI.value) || 0, q = Number(it.qty) || 0;
-        if (q > 0) { it[priceKey] = Math.round(tt / q * 100) / 100; priceI.value = it[priceKey]; }
+        const tt = totalI.soTien(), q = Number(it.qty) || 0;
+        if (q > 0) { it[priceKey] = Math.round(tt / q * 100) / 100; priceI.datSoTien(it[priceKey]); }
         onChange();
       });
       const p = PW.product(it.productId);
