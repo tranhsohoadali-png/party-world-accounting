@@ -127,6 +127,14 @@ server {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:$FPM_SOCK;
     }
+
+    # index.html và sw.js KHÔNG mang ?v= nên phải hỏi lại máy chủ mỗi lần, nếu
+    # không trình duyệt tự suy đoán thời hạn rồi dùng bản cũ -> deploy xong mà
+    # người dùng F5 vẫn thấy giao diện cũ. Các file khác đã có ?v= nên cứ cache.
+    location = /sw.js     { add_header Cache-Control "no-cache, must-revalidate"; }
+    location = /index.html { add_header Cache-Control "no-cache, must-revalidate"; }
+    location = /           { add_header Cache-Control "no-cache, must-revalidate"; try_files /index.html =404; }
+
     location / { try_files \$uri \$uri/ =404; }
 
     # Không để lộ cấu hình / thư mục git qua web

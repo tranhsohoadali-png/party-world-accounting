@@ -375,7 +375,7 @@ M.capitalContribForm = function (c) {
   const src = c;
   c = c ? JSON.parse(JSON.stringify(c)) : {
     code: PW.nextCode('GV'), date: U.today(), memberId: (PW.data.capitalMembers[0] || {}).id || '',
-    kind: 'maymoc', assetName: '', qty: 1, unit: 'cái', amount: 0, accountId: '', note: '',
+    kind: 'maymoc', assetName: '', qty: 1, unit: 'Cái', amount: 0, accountId: '', note: '',
   };
 
   const codeI = C.input({ value: c.code });
@@ -384,7 +384,7 @@ M.capitalContribForm = function (c) {
   const kindI = C.select(M.CAPITAL_KINDS.map(k => ({ value: k.v, label: k.ic + ' ' + k.t })), c.kind);
   const nameI = C.input({ value: c.assetName || '', placeholder: 'VD: Máy in 3D Bambu Lab A1 + AMS lite', style: 'width:100%' });
   const qtyI = C.input({ type: 'number', value: c.qty, min: 0, step: '0.01', style: 'text-align:right' });
-  const unitI = C.input({ value: c.unit || '', placeholder: 'cái / bộ / gói' });
+  const unitI = M.unitSelect(c.unit || '');
   const amtI = C.money({ value: c.amount, style: 'text-align:right;font-weight:700' });
   const accI = C.select(M._capAccOpts(), c.accountId || '');
   const noteI = C.textarea({ value: c.note || '', placeholder: 'Căn cứ định giá, số máy, tình trạng…', style: 'width:100%' });

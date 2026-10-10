@@ -46,6 +46,19 @@ PW._normalize = function () {
     PW.data.meta.seededNvlGroups = true;
   }
 
+  // (1 lần) Bổ sung các đơn vị tính thường gặp vào danh mục, để ô "Đơn vị" chọn
+  // được từ danh sách thay vì gõ tay mỗi lần (gõ tay dễ ra "Kg"/"kg"/"KG" lẫn lộn).
+  // Có Cuộn và Kg vì nhựa in 3D bán theo cuộn/cân. Tên đã có thì bỏ qua, không trùng.
+  if (!PW.data.meta.seededDonViChuan) {
+    ['Cái', 'Chiếc', 'Bộ', 'Set', 'Cặp', 'Đôi', 'Hộp', 'Gói', 'Túi', 'Thùng', 'Khay',
+     'Cuộn', 'Kg', 'Gam', 'Tấn', 'Mét', 'Cây', 'Tấm', 'Lít', 'Chai', 'Can', 'Ream']
+      .forEach(n => {
+        if (!PW.data.units.some(u => (u.name || '').trim().toLowerCase() === n.toLowerCase()))
+          PW.data.units.push({ id: PW.uid(), name: n });
+      });
+    PW.data.meta.seededDonViChuan = true;
+  }
+
   // (1 lần) Tách Nhóm hàng khỏi Tính chất: nếu nhóm trống hoặc chỉ lặp lại tên tính chất
   // -> đặt nhóm theo kích thước phát hiện trong tên (NVL: "Nguyên vật liệu 20x20", TP: "20x20").
   if (!PW.data.meta.migratedSizeGroups) {

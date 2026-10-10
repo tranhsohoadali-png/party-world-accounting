@@ -208,3 +208,50 @@ M.datalist = function (domId, values) {
   values.forEach(v => dl.appendChild(U.el('option', { value: v })));
   return dl;
 };
+
+/* Bộ chọn ĐƠN VỊ TÍNH — đổ từ danh mục Đơn vị (PW.data.units).
+   Chọn từ danh sách thay vì gõ tay: gõ tay mỗi lần một kiểu ("Kg"/"kg"/"KG")
+   thì báo cáo gom nhóm sai. Vẫn có lối thoát "➕ Đơn vị khác…" để thêm đơn vị
+   lạ ngay tại chỗ — thêm xong nó vào luôn danh mục, lần sau có sẵn.
+   Đơn vị đang dùng mà danh mục chưa có (dữ liệu cũ) vẫn được giữ, không mất. */
+M.unitSelect = function (value, onChange) {
+  const MOI = '__them_don_vi__';
+  const sel = C.select([], '');
+  let dangChon = (value || '').trim();
+
+  function ve() {
+    sel.innerHTML = '';
+    const ds = (PW.data.units || []).map(u => (u.name || '').trim()).filter(Boolean);
+    // Dữ liệu cũ hay ghi "cái" còn danh mục ghi "Cái" -> so khớp bỏ qua hoa/thường
+    // rồi lấy theo cách viết của danh mục, nếu không ô sẽ hiện trống dù đã có đơn vị.
+    const trung = ds.find(n => n.toLowerCase() === dangChon.toLowerCase());
+    if (trung) dangChon = trung;
+    else if (dangChon) ds.unshift(dangChon);
+    [{ value: '', label: '— Chọn đơn vị —' }]
+      .concat(ds.map(n => ({ value: n, label: n })))
+      .concat([{ value: MOI, label: '➕ Đơn vị khác…' }])
+      .forEach(o => {
+        const e = U.el('option', { value: o.value }, o.label);
+        if (o.value === dangChon) e.selected = true;
+        sel.appendChild(e);
+      });
+  }
+  ve();
+
+  sel.addEventListener('change', () => {
+    if (sel.value === MOI) {
+      const n = (window.prompt('Tên đơn vị mới (vd: Cuộn, Kg, Mét):') || '').trim();
+      if (n && !PW.data.units.some(u => (u.name || '').trim().toLowerCase() === n.toLowerCase())) {
+        PW.data.units.push({ id: PW.uid(), name: n });
+        PW.save();
+        U.toast('Đã thêm đơn vị "' + n + '" vào danh mục');
+      }
+      dangChon = n || dangChon;     // bấm Hủy -> giữ nguyên lựa chọn cũ
+      ve();
+    } else {
+      dangChon = sel.value;
+    }
+    if (onChange) onChange(dangChon);
+  });
+  return sel;
+};
