@@ -589,7 +589,7 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
   const codeP = C.input({ value: PW.nextCode(kindObj.prefix || 'HH'), style: 'width:100%' });
   const nameI = C.input({ style: 'width:100%' });
   const groupI = C.input({ value: '', list: 'dl-qa-groups', placeholder: 'theo kích thước/chủ đề (không bắt buộc)', style: 'width:100%' });
-  const unitI = C.input({ value: kindObj.kind === 'dichvu' ? 'Lần' : 'Cái', style: 'width:100%' });
+  const unitI = M.unitSelect(kindObj.kind === 'dichvu' ? 'Lần' : 'Cái');
   const priceI = C.input({ type: 'number', value: 0, style: 'width:100%' });
   const costI = C.input({ type: 'number', value: 0, style: 'width:100%' });
   const isNVL = kindObj.kind === 'nvl';

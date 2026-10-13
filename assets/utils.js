@@ -133,8 +133,39 @@ U.toast = function (msg, type) {
 };
 
 // Hộp xác nhận đơn giản
+/* Trình duyệt cho phép người dùng tích "Ngăn trang này tạo thêm hộp thoại"
+   (và app đã cài ra màn hình chính đôi khi tự chặn). Khi đó window.confirm()
+   trả về false NGAY LẬP TỨC và im lặng — mọi nút có hỏi xác nhận (Nhập kho,
+   Xóa, Xóa trắng...) bấm vào không xảy ra gì, người dùng tưởng app hỏng.
+
+   Không có API nào hỏi được "hộp thoại có bị chặn không", nên đo thời gian:
+   người thật không thể đọc câu hỏi rồi bấm Hủy trong vòng 12 mili giây, nên
+   trả về false nhanh như vậy gần như chắc chắn là bị chặn. Khi đó nói rõ
+   phải làm gì thay vì để người dùng ngồi bấm lại mãi. */
 U.confirm = function (msg) {
-  return window.confirm(msg);
+  const dong = () => (window.performance && performance.now) ? performance.now() : Date.now();
+  const t0 = dong();
+  let kq = false;
+  try { kq = window.confirm(msg); } catch (e) { kq = false; }
+  if (!kq && (dong() - t0) < 12) U._hopThoaiBiChan();
+  return kq;
+};
+
+U._hopThoaiBiChan = function () {
+  if (document.getElementById('pw-chan-dialog')) return;     // chỉ nhắc một lần
+  const box = U.el('div', { id: 'pw-chan-dialog', class: 'pw-chan-dialog' }, [
+    U.el('div', null, [
+      U.el('b', null, '⚠️ Trình duyệt đang chặn hộp thoại xác nhận'),
+      U.el('div', { style: 'margin-top:4px;font-size:13px' },
+        'Vì vậy các nút cần xác nhận (Nhập kho, Xóa…) bấm vào không chạy. '
+        + 'Tải lại trang là hết — khi hộp thoại hiện ra, ĐỪNG tích ô "Ngăn trang này tạo thêm hộp thoại".'),
+    ]),
+    U.el('div', { class: 'pw-chan-nut' }, [
+      U.el('button', { class: 'btn primary sm', onclick: () => location.reload() }, 'Tải lại trang'),
+      U.el('button', { class: 'btn sm', onclick: () => box.remove() }, 'Để sau'),
+    ]),
+  ]);
+  document.body.appendChild(box);
 };
 
 // Xuất Excel (.xls) từ tiêu đề + các dòng (mảng các mảng). Số giữ nguyên để Excel tính được.

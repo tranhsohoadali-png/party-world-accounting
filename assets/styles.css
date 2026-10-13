@@ -711,3 +711,15 @@ body.dark .tb-item:hover { background: #2b3326; }
 body.dark .tb-item.tb-moi { background: #2f3a28; }
 body.dark .tb-foot { background: #262c21; }
 @media (max-width: 720px) { .tb-panel { right: 8px; left: 8px; width: auto; } }
+
+/* Nhắc khi trình duyệt chặn hộp thoại xác nhận (utils.js) */
+.pw-chan-dialog {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; z-index: 300;
+  max-width: 560px; width: calc(100vw - 32px);
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  padding: 13px 16px; border-radius: var(--radius);
+  background: #fff8e1; border: 1px solid #ffcc80; box-shadow: var(--shadow-lg); color: #5d4037;
+}
+.pw-chan-dialog > div:first-child { flex: 1; min-width: 240px; }
+.pw-chan-nut { display: flex; gap: 8px; }
+body.dark .pw-chan-dialog { background: #3a3326; border-color: #6d5a2e; color: #f0e6d2; }

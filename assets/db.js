@@ -49,14 +49,20 @@ PW._normalize = function () {
   // (1 lần) Bổ sung các đơn vị tính thường gặp vào danh mục, để ô "Đơn vị" chọn
   // được từ danh sách thay vì gõ tay mỗi lần (gõ tay dễ ra "Kg"/"kg"/"KG" lẫn lộn).
   // Có Cuộn và Kg vì nhựa in 3D bán theo cuộn/cân. Tên đã có thì bỏ qua, không trùng.
-  if (!PW.data.meta.seededDonViChuan) {
-    ['Cái', 'Chiếc', 'Bộ', 'Set', 'Cặp', 'Đôi', 'Hộp', 'Gói', 'Túi', 'Thùng', 'Khay',
-     'Cuộn', 'Kg', 'Gam', 'Tấn', 'Mét', 'Cây', 'Tấm', 'Lít', 'Chai', 'Can', 'Ream']
-      .forEach(n => {
-        if (!PW.data.units.some(u => (u.name || '').trim().toLowerCase() === n.toLowerCase()))
-          PW.data.units.push({ id: PW.uid(), name: n });
-      });
-    PW.data.meta.seededDonViChuan = true;
+  // Dùng SỐ PHIÊN BẢN chứ không phải cờ true/false: sau này muốn bổ sung đơn vị
+  // chỉ cần thêm vào danh sách rồi tăng DON_VI_CHUAN_V, sổ cũ tự nhận phần thiếu.
+  // Cờ boolean thì lần sau không chạy lại được nữa.
+  const DON_VI_CHUAN = ['Cái', 'Chiếc', 'Bộ', 'Set', 'Cặp', 'Đôi', 'Hộp', 'Gói', 'Túi', 'Thùng', 'Khay',
+    'Cuộn', 'Kg', 'Gam', 'Tấn', 'Mét', 'Cây', 'Tấm', 'Lít', 'Chai', 'Can', 'Ream',
+    'Lần', 'Giờ', 'Ngày', 'Tháng', 'Năm', 'Suất', 'm2', 'm3'];
+  const DON_VI_CHUAN_V = 2;
+  if (Number(PW.data.meta.donViChuanV || 0) < DON_VI_CHUAN_V) {
+    DON_VI_CHUAN.forEach(n => {
+      if (!PW.data.units.some(u => (u.name || '').trim().toLowerCase() === n.toLowerCase()))
+        PW.data.units.push({ id: PW.uid(), name: n });
+    });
+    PW.data.meta.donViChuanV = DON_VI_CHUAN_V;
+    delete PW.data.meta.seededDonViChuan;   // cờ cũ, không dùng nữa
   }
 
   // (1 lần) Tách Nhóm hàng khỏi Tính chất: nếu nhóm trống hoặc chỉ lặp lại tên tính chất
