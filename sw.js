@@ -4,7 +4,7 @@
    rớt mạng thì lấy bản đã cache → app vẫn mở được khi offline.
    KHÔNG đụng tới /api/ (luôn đi thẳng mạng — giữ nguyên CSRF/đăng nhập/lưu).
    ============================================================ */
-const CACHE = 'dali-pwa-v20261010k';
+const CACHE = 'dali-pwa-v20261013a';
 
 self.addEventListener('install', () => {
   self.skipWaiting();   // kích hoạt SW mới ngay
@@ -52,5 +52,19 @@ self.addEventListener('fetch', (e) => {
       }
       throw err;
     }
+  })());
+});
+
+/* Bấm vào thông báo -> đưa về app. Không có xử lý này thì trên Android chạm
+   vào thông báo không mở được gì, người dùng tưởng app hỏng. */
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const dich = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const ds = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of ds) {                       // app đang mở sẵn -> đưa lên trước
+      if (c.url.indexOf(self.registration.scope) === 0 && 'focus' in c) return c.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(dich);
   })());
 });

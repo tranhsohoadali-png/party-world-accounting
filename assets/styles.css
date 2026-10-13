@@ -676,3 +676,38 @@ body.dark .ai-hbtn:hover { background: rgba(255,255,255,.08); }
 body.dark .kbd-help { background: #1f2817; }
 body.dark .kbd-help-head .x:hover { background: #29331f; }
 body.dark .kbd-row kbd { background: #2a3320; border-color: #3b452c; box-shadow: 0 1px 0 #161d10; color: #d6e0c6; }
+
+/* ---------- Chuông thông báo (modules20.js) ---------- */
+.notifbar { position: relative; display: flex; align-items: center; }
+.tb-chuong { position: relative; padding: 6px 9px; }
+.tb-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 9px; background: var(--red); color: #fff; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm);
+}
+.tb-panel {
+  position: fixed; top: 58px; right: 16px; width: 370px; max-width: calc(100vw - 24px);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); z-index: 120; overflow: hidden;
+}
+.tb-panel .tb-head { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.tb-panel .tb-head .spacer { flex: 1; }
+.tb-panel .tb-body { max-height: min(60vh, 420px); overflow-y: auto; }
+.tb-item { display: flex; gap: 11px; padding: 11px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.tb-item:last-child { border-bottom: none; }
+.tb-item:hover { background: #f6f9f0; }
+.tb-item.tb-moi { background: #f2f8e8; }
+.tb-item.tb-moi .tb-t::after {
+  content: 'mới'; margin-left: 7px; padding: 1px 6px; border-radius: 8px;
+  background: var(--teal); color: #fff; font-size: 10px; font-weight: 700; vertical-align: 1px;
+}
+.tb-ic { font-size: 18px; line-height: 1.25; flex: none; }
+.tb-txt { min-width: 0; }
+.tb-t { font-weight: 650; font-size: 13.5px; }
+.tb-n { font-size: 12.5px; color: var(--muted); margin-top: 2px; word-break: break-word; }
+.tb-d { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.tb-foot { padding: 10px 14px; border-top: 1px solid var(--line); background: #fafcf7; }
+body.dark .tb-item:hover { background: #2b3326; }
+body.dark .tb-item.tb-moi { background: #2f3a28; }
+body.dark .tb-foot { background: #262c21; }
+@media (max-width: 720px) { .tb-panel { right: 8px; left: 8px; width: auto; } }

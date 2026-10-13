@@ -106,6 +106,8 @@ App.render = function () {
   });
   App.renderUserbar();
   App.renderWorkspaceBar();
+  // Chuông thông báo vẽ lại theo mỗi lần render để số đếm luôn đúng sau khi ghi chứng từ
+  if (typeof M.tbVeChuong === 'function' && PW.data) { try { M.tbVeChuong(); } catch (e) {} }
 };
 
 App.findItem = function (id) {
@@ -562,6 +564,7 @@ App.boot = async function () {
   App.refresh();
   if (typeof AIC !== 'undefined') AIC.init();   // trợ lý AI nổi ở mọi màn hình
   App.registerPWA();                            // đăng ký service worker (cài app ra điện thoại)
+  if (typeof M.tbKhoiDong === 'function') { try { M.tbKhoiDong(); } catch (e) { console.error('Thông báo:', e); } }
 };
 
 /* ---------- PWA: đăng ký service worker (chỉ chạy trên http/https, bỏ qua file://) ---------- */
