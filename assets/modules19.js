@@ -133,12 +133,41 @@ M._capStockSync = function (ref, info) {
 };
 M._capPhieuNhap = ref => PW.data.purchases.find(x => x.capitalRef === ref);
 
+/* ---------- Máy móc góp vốn -> ghi luôn vào TÀI SẢN CỐ ĐỊNH ----------
+   Máy thành viên mang vào cũng hao mòn như máy mua bằng quỹ, và cũng phải có
+   mặt trong phần tài sản của bảng cân đối. Trước đây nó chỉ là một con số trên
+   bảng vốn: vốn góp ghi 800 triệu mà tài sản không thấy cái máy nào.
+   Nguyên giá lấy đúng giá trị hai bên đã thỏa thuận; không có tiền ra khỏi quỹ. */
+M._capAssetSync = function (ref, info) {
+  if (!PW.data.fixedAssets) PW.data.fixedAssets = [];
+  const i = PW.data.fixedAssets.findIndex(x => x.capitalRef === ref);
+  if (!info) { if (i >= 0) PW.data.fixedAssets.splice(i, 1); return null; }
+  const base = {
+    date: info.date, name: info.name, cost: Number(info.cost) || 0,
+    nguon: 'gopvon', accountId: '', capitalRef: ref,
+    note: 'Do ' + info.tenThanhVien + ' góp vốn (' + info.code + ')',
+  };
+  if (i >= 0) {
+    // Giữ nguyên số năm khấu hao kế toán đã chỉnh tay, chỉ cập nhật phần đến từ khoản góp
+    Object.assign(PW.data.fixedAssets[i], base);
+    return PW.data.fixedAssets[i].code;
+  }
+  const obj = Object.assign({
+    id: PW.uid(), code: PW.nextCode('TS'),
+    years: (M.TS_NAM_MAC_DINH || 5), salvage: 0, disposed: false,
+  }, base);
+  PW.data.fixedAssets.push(obj);
+  return obj.code;
+};
+M._capTaiSan = ref => (PW.data.fixedAssets || []).find(x => x.capitalRef === ref);
+
 // Xóa mọi chứng từ gắn với ref (kể cả các dòng con "ref:memberId" của phiếu chia lợi nhuận).
 M._capCashDrop = function (ref) {
   const hit = x => x.capitalRef === ref || (typeof x.capitalRef === 'string' && x.capitalRef.indexOf(ref + ':') === 0);
   PW.data.receipts = PW.data.receipts.filter(x => !hit(x));
   PW.data.payments = PW.data.payments.filter(x => !hit(x));
   PW.data.purchases = PW.data.purchases.filter(x => !hit(x));   // phiếu nhập kho của vật tư góp vốn
+  if (PW.data.fixedAssets) PW.data.fixedAssets = PW.data.fixedAssets.filter(x => x.capitalRef !== ref);
 };
 
 M._capBar = function (pct, color) {
@@ -360,6 +389,9 @@ M._capContribTab = function () {
       { label: 'Giá trị', num: true, render: c => '<b>' + U.money(c.amount) + '</b>' },
       { label: 'Chứng từ kèm', center: true, render: c => {
           if (c.accountId) return '<span class="text-green" title="Đã tạo phiếu thu vào quỹ">✔ phiếu thu</span>';
+          const ts = M._capTaiSan(c.id);
+          if (ts) return U.el('a', { href: '#', title: 'Đã ghi tăng tài sản cố định — bấm để mở',
+            onclick: e => { e.preventDefault(); M.fixedAssetForm(ts); } }, '🏭 ' + ts.code);
           const pn = M._capPhieuNhap(c.id);
           if (!pn) return '<span class="text-muted">—</span>';
           // Bấm vào mở thẳng phiếu nhập để soát lại số lượng / đơn giá
@@ -572,11 +604,17 @@ M.capitalContribForm = function (c) {
       const maPN = M._capStockSync(obj.id, {
         date: obj.date, code: obj.code, items: obj.items, tenThanhVien: M._capName(obj.memberId),
       });
+      // Máy móc -> ghi vào tài sản cố định để còn trích khấu hao
+      const maTS = M._capAssetSync(obj.id, obj.kind === 'maymoc' ? {
+        date: obj.date, name: obj.assetName, cost: obj.amount,
+        code: obj.code, tenThanhVien: M._capName(obj.memberId),
+      } : null);
 
       PW.logActivity(isNew ? 'create' : 'update', 'capital', obj.code,
         M._capName(obj.memberId) + ' · ' + M.capitalKind(obj.kind).t + ' · ' + U.money(obj.amount));
       PW.save(); C.closeModal(); App.refresh();
-      U.toast(maPN ? 'Đã lưu và nhập kho theo phiếu ' + maPN : 'Đã lưu khoản góp vốn');
+      U.toast(maPN ? 'Đã lưu và nhập kho theo phiếu ' + maPN
+        : (maTS ? 'Đã lưu và ghi tăng tài sản cố định ' + maTS : 'Đã lưu khoản góp vốn'));
     }, 'primary')],
   });
 };

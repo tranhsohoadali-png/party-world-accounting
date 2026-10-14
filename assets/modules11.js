@@ -227,7 +227,10 @@ M.analytics = function (root) {
   // ===== Cơ cấu chi phí + Doanh thu theo nhân viên =====
   const row3 = U.el('div', { class: 'grid c2' });
   const expAgg = {};
-  PW.data.payments.filter(p => !p.supplierId && !p.isCapital && p.date >= from && p.date <= to).forEach(p => { const k = (p.category || p.reason || 'Khác').trim() || 'Khác'; expAgg[k] = (expAgg[k] || 0) + Number(p.amount); });
+  PW.data.payments.filter(p => !p.supplierId && !p.isCapital && !p.isAsset && p.date >= from && p.date <= to).forEach(p => { const k = (p.category || p.reason || 'Khác').trim() || 'Khác'; expAgg[k] = (expAgg[k] || 0) + Number(p.amount); });
+  // Khấu hao không có phiếu chi -> cộng tay vào, kẻo tổng lệch với báo cáo lãi lỗ
+  const _kh = PW.depreciation ? PW.depreciation(from, to) : 0;
+  if (_kh > 0) expAgg['Khấu hao tài sản cố định'] = (expAgg['Khấu hao tài sản cố định'] || 0) + _kh;
   const cogsV = PW.cogs(from, to); if (cogsV > 0) expAgg['Giá vốn hàng bán'] = cogsV;
   const feesV = PW.sellingFees(from, to); if (feesV > 0) expAgg['Phí sàn & vận chuyển'] = feesV;
   const expSegs = Object.keys(expAgg).map((k, i) => ({ label: k, value: expAgg[k], color: M.PALETTE[i % M.PALETTE.length] })).sort((a, b) => b.value - a.value);

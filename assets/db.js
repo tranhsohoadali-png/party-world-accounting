@@ -31,7 +31,7 @@ PW._normalize = function () {
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
     'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog', 'cashCounts',
-    'capitalMembers', 'capitalContributions', 'capitalWithdrawals', 'profitShares'];
+    'capitalMembers', 'capitalContributions', 'capitalWithdrawals', 'profitShares', 'fixedAssets'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -712,13 +712,86 @@ PW.cogs = function (fromYmd, toYmd) {
 };
 
 // Chi phí (phiếu chi không gắn NCC = chi phí hoạt động)
-// Phiếu chi có isCapital (rút vốn / chia lợi nhuận) là giao dịch VỐN, không phải
-// chi phí hoạt động -> phải loại ra, nếu không lợi nhuận bị trừ oan hai lần.
+/* ---------- TÀI SẢN CỐ ĐỊNH & KHẤU HAO ----------
+   Mua máy 150 triệu không phải là chi phí của tháng đó: máy dùng nhiều năm nên
+   giá trị phải rải đều ra từng tháng (khấu hao đường thẳng). Ghi thẳng vào chi
+   phí thì tháng mua sổ báo lỗ nặng, các tháng sau lại lãi ảo — mà lợi nhuận
+   chính là cơ sở chia lãi cho các thành viên góp vốn, nên sai là sai tiền thật.
+   Khung thời gian trích theo Thông tư 45/2013/TT-BTC (máy móc thiết bị: 3–15 năm). */
+PW._thangSo = ymd => { const [y, m] = String(ymd || '').split('-').map(Number); return (y || 0) * 12 + ((m || 1) - 1); };
+/* Tháng hiện tại. Khấu hao KHÔNG được vượt quá tháng này: hỏi báo cáo "cả năm
+   2026" vào giữa tháng 10 mà đã trừ khấu hao tháng 11, 12 là tính chi phí chưa
+   phát sinh -> lợi nhuận bị kéo xuống oan, mà lợi nhuận là cơ sở chia lãi cho
+   các thành viên góp vốn. */
+PW._thangNay = () => { const d = new Date(); return d.getFullYear() * 12 + d.getMonth(); };
+
+// Mức khấu hao MỖI THÁNG của một tài sản
+PW.assetDepMonthly = function (a) {
+  const nam = Number(a.years || 0);
+  if (!(nam > 0)) return 0;
+  const con = Math.max(0, Number(a.cost || 0) - Number(a.salvage || 0));
+  return con / (nam * 12);
+};
+
+/* Khấu hao phát sinh trong khoảng [from, to]. Bỏ trống from = từ lúc mua
+   -> dùng luôn hàm này để tính khấu hao LŨY KẾ, khỏi hai công thức lệch nhau. */
+PW.depreciation = function (fromYmd, toYmd) {
+  const mFrom = fromYmd ? PW._thangSo(fromYmd) : -1e9;
+  const mTo = Math.min(toYmd ? PW._thangSo(toYmd) : 1e9, PW._thangNay());
+  return (PW.data.fixedAssets || []).reduce((s, a) => {
+    if (!a.date || !(Number(a.cost) > 0)) return s;
+    const dau = PW._thangSo(a.date);                       // trích từ tháng đưa vào sử dụng
+    let het = dau + Math.round(Number(a.years || 0) * 12) - 1;
+    if (a.disposed && a.disposedDate) het = Math.min(het, PW._thangSo(a.disposedDate));
+    const n = Math.max(0, Math.min(het, mTo) - Math.max(dau, mFrom) + 1);
+    return s + n * PW.assetDepMonthly(a);
+  }, 0);
+};
+PW.assetAccumDep = (a, toYmd) => {
+  const mTo = Math.min(toYmd ? PW._thangSo(toYmd) : 1e9, PW._thangNay());
+  const dau = PW._thangSo(a.date);
+  let het = dau + Math.round(Number(a.years || 0) * 12) - 1;
+  if (a.disposed && a.disposedDate) het = Math.min(het, PW._thangSo(a.disposedDate));
+  const n = Math.max(0, Math.min(het, mTo) - dau + 1);
+  return Math.round(n * PW.assetDepMonthly(a));
+};
+// Giá trị còn lại trên sổ
+PW.assetBookValue = (a, toYmd) => Math.max(Number(a.salvage || 0), Number(a.cost || 0) - PW.assetAccumDep(a, toYmd));
+// Tổng giá trị còn lại của các tài sản chưa thanh lý — dùng cho bảng cân đối
+PW.totalFixedAssets = function (toYmd) {
+  return (PW.data.fixedAssets || []).reduce((s, a) => {
+    if (a.disposed && a.disposedDate && (!toYmd || a.disposedDate <= toYmd)) return s;
+    return s + PW.assetBookValue(a, toYmd);
+  }, 0);
+};
+
+/* Lãi/lỗ khi thanh lý tài sản: bán được bao nhiêu so với giá trị CÒN LẠI trên sổ.
+   Bán 80 triệu một cái máy còn 87 triệu là LỖ 7 triệu — khoản lỗ đó phải vào lãi
+   lỗ, nếu không thì chia lãi cho thành viên góp vốn trên một con số lợi nhuận
+   cao hơn thực tế. Bán được giá thì ngược lại, là khoản lãi. */
+PW.assetDisposalPL = function (fromYmd, toYmd) {
+  return (PW.data.fixedAssets || []).reduce((s, a) => {
+    if (!a.disposed || !a.disposedDate) return s;
+    if (fromYmd && a.disposedDate < fromYmd) return s;
+    if (toYmd && a.disposedDate > toYmd) return s;
+    // Giá trị còn lại TẠI LÚC thanh lý (đã gồm phần khấu hao của chính tháng đó)
+    const conLai = Math.max(Number(a.salvage || 0), Number(a.cost || 0) - PW.assetAccumDep(a, a.disposedDate));
+    return s + (Number(a.disposedAmount || 0) - conLai);
+  }, 0);
+};
+
+// Phiếu chi có isCapital (rút vốn / chia lợi nhuận) là giao dịch VỐN, còn isAsset
+// (mua tài sản cố định) là bỏ tiền ĐỔI LẤY TÀI SẢN — cả hai đều KHÔNG phải chi phí
+// hoạt động, phải loại ra kẻo lợi nhuận bị trừ oan. Riêng tài sản thì phần giá trị
+// hao mòn được đưa vào chi phí dần qua khấu hao bên dưới.
 PW.expenses = function (fromYmd, toYmd) {
-  return PW.data.payments
-    .filter(p => !p.supplierId && !p.isCapital)
+  const tienMat = PW.data.payments
+    .filter(p => !p.supplierId && !p.isCapital && !p.isAsset)
     .filter(p => (!fromYmd || p.date >= fromYmd) && (!toYmd || p.date <= toYmd))
     .reduce((s, p) => s + Number(p.amount), 0);
+  // Trừ lãi thanh lý (hoặc cộng lỗ) vào chi phí: lãi/lỗ bán tài sản không phải
+  // doanh thu bán hàng nên gom vào đây cho lợi nhuận thuần ra đúng.
+  return tienMat + PW.depreciation(fromYmd, toYmd) - PW.assetDisposalPL(fromYmd, toYmd);
 };
 
 /* ---------- Xóa & nạp lại dữ liệu mẫu ---------- */
@@ -907,7 +980,7 @@ PW.seedEmpty = function (name) {
     purchaseOrders: [], purchaseReturns: [], purchaseDiscounts: [],
     employees: [], payrolls: [], productionOrders: [], stockAdjustments: [],
     productivityEntries: [], productAliases: [], taxInvoices: [], activityLog: [], cashCounts: [],
-    capitalMembers: [], capitalContributions: [], capitalWithdrawals: [], profitShares: [],
+    capitalMembers: [], capitalContributions: [], capitalWithdrawals: [], profitShares: [], fixedAssets: [],
     productGroups: [],
     units: [
       { id: uid(), name: 'Cái' }, { id: uid(), name: 'Gói' }, { id: uid(), name: 'Bộ' },

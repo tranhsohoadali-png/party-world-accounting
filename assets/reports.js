@@ -113,15 +113,23 @@ M.reportPL = function (host, from, to) {
   const gross = rev - cogs;
   const fees = PW.sellingFees(from, to);
   const exp = PW.expenses(from, to);
+  // Tách riêng khấu hao cho dễ đọc: đây là chi phí KHÔNG chi tiền, người xem hay
+  // thắc mắc "sao chi phí nhiều hơn tiền thực chi".
+  const khauHao = PW.depreciation ? PW.depreciation(from, to) : 0;
+  const tlPL = PW.assetDisposalPL ? PW.assetDisposalPL(from, to) : 0;   // + lãi / − lỗ
+  const chiTien = exp - khauHao + tlPL;
   const profit = gross - fees - exp;
   const rows = [
     ['Doanh thu bán hàng', rev, 'text-green'],
     ['Giá vốn hàng bán', -cogs, 'text-red'],
     ['Lợi nhuận gộp', gross, gross >= 0 ? 'text-green' : 'text-red'],
     ['Phí sàn & vận chuyển', -fees, 'text-red'],
-    ['Chi phí hoạt động (phiếu chi)', -exp, 'text-red'],
+    ['Chi phí hoạt động (phiếu chi)', -chiTien, 'text-red'],
+  ].concat(khauHao > 0 ? [['Khấu hao tài sản cố định', -khauHao, 'text-red']] : [])
+   .concat(tlPL !== 0 ? [[tlPL >= 0 ? 'Lãi thanh lý tài sản' : 'Lỗ thanh lý tài sản', tlPL, tlPL >= 0 ? 'text-green' : 'text-red']] : [])
+   .concat([
     ['LỢI NHUẬN THUẦN', profit, profit >= 0 ? 'text-green' : 'text-red'],
-  ];
+  ]);
   const t = U.el('table', { class: 'tbl' });
   rows.forEach(([k, v, cls], i) => {
     const bold = (i === rows.length - 1 || k === 'Lợi nhuận gộp');
@@ -647,7 +655,10 @@ M.reportCommission = function (host, from, to) {
 
 M.reportBalance = function (host) {
   const cash = PW.totalCash(), ar = PW.totalReceivable(), inv = PW.inventoryValue();
-  const assets = cash + ar + inv, ap = PW.totalPayable(), equity = assets - ap;
+  // Máy móc mua bằng quỹ / do góp vốn phải có mặt ở đây, nếu không thì tiền ra khỏi
+  // quỹ mà không có tài sản nào tăng lên -> sổ coi như dự án mất trắng số tiền đó.
+  const tscd = PW.totalFixedAssets ? PW.totalFixedAssets(U.today()) : 0;
+  const assets = cash + ar + inv + tscd, ap = PW.totalPayable(), equity = assets - ap;
   const t = U.el('table', { class: 'tbl' });
   const sec = txt => U.el('tr', { style: 'background:#f7f9fb' }, [U.el('td', { style: 'font-weight:700' }, txt), U.el('td')]);
   const row = (label, val, indent, bold, cls) => U.el('tr', null, [
@@ -658,6 +669,7 @@ M.reportBalance = function (host) {
   t.appendChild(row('Tiền (mặt + ngân hàng)', cash, true));
   t.appendChild(row('Phải thu khách hàng', ar, true));
   t.appendChild(row('Hàng tồn kho', inv, true));
+  t.appendChild(row('Tài sản cố định (sau khấu hao)', tscd, true));
   t.appendChild(row('TỔNG TÀI SẢN', assets, false, true));
   t.appendChild(sec('NGUỒN VỐN'));
   t.appendChild(row('Phải trả nhà cung cấp', ap, true, false, 'text-red'));

@@ -373,10 +373,14 @@ M.dashboard = function (root) {
 
   // Chi phí (donut theo loại)
   const expAgg = {};
-  PW.data.payments.filter(p => !p.supplierId && !p.isCapital && p.date >= period.from && p.date <= period.to).forEach(p => {
+  PW.data.payments.filter(p => !p.supplierId && !p.isCapital && !p.isAsset && p.date >= period.from && p.date <= period.to).forEach(p => {
     const k = (p.reason || '').trim() || 'Chi phí khác';
     expAgg[k] = (expAgg[k] || 0) + Number(p.amount);
   });
+  // Khấu hao là chi phí KHÔNG chi tiền nên không có phiếu chi nào -> phải cộng tay
+  // vào đây, nếu không tổng của biểu đồ lệch so với báo cáo lãi lỗ.
+  const khY = PW.depreciation ? PW.depreciation(period.from, period.to) : 0;
+  if (khY > 0) expAgg['Khấu hao tài sản cố định'] = (expAgg['Khấu hao tài sản cố định'] || 0) + khY;
   const cogsY = PW.cogs(period.from, period.to);
   if (cogsY > 0) expAgg['Giá vốn hàng bán'] = (expAgg['Giá vốn hàng bán'] || 0) + cogsY;
   const expSegs = Object.keys(expAgg).map((k, i) => ({ label: k, value: expAgg[k], color: M.PALETTE[i % M.PALETTE.length] }))

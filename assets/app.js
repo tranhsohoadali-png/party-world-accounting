@@ -40,6 +40,9 @@ App.menu = [
     { id: 'purchase-discounts', label: 'Giảm giá hàng mua', icon: 'tag', title: 'Giảm giá hàng mua', roles: ['admin', 'ketoan'] },
     { id: 'stockcount', label: 'Kiểm kê kho', icon: 'clipboard-check', title: 'Kiểm kê kho', roles: ['admin', 'ketoan'] },
   ]},
+  { group: 'TÀI SẢN', items: [
+    { id: 'fixed-assets', label: 'Tài sản cố định', icon: 'factory', title: 'Tài sản cố định & khấu hao', roles: ['admin', 'ketoan'] },
+  ]},
   { group: 'TIỀN', items: [
     { id: 'cash', label: 'Tiền (Thu / Chi)', icon: 'wallet', title: 'Quỹ tiền — Thu / Chi', roles: ['admin', 'ketoan'] },
   ]},
@@ -215,6 +218,7 @@ App.refresh = function () {
     case 'users': return M.usersAdmin(root);
     case 'payroll': return M.payrolls(root);
     case 'capital': return M.capital(root);
+    case 'fixed-assets': return M.fixedAssets(root);
     case 'production': return M.production(root);
   }
 };
