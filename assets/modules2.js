@@ -370,9 +370,18 @@ M.purchases = function (root) {
              đẻ ra một khoản chi tiền ảo trong sổ quỹ và biểu đồ dòng tiền. */
           if (pu.isCapital) return '<span class="tag green" title="Vật tư do thành viên góp vốn — không phát sinh thanh toán">Góp vốn</span>';
           const g = PW.purchaseGrand(pu), p = Number(pu.paid || 0);
-          return p <= 0 ? '<span class="tag red">Chưa trả</span>' : (p < g ? '<span class="tag orange">Trả 1 phần</span>' : '<span class="tag green">Đã trả đủ</span>');
+          if (p >= g) return '<span class="tag green">Đã trả đủ</span>';
+          // Bấm thẳng vào nhãn để trả tiền, khỏi phải mở phiếu ra sửa ô "Đã trả"
+          return U.el('button', {
+            class: 'btn sm', style: 'padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;'
+              + (p <= 0 ? 'background:#fdecea;color:#e74c3c;border-color:#f5c6c2' : 'background:#fff4e5;color:#e08600;border-color:#f3d9ae'),
+            title: 'Bấm để ghi nhận thanh toán',
+            onclick: e => { e.stopPropagation(); M.purchasePay(pu); },
+          }, p <= 0 ? 'Chưa trả' : 'Trả 1 phần');
         } },
       { label: '', render: pu => C.actions([
+          (!pu.isCapital && PW.purchaseRemaining(pu) > 0)
+            ? { label: '💵 Trả tiền', cls: 'primary', title: 'Ghi nhận thanh toán cho phiếu này', onClick: () => M.purchasePay(pu) } : null,
           { label: 'Sửa', onClick: () => M.purchaseForm(pu) },
           { label: 'Sao chép', title: 'Tạo phiếu nhập mới từ phiếu này', onClick: () => M.docCopy(pu, 'purchase') },
           { label: 'In', onClick: () => M.printDoc('purchase', pu) },
@@ -384,7 +393,7 @@ M.purchases = function (root) {
                 PW.save(); App.refresh(); U.toast('Đã xóa');
               }
             } },
-        ]) },
+        ].filter(Boolean)) },
     ], { empty: 'Chưa có phiếu nhập mua phù hợp bộ lọc', onRowClick: pu => showDetail(pu), selectFirst: true, footer: [
       { colspan: 4, html: 'TỔNG (' + rows.length + ' phiếu)' },
       { num: true, html: U.money(sHang) }, { num: true, html: U.money(sThue) }, { num: true, html: U.money(sTong) },
@@ -415,6 +424,76 @@ M._chanSuaChungTuVon = function (doc, loai) {
       : []),
   });
   return true;
+};
+
+/* Ghi nhận thanh toán cho một phiếu nhập mua, không phải mở form sửa rồi dò ô
+   "Đã trả" ở cuối. Cộng DỒN vào pu.paid chứ không ghi đè, để trả làm nhiều lần
+   vẫn đúng. Quỹ tiền giảm qua pu.paidAccountId như mọi phiếu nhập khác. */
+M.purchasePay = function (pu) {
+  if (M._chanSuaChungTuVon(pu, 'Phiếu nhập')) return;
+  const grand = PW.purchaseGrand(pu);
+  const daTra = Number(pu.paid || 0);
+  const conNo = Math.max(0, grand - daTra);
+  if (conNo <= 0) return U.toast('Phiếu này đã trả đủ', 'error');
+
+  const ncc = PW.supplier(pu.supplierId);
+  const tienI = C.money({ value: conNo, style: 'text-align:right;font-weight:700' });
+  const accI = C.select(PW.data.cashAccounts.map(a => ({ value: a.id, label: a.name + ' — còn ' + U.money(PW.accountBalance(a.id)) + ' đ' })),
+    pu.paidAccountId || (PW.data.cashAccounts[0] || {}).id || '');
+  const canhBao = U.el('div', { class: 'section-sub' });
+
+  function soat() {
+    const t = tienI.soTien();
+    const acc = PW.account(accI.value);
+    const du = acc ? PW.accountBalance(acc.id) : 0;
+    const sau = conNo - t;
+    let h = sau > 0
+      ? 'Trả ' + U.money(t) + ' đ → còn nợ <b class="text-red">' + U.money(sau) + ' đ</b>'
+      : 'Trả ' + U.money(t) + ' đ → <b class="text-green">hết nợ phiếu này</b>';
+    if (t > conNo) h += '<br><span class="text-red">⚠ Số tiền lớn hơn số còn nợ (' + U.money(conNo) + ' đ).</span>';
+    if (acc && t > du) h += '<br><span class="text-red">⚠ ' + U.esc(acc.name) + ' chỉ còn ' + U.money(du) + ' đ — quỹ sẽ bị âm.</span>';
+    canhBao.innerHTML = h;
+  }
+  tienI.addEventListener('input', soat);
+  accI.addEventListener('change', soat);
+  soat();
+
+  C.modal({
+    title: '💵 Thanh toán phiếu nhập ' + pu.code, wide: true,
+    body: U.el('div', null, [
+      U.el('div', { class: 'card', style: 'background:#f7f9fb;margin-bottom:12px' }, [
+        U.el('div', { class: 'fin-row' }, [U.el('span', { class: 'k' }, 'Nhà cung cấp'), U.el('span', { class: 'v' }, ncc ? ncc.name : '—')]),
+        U.el('div', { class: 'fin-row' }, [U.el('span', { class: 'k' }, 'Tổng thanh toán'), U.el('span', { class: 'v' }, U.money(grand) + ' đ')]),
+        U.el('div', { class: 'fin-row' }, [U.el('span', { class: 'k' }, 'Đã trả trước đó'), U.el('span', { class: 'v' }, U.money(daTra) + ' đ')]),
+        U.el('div', { class: 'fin-row' }, [U.el('span', { class: 'k' }, 'Còn nợ'), U.el('span', { class: 'v text-red' }, U.money(conNo) + ' đ')]),
+      ]),
+      U.el('div', { class: 'form-grid' }, [
+        C.field('Số tiền trả (đ)', U.el('div', null, [tienI, C.moneyWords(tienI)]), { full: true, required: true }),
+        C.field('Trả từ tài khoản', accI, { full: true, required: true }),
+      ]),
+      canhBao,
+    ]),
+    footer: [C.btn('Hủy', C.closeModal), C.btn('Xác nhận đã trả', () => {
+      const t = tienI.soTien();
+      if (!(t > 0)) return U.toast('Nhập số tiền trả', 'error');
+      if (!accI.value) return U.toast('Chọn tài khoản chi tiền', 'error');
+      if (t > conNo && !U.confirm('Số tiền trả (' + U.money(t) + ' đ) lớn hơn số còn nợ ('
+        + U.money(conNo) + ' đ).\n\nVẫn ghi nhận?')) return;
+      /* paidAccountId chỉ có MỘT ô: trả lần sau từ tài khoản khác thì toàn bộ số đã
+         trả sẽ bị tính vào tài khoản mới -> quỹ sai. Nói rõ thay vì lặng lẽ ghi đè. */
+      if (daTra > 0 && pu.paidAccountId && pu.paidAccountId !== accI.value
+        && !U.confirm('Lần trước phiếu này trả từ "' + ((PW.account(pu.paidAccountId) || {}).name || '?')
+          + '". Phiếu nhập chỉ ghi được MỘT tài khoản, nên toàn bộ ' + U.money(daTra + t)
+          + ' đ sẽ tính vào "' + ((PW.account(accI.value) || {}).name || '?') + '".\n\nVẫn tiếp tục?')) return;
+
+      pu.paid = daTra + t;
+      pu.paidAccountId = accI.value;
+      PW.logActivity('update', 'purchase', pu.code, 'trả ' + U.money(t) + ' đ · còn nợ ' + U.money(Math.max(0, grand - pu.paid)));
+      PW.save(); C.closeModal(); App.refresh();
+      U.toast(grand - pu.paid <= 0 ? 'Đã trả đủ phiếu ' + pu.code
+        : 'Đã ghi nhận ' + U.money(t) + ' đ — còn nợ ' + U.money(grand - pu.paid) + ' đ');
+    }, 'primary')],
+  });
 };
 
 M.purchaseForm = function (pu, presetSupplierId) {
