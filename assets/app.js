@@ -374,9 +374,11 @@ App.settings = function (root) {
     { k: 'Khách hàng', v: PW.data.customers.length },
     { k: 'Nhà cung cấp', v: PW.data.suppliers.length },
     { k: 'Hóa đơn bán', v: PW.data.salesInvoices.length },
-    { k: 'Phiếu nhập mua', v: PW.data.purchases.length },
-    { k: 'Phiếu thu', v: PW.data.receipts.length },
-    { k: 'Phiếu chi', v: PW.data.payments.length },
+    // Gồm cả chứng từ do phân hệ Góp vốn / Tài sản cố định tự lập -> nói rõ ra,
+    // kẻo người dùng đếm tay chứng từ mình nhập rồi thấy lệch.
+    { k: 'Phiếu nhập mua' + (PW.data.purchases.some(x => x.isCapital) ? ' (gồm cả vật tư góp vốn)' : ''), v: PW.data.purchases.length },
+    { k: 'Phiếu thu' + (PW.data.receipts.some(x => x.isCapital || x.isAsset) ? ' (gồm chứng từ vốn/tài sản)' : ''), v: PW.data.receipts.length },
+    { k: 'Phiếu chi' + (PW.data.payments.some(x => x.isCapital || x.isAsset) ? ' (gồm chứng từ vốn/tài sản)' : ''), v: PW.data.payments.length },
   ], [
     { label: 'Mục', render: r => r.k },
     { label: 'Số lượng', num: true, render: r => U.num(r.v) },

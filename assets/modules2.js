@@ -254,11 +254,15 @@ M.purchaseView = function (pu) {
       <div>Cộng tiền hàng: <b>${U.money(sub)} đ</b></div>
       ${vat ? `<div>Thuế GTGT: ${U.money(vat)} đ</div>` : ''}
       <div style="font-size:16px;font-weight:800;color:#5a8e2e">TỔNG THANH TOÁN: ${U.money(grand)} đ</div>
-      <div>Đã trả: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${grand - paid > 0 ? 'text-red' : 'text-green'}">${U.money(grand - paid)} đ</b></div>
+      ${pu.isCapital
+        ? `<div class="text-green"><b>Vật tư do thành viên góp vốn</b> — không phát sinh thanh toán</div>`
+        : `<div>Đã trả: ${U.money(paid)} đ &nbsp;·&nbsp; Còn nợ: <b class="${grand - paid > 0 ? 'text-red' : 'text-green'}">${U.money(grand - paid)} đ</b></div>`}
     </div>` });
   C.modal({
     title: 'Phiếu nhập ' + pu.code, wide: true, body,
-    footer: [C.btn('Đóng', C.closeModal), C.btn('Sửa', () => { C.closeModal(); M.purchaseForm(pu); }), C.btn('In', () => M.printDoc('purchase', pu), 'primary')],
+    footer: [C.btn('Đóng', C.closeModal)]
+      .concat(pu.isCapital ? [] : [C.btn('Sửa', () => { C.closeModal(); M.purchaseForm(pu); })])
+      .concat([C.btn('In', () => M.printDoc('purchase', pu), 'primary')]),
   });
 };
 
@@ -1284,19 +1288,24 @@ M.printDoc = function (mode, doc) {
     .tot{text-align:right;margin-top:12px;font-size:15px} .sign{display:flex;justify-content:space-around;margin-top:50px;text-align:center}
     </style></head><body>
     <div class="company">DALI — Tô điểm cuộc sống</div>
-    <h2>${isSale ? 'HÓA ĐƠN BÁN HÀNG' : 'PHIẾU NHẬP MUA HÀNG'}</h2>
+    <h2>${isSale ? 'HÓA ĐƠN BÁN HÀNG' : (doc.isCapital ? 'PHIẾU NHẬP KHO — VẬT TƯ GÓP VỐN' : 'PHIẾU NHẬP MUA HÀNG')}</h2>
     <div style="text-align:center">Số: ${U.esc(doc.code)} &nbsp;|&nbsp; Ngày ${U.date(doc.date)}</div>
     <div class="meta">
-      <div><b>${isSale ? 'Khách hàng' : 'Nhà cung cấp'}:</b> ${U.esc(partner ? partner.name : '')}</div>
-      <div><b>Điện thoại:</b> ${U.esc(partner ? partner.phone : '')} &nbsp; <b>Địa chỉ:</b> ${U.esc(partner ? partner.address : '')}</div>
+      ${doc.isCapital
+        ? `<div><b>Hình thức:</b> Vật tư do thành viên góp vốn</div><div>${U.esc(doc.note || '')}</div>`
+        : `<div><b>${isSale ? 'Khách hàng' : 'Nhà cung cấp'}:</b> ${U.esc(partner ? partner.name : '')}</div>
+      <div><b>Điện thoại:</b> ${U.esc(partner ? partner.phone : '')} &nbsp; <b>Địa chỉ:</b> ${U.esc(partner ? partner.address : '')}</div>`}
     </div>
     <table><thead><tr><th>STT</th><th>Tên hàng hóa</th><th>ĐVT</th><th>SL</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <div class="tot">Cộng tiền hàng: <b>${U.money(total + (doc.discount || 0))} đ</b></div>
     ${doc.discount ? `<div class="tot">Giảm giá: ${U.money(doc.discount)} đ</div>` : ''}
     <div class="tot">TỔNG THANH TOÁN: <b>${U.money(total)} đ</b></div>
-    <div class="tot">${isSale ? 'Đã thu' : 'Đã trả'}: ${U.money(doc.paid || 0)} đ &nbsp;|&nbsp; Còn nợ: <b>${U.money(total - (doc.paid || 0))} đ</b></div>
-    <div class="sign"><div>Người mua<br/><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán<br/><i>(Ký, ghi rõ họ tên)</i></div></div>
+    ${doc.isCapital
+      ? `<div class="tot"><i>Vật tư do thành viên góp vốn — không phát sinh thanh toán</i></div>
+    <div class="sign"><div>Thành viên góp vốn<br/><i>(Ký, ghi rõ họ tên)</i></div><div>Người nhận hàng<br/><i>(Ký, ghi rõ họ tên)</i></div></div>`
+      : `<div class="tot">${isSale ? 'Đã thu' : 'Đã trả'}: ${U.money(doc.paid || 0)} đ &nbsp;|&nbsp; Còn nợ: <b>${U.money(total - (doc.paid || 0))} đ</b></div>
+    <div class="sign"><div>Người mua<br/><i>(Ký, ghi rõ họ tên)</i></div><div>Người bán<br/><i>(Ký, ghi rõ họ tên)</i></div></div>`}
     <script>window.onload=function(){window.print();}</script>
     </body></html>`;
   const w = window.open('', '_blank');

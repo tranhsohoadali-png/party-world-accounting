@@ -232,7 +232,9 @@ M.reportRevenueByEmployee = function (host, from, to) {
 
 M.reportPurchaseByItem = function (host, from, to) {
   const agg = {};
-  PW.data.purchases.filter(pu => pu.date >= from && pu.date <= to).forEach(pu =>
+  // Vật tư GÓP VỐN không phải hàng mua: cộng vào đây thì "chi mua hàng trong kỳ"
+  // bị thổi lên bằng số hàng không mua, không trả tiền ai -> so sánh giữa các kỳ sai.
+  PW.data.purchases.filter(pu => pu.date >= from && pu.date <= to && !pu.isCapital).forEach(pu =>
     pu.items.forEach(it => {
       agg[it.productId] = agg[it.productId] || { qty: 0, val: 0 };
       agg[it.productId].qty += Number(it.qty);
@@ -336,7 +338,7 @@ M.reportInOut = function (host, from, to) {
     { label: 'Tên hàng', render: r => U.esc(r.p.name) },
     { label: 'ĐVT', center: true, render: r => U.esc(r.p.unit) },
     { label: 'Tồn đầu', num: true, render: r => U.num(r.dau) },
-    { label: 'Nhập', num: true, render: r => `<span class="text-green">${U.num(r.nhap)}</span>` },
+    { label: 'Nhập kho', num: true, render: r => `<span class="text-green">${U.num(r.nhap)}</span>` },
     { label: 'Khách trả', num: true, render: r => U.num(r.tralai) },
     { label: 'Xuất bán', num: true, render: r => `<span class="text-red">${U.num(r.xuat)}</span>` },
     { label: 'SX/Khác', num: true, render: r => r.khac ? U.num(r.khac) : '' },
@@ -390,7 +392,9 @@ M.reportCashbook = function (host, from, to) {
     { label: 'Ngày', render: r => U.date(r.date) },
     { label: 'Số CT', render: r => U.esc(r.code) },
     { label: 'Tài khoản', render: r => { const a = PW.account(r.accountId); return a ? U.esc(a.name) : ''; } },
-    { label: 'Diễn giải', render: r => U.esc(r.reason || '') },
+    { label: 'Diễn giải', render: r => U.esc(r.reason || '')
+        + (r.isCapital ? ' <span class="tag green">Góp vốn</span>' : '')
+        + (r.isAsset ? ' <span class="tag gray">Tài sản</span>' : '') },
     { label: 'Thu', num: true, render: r => r.kind === 'thu' ? `<span class="text-green">${U.money(r.amount)}</span>` : '' },
     { label: 'Chi', num: true, render: r => r.kind === 'chi' ? `<span class="text-red">${U.money(r.amount)}</span>` : '' },
   ], { empty: 'Không có giao dịch trong kỳ', footer: [
@@ -400,6 +404,17 @@ M.reportCashbook = function (host, from, to) {
   ] }));
   host.appendChild(U.el('div', { class: 'mt16', style: 'text-align:right;font-weight:700' },
     'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
+  /* Trộn dòng tiền vốn/đầu tư với dòng tiền hoạt động thì "chênh lệch thu - chi"
+     không đọc ra được hiệu quả kinh doanh: nhận 500 triệu góp vốn là dương to,
+     mua máy 150 triệu là âm to, cả hai đều không nói gì về việc buôn bán. */
+  const von = rows.filter(r => r.isCapital || r.isAsset);
+  if (von.length) {
+    const vThu = von.filter(r => r.kind === 'thu').reduce((s, r) => s + Number(r.amount || 0), 0);
+    const vChi = von.filter(r => r.kind === 'chi').reduce((s, r) => s + Number(r.amount || 0), 0);
+    host.appendChild(U.el('div', { class: 'text-muted', style: 'text-align:right;font-size:12.5px;margin-top:4px' },
+      'Trong đó giao dịch vốn / đầu tư: thu ' + U.money(vThu) + ' đ · chi ' + U.money(vChi)
+      + ' đ → chênh lệch từ hoạt động kinh doanh: ' + U.money((totThu - vThu) - (totChi - vChi)) + ' đ'));
+  }
 };
 
 /* Báo cáo Lưu chuyển tiền tệ — dòng tiền vào/ra phân nhóm + số dư đầu/cuối kỳ.
@@ -421,19 +436,33 @@ M.reportCashflow = function (host, from, to) {
   }
 
   // Phân nhóm dòng tiền trong kỳ
-  const IN = { ban: 0, thuNo: 0, khac: 0 };
-  const OUT = { mua: 0, traNo: 0, luong: 0, khac: 0 };
+  const IN = { ban: 0, thuNo: 0, khac: 0, gopVon: 0, thanhLy: 0 };
+  /* Tách riêng dòng tiền VỐN và ĐẦU TƯ. Trước đây phiếu chi rút vốn / chia lợi
+     nhuận / mua tài sản đều không gắn NCC nên dồn hết vào "Chi phí khác" — người
+     đọc tưởng 150 triệu mua máy là chi phí, và tổng "Chi phí khác" ở đây không bao
+     giờ khớp dòng "Chi phí hoạt động" của báo cáo lãi lỗ. */
+  const OUT = { mua: 0, traNo: 0, luong: 0, khac: 0, taiSan: 0, von: 0 };
   PW.data.salesInvoices.forEach(si => { const cp = PW.invoiceCashPaid(si); if (inR(si.date) && cp > 0) IN.ban += cp; });
-  PW.data.receipts.forEach(r => { if (inR(r.date)) { if (r.customerId) IN.thuNo += Number(r.amount || 0); else IN.khac += Number(r.amount || 0); } });
+  PW.data.receipts.forEach(r => {
+    if (!inR(r.date)) return;
+    const v = Number(r.amount || 0);
+    if (r.isCapital) IN.gopVon += v;
+    else if (r.isAsset) IN.thanhLy += v;
+    else if (r.customerId) IN.thuNo += v;
+    else IN.khac += v;
+  });
   PW.data.purchases.forEach(pu => { if (inR(pu.date) && Number(pu.paid) > 0) OUT.mua += Number(pu.paid); });
   PW.data.payments.forEach(p => {
     if (!inR(p.date)) return;
-    if (p.supplierId) OUT.traNo += Number(p.amount || 0);
-    else if (isSalary(p)) OUT.luong += Number(p.amount || 0);
-    else OUT.khac += Number(p.amount || 0);
+    const v = Number(p.amount || 0);
+    if (p.isAsset) OUT.taiSan += v;
+    else if (p.isCapital) OUT.von += v;
+    else if (p.supplierId) OUT.traNo += v;
+    else if (isSalary(p)) OUT.luong += v;
+    else OUT.khac += v;
   });
-  const totIn = IN.ban + IN.thuNo + IN.khac;
-  const totOut = OUT.mua + OUT.traNo + OUT.luong + OUT.khac;
+  const totIn = IN.ban + IN.thuNo + IN.khac + IN.gopVon + IN.thanhLy;
+  const totOut = OUT.mua + OUT.traNo + OUT.luong + OUT.khac + OUT.taiSan + OUT.von;
   const opening = PW.data.cashAccounts.reduce((s, a) => s + balanceBefore(a.id), 0);
   const net = totIn - totOut;
   const closing = opening + net;
@@ -449,13 +478,17 @@ M.reportCashflow = function (host, from, to) {
   t.appendChild(sec('I. DÒNG TIỀN VÀO'));
   t.appendChild(row('Thu từ bán hàng (trả ngay)', IN.ban, true, false, 'text-green'));
   t.appendChild(row('Thu nợ khách hàng', IN.thuNo, true, false, 'text-green'));
-  t.appendChild(row('Thu khác (góp vốn, hoàn, thu nhập...)', IN.khac, true, false, 'text-green'));
+  t.appendChild(row('Thu khác (hoàn tiền, thu nhập...)', IN.khac, true, false, 'text-green'));
+  if (IN.gopVon) t.appendChild(row('Nhận góp vốn (tài chính)', IN.gopVon, true, false, 'text-green'));
+  if (IN.thanhLy) t.appendChild(row('Thanh lý tài sản cố định (đầu tư)', IN.thanhLy, true, false, 'text-green'));
   t.appendChild(row('Cộng dòng tiền vào', totIn, false, true, 'text-green'));
   t.appendChild(sec('II. DÒNG TIỀN RA'));
   t.appendChild(row('Chi mua hàng (trả ngay)', OUT.mua, true, false, 'text-red'));
   t.appendChild(row('Trả nợ nhà cung cấp', OUT.traNo, true, false, 'text-red'));
   t.appendChild(row('Trả lương nhân viên', OUT.luong, true, false, 'text-red'));
   t.appendChild(row('Chi phí khác', OUT.khac, true, false, 'text-red'));
+  if (OUT.taiSan) t.appendChild(row('Mua tài sản cố định (đầu tư)', OUT.taiSan, true, false, 'text-red'));
+  if (OUT.von) t.appendChild(row('Rút vốn / chia lợi nhuận (tài chính)', OUT.von, true, false, 'text-red'));
   t.appendChild(row('Cộng dòng tiền ra', totOut, false, true, 'text-red'));
   t.appendChild(row('Lưu chuyển tiền thuần trong kỳ', net, false, true, net >= 0 ? 'text-green' : 'text-red'));
   t.appendChild(row('SỐ DƯ CUỐI KỲ', closing, false, true, closing >= 0 ? '' : 'text-red'));

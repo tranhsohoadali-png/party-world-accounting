@@ -1608,8 +1608,12 @@ M._cashLedgerTab = function () {
   const host = U.el('div');
   function distinctReasons() {
     const set = new Set();
-    PW.data.receipts.forEach(x => x.reason && set.add(x.reason));
-    PW.data.payments.forEach(x => x.reason && set.add(x.reason));
+    // Bỏ lý do của chứng từ góp vốn / tài sản ("Mua tài sản cố định — Máy in 3D",
+    // "Chia lợi nhuận quý..."): đó không phải khoản mục chi phí, để lẫn vào đây
+    // thì dễ bị chọn làm lý do cho một phiếu chi hoạt động mới.
+    const dung = x => x.reason && !x.isCapital && !x.isAsset;
+    PW.data.receipts.forEach(x => { if (dung(x)) set.add(x.reason); });
+    PW.data.payments.forEach(x => { if (dung(x)) set.add(x.reason); });
     return [{ value: '', label: 'Tất cả' }].concat([...set].sort().map(r => ({ value: r, label: r })));
   }
   const fb = M.filterBar({
