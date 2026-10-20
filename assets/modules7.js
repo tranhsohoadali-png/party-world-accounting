@@ -161,7 +161,10 @@ M.payrollDetail = function (id) {
   root.appendChild(card);
 
   function numInput(ln, key, width) {
-    const i = U.el('input', { type: 'number', value: ln[key] != null ? ln[key] : 0, style: 'width:' + (width || 70) + 'px;text-align:right' });
+    /* step mac dinh cua input[type=number] la 1 -> go 19,5 bi trinh duyet coi la
+       khong hop le va nut tang/giam nhay tung 1. Ngay cong co nua ngay nen phai
+       cho so le den 2 chu so. */
+    const i = U.el('input', { type: 'number', step: '0.01', min: 0, value: ln[key] != null ? ln[key] : 0, style: 'width:' + (width || 70) + 'px;text-align:right' });
     i.addEventListener('input', () => { ln[key] = Number(i.value) || 0; recalc(); });
     return i;
   }
@@ -257,8 +260,10 @@ M.payslip = function (p, ln) {
     // Hiện đúng cột mà dữ liệu thực sự có, không in cột rỗng.
     const dungNgay = tNgay > 0;
     const colLabel = dungNgay ? 'Ngày công' : 'Số giờ';
-    const colVal = d => dungNgay ? (Number(d.ngayCong) || '') : (r2(d.soGio) || '');
-    const colTong = dungNgay ? tNgay : r2(tGio);
+    // Lam tron 2 chu so rồi định dạng kiểu Việt (19,5 — dấu phẩy thập phân)
+    const n2 = x => { const v = r2(x); return v ? U.num(v) : ''; };
+    const colVal = d => dungNgay ? n2(d.ngayCong) : n2(d.soGio);
+    const colTong = dungNgay ? n2(tNgay) : n2(tGio);
     const lateUnit = ln.tkLateUnit || 'phút';
     const nCong = days.filter(d => Number(d.ngayCong) > 0 || Number(d.soGio) > 0).length;
     detail = `
@@ -277,9 +282,10 @@ M.payslip = function (p, ln) {
         <td class="r">${r2(d.tangCa) || ''}</td><td class="r">${Number(d.phat) ? U.money(d.phat) : ''}</td>
       </tr>`).join('')}</tbody>
       <tfoot><tr>
-        <td colspan="4">Tổng ngày công: <b>${nCong}</b></td>
-        <td class="r"><b>${colTong}</b></td><td class="r"><b>${tMuon || 0}</b></td>
-        <td class="r"><b>${r2(tTang) || 0}</b></td><td class="r"><b>${U.money(tPhat)}</b></td>
+        <td colspan="4">Tổng ngày công: <b>${dungNgay ? n2(tNgay) : nCong}</b>${
+          dungNgay && r2(tNgay) !== nCong ? ' <span style="font-weight:400">(có mặt ' + nCong + ' ngày)</span>' : ''}</td>
+        <td class="r"><b>${colTong || 0}</b></td><td class="r"><b>${tMuon || 0}</b></td>
+        <td class="r"><b>${n2(tTang) || 0}</b></td><td class="r"><b>${U.money(tPhat)}</b></td>
       </tr></tfoot>
     </table>`;
   }
@@ -338,8 +344,8 @@ M.payslip = function (p, ln) {
       <tr><td colspan="4" class="sec">A. THÔNG TIN CÔNG / MỨC LƯƠNG</td></tr>
       ${row(1, Number(e.dayWage || 0) > 0 ? 'Đơn giá ngày công' : 'Lương cơ bản', Number(e.dayWage || 0) > 0 ? e.dayWage : (e.salaryBase || 0), '')}
       ${row(2, 'Ngày công chuẩn trong tháng', '', String(p.standardDays))}
-      ${row(3, 'Tổng ngày công thực tế', '', String(ln.totalDays))}
-      ${row(4, 'Ngày công có phụ cấp', '', String(ln.allowDays))}
+      ${row(3, 'Tổng ngày công thực tế', '', U.num(Math.round((Number(ln.totalDays) || 0) * 100) / 100))}
+      ${row(4, 'Ngày công có phụ cấp', '', U.num(Math.round((Number(ln.allowDays) || 0) * 100) / 100))}
       ${row(5, 'Lương theo ngày', Math.round(r.dayWage), '')}
       ${row(6, 'Lương theo giờ', Math.round(r.hourWage), '')}
       <tr><td colspan="4" class="sec">B. CÁC KHOẢN THỰC NHẬN</td></tr>
@@ -715,7 +721,7 @@ M.payrollDayDetail = function (title, ct) {
     { label: 'Thứ', center: true, render: r => U.esc(String(r.thu || '')) },
     { label: 'Giờ vào', center: true, render: r => U.esc(String(r.vao || '')) },
     { label: 'Giờ ra', center: true, render: r => U.esc(String(r.ra || '')) },
-    { label: dungNgay ? 'Ngày công' : 'Số giờ', num: true, render: r => dungNgay ? (Number(r.ngayCong) || 0) : r2(r.soGio) },
+    { label: dungNgay ? 'Ngày công' : 'Số giờ', num: true, render: r => U.num(r2(dungNgay ? r.ngayCong : r.soGio)) },
     { label: 'Đi muộn (' + donVi + ')', num: true, render: r => r.diMuon || 0 },
     { label: 'Tăng ca (giờ)', num: true, render: r => r2(r.tangCa) },
     { label: 'Phạt', num: true, render: r => U.money(r.phat || 0) },
