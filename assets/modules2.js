@@ -338,7 +338,11 @@ M.purchases = function (root) {
       date: pu => pu.date,
       supplierId: pu => pu.supplierId,
       amount: pu => PW.purchaseGrand(pu),
-      paymentStatus: pu => (PW.purchaseGrand(pu) - (pu.paid || 0) > 0 ? 'no' : 'paid'),
+      /* Vật tư góp vốn không thuộc cả "Còn nợ" lẫn "Đã trả đủ" — không hề có việc
+         thanh toán nào. Trả về một giá trị thứ ba để nó rơi ra khỏi CẢ HAI bộ lọc,
+         chỉ hiện khi xem "Tất cả". */
+      paymentStatus: pu => (pu.isCapital ? 'gopvon'
+        : (PW.purchaseGrand(pu) - (pu.paid || 0) > 0 ? 'no' : 'paid')),
       text: pu => { const s = PW.supplier(pu.supplierId); return [pu.code, s ? s.name : ''].join(' '); },
     }).sort((a, b) => (b.date + b.code).localeCompare(a.date + a.code));
     host.innerHTML = '';
@@ -354,6 +358,13 @@ M.purchases = function (root) {
       { label: 'Tiền thuế GTGT', num: true, render: pu => U.money(PW.purchaseVat(pu)) },
       { label: 'Tổng thanh toán', num: true, render: pu => U.money(PW.purchaseGrand(pu)) },
       { label: 'TT thanh toán', center: true, render: pu => {
+          /* Phiếu nhập của VẬT TƯ GÓP VỐN không có chuyện trả tiền: thành viên mang
+             hàng vào góp, không ai nợ ai. Để nó hiện "Chưa trả" là bảo kế toán đi
+             đòi một khoản nợ không tồn tại.
+             CỐ Ý không đặt pu.paid = tổng tiền để "đánh dấu đã trả": bốn chỗ trong
+             reports.js và db.js cộng pu.paid mà KHÔNG kiểm paidAccountId, làm vậy sẽ
+             đẻ ra một khoản chi tiền ảo trong sổ quỹ và biểu đồ dòng tiền. */
+          if (pu.isCapital) return '<span class="tag green" title="Vật tư do thành viên góp vốn — không phát sinh thanh toán">Góp vốn</span>';
           const g = PW.purchaseGrand(pu), p = Number(pu.paid || 0);
           return p <= 0 ? '<span class="tag red">Chưa trả</span>' : (p < g ? '<span class="tag orange">Trả 1 phần</span>' : '<span class="tag green">Đã trả đủ</span>');
         } },
