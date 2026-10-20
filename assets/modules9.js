@@ -50,9 +50,26 @@ M.productionForm = function (po) {
   const codeI = C.input({ value: po.code });
   const dateI = C.input({ type: 'date', value: po.date });
   // Thành phẩm sản xuất = bộ chọn CÓ TÌM KIẾM, chỉ thành phẩm (hoặc món có định mức / đang chọn)
-  const onProd = () => { const p = PW.product(prodSel.ppValue()); if (p && p.bom && p.bom.length) fillFromBom(); else { drawMats(); calc(); } };
+  const onProd = () => { const p = PW.product(prodSel.ppValue()); if (p && p.bom && p.bom.length) fillFromBom(); else { drawMats(); calc(); } veNhacLoai(); };
+  /* Đầu ra của sản xuất. Trước đây chỉ cho chọn tính chất "Thành phẩm" nên ô này
+     gần như rỗng: nhiều xưởng khai sản phẩm mình tự làm là "Hàng hóa" (mã HH), và
+     hàng nhập từ sổ cũ thì KHÔNG CÓ trường kind nào cả.
+     Nên lọc theo chiều ngược lại — loại ra những thứ chắc chắn không phải đầu ra
+     (nguyên vật liệu, công cụ, dịch vụ, combo); chúng là ĐẦU VÀO, khai ở bảng dưới.
+     Món nào có định mức sẵn hoặc đang được chọn thì luôn giữ. */
+  const KHONG_PHAI_DAU_RA = ['nvl', 'ccdc', 'dichvu', 'combo'];
   const prodSel = M.productPicker(po.productId, onProd, { isSale: false,
-    filter: p => p.kind === 'thanhpham' || (p.bom && p.bom.length) || p.id === po.productId });
+    filter: p => KHONG_PHAI_DAU_RA.indexOf(p.kind) < 0
+      || (p.bom && p.bom.length) || p.id === po.productId });
+  // Nhắc phân loại khi chọn phải một mặt hàng đang để "Hàng hóa"
+  const nhacLoai = U.el('div', { class: 'text-muted', style: 'font-size:11.5px;margin-top:4px' });
+  function veNhacLoai() {
+    const p = PW.product(prodSel.ppValue());
+    nhacLoai.innerHTML = (p && p.kind === 'hanghoa')
+      ? '💡 Mặt hàng này đang để tính chất <b>Hàng hóa</b>. Nếu đây là hàng bạn tự in / tự sản xuất '
+        + 'thì nên đổi sang <b>Thành phẩm</b> trong Danh mục hàng hóa cho đúng bản chất.'
+      : '';
+  }
   const qtyI = C.input({ type: 'number', value: po.qty, min: 0, style: 'width:120px;text-align:right' });
   const laborI = C.input({ type: 'number', value: po.laborCost, min: 0, style: 'width:150px;text-align:right' });
   const otherI = C.input({ type: 'number', value: po.otherCost, min: 0, style: 'width:150px;text-align:right' });
@@ -117,7 +134,7 @@ M.productionForm = function (po) {
     U.el('div', { class: 'form-grid' }, [
       C.field('Số lệnh', codeI),
       C.field('Ngày', dateI, { required: true }),
-      C.field('Thành phẩm sản xuất', prodSel, { required: true, full: true }),
+      C.field('Thành phẩm sản xuất', U.el('div', null, [prodSel, nhacLoai]), { required: true, full: true }),
       C.field('Số lượng sản xuất', qtyI),
     ]),
     U.el('div', { class: 'toolbar', style: 'margin:14px 0 4px' }, [
@@ -138,7 +155,7 @@ M.productionForm = function (po) {
     U.el('label', { class: 'radio', style: 'margin-top:8px' }, [updateChk, ' Cập nhật giá vốn thành phẩm = giá thành đơn vị này']),
   ]);
 
-  drawMats(); calc();
+  drawMats(); calc(); veNhacLoai();
 
   C.modal({
     title: isNew ? 'Lập lệnh sản xuất' : 'Sửa lệnh sản xuất', wide: true, body,
