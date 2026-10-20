@@ -81,7 +81,10 @@ M.productionForm = function (po) {
   const matCostCell = U.el('span'), totalCell = U.el('span', { style: 'font-weight:700' }), unitCell = U.el('span', { style: 'font-weight:700;color:var(--teal-d)' });
 
   function matCost() {
-    return materials.reduce((s, m) => { const p = PW.product(m.productId); return s + (Number(m.qty) || 0) * Number(p ? p.cost : 0); }, 0);
+    return materials.reduce((s, m) => {
+      const dg = (m.cost != null && m.cost !== '') ? Number(m.cost) : Number(PW.unitCost(PW.product(m.productId)) || 0);
+      return s + (Number(m.qty) || 0) * (dg || 0);
+    }, 0);
   }
   function calc() {
     const mc = matCost();
@@ -91,31 +94,103 @@ M.productionForm = function (po) {
     totalCell.textContent = U.money(total) + ' đ';
     unitCell.textContent = U.money(q > 0 ? total / q : 0) + ' đ/đv';
   }
+  // Đơn giá mặc định của một dòng: giá vốn đang khai ở danh mục hàng hóa
+  const giaMacDinh = pid => { const p = PW.product(pid); return p ? Number(PW.unitCost(p) || 0) : 0; };
+
   function drawMats() {
     matBody.innerHTML = '';
     materials.forEach((m, idx) => {
       const sel = M.materialSelect(prodSel.ppValue() || '', m.productId);   // loại thành phẩm/combo/dịch vụ, gom theo kích thước
-      sel.addEventListener('change', () => { m.productId = sel.value; drawMats(); calc(); });
-      const q = U.el('input', { type: 'number', value: m.qty, min: 0, style: 'text-align:right' });
-      q.addEventListener('input', () => { m.qty = Number(q.value) || 0; lt(); });
+      sel.addEventListener('change', () => {
+        m.productId = sel.value;
+        m.cost = giaMacDinh(sel.value);     // đổi NVL -> lấy lại giá vốn của món mới
+        drawMats(); calc();
+      });
+      if (m.cost == null || m.cost === '') m.cost = giaMacDinh(m.productId);
+      const q = U.el('input', { type: 'number', value: m.qty, min: 0, step: '0.001', style: 'text-align:right' });
+      /* Đơn giá và Thành tiền đều NHẬP ĐƯỢC, giống bảng hàng trên hóa đơn:
+         mua cả lô thì biết tổng tiền trước, còn đơn giá là phép chia. Và nhiều
+         mặt hàng mới khai chưa có giá vốn (bằng 0) nên phải gõ tay được ở đây,
+         không thì giá thành sản xuất ra 0. */
+      const dg = C.money({ value: m.cost, style: 'text-align:right' });
+      const tt = C.money({ value: Math.round((Number(m.qty) || 0) * (Number(m.cost) || 0)), style: 'text-align:right' });
+      const ghi = U.el('div', { style: 'font-size:11px;color:#7b8794;margin-top:2px' });
+
+      function veTong() {                        // đơn giá là cái bất biến khi đổi SL
+        tt.datSoTien(Math.round((Number(m.qty) || 0) * (Number(m.cost) || 0)));
+        ghi.textContent = ''; calc();
+      }
+      q.addEventListener('input', () => { m.qty = Number(q.value) || 0; veTong(); });
+      dg.addEventListener('input', () => { m.cost = dg.soTien(); veTong(); });
+      tt.addEventListener('input', () => {
+        const sl = Number(m.qty) || 0;
+        if (sl <= 0) { ghi.textContent = 'Nhập SL tiêu hao trước thì mới chia ra đơn giá được'; return; }
+        m.cost = tt.soTien() / sl;               // giữ số lẻ để tổng tiền khớp đúng
+        dg.datSoTien(m.cost);
+        ghi.textContent = Math.round(m.cost) !== m.cost
+          ? 'Đơn giá lẻ ' + m.cost.toLocaleString('vi-VN', { maximumFractionDigits: 2 }) : '';
+        calc();
+      });
+
       const p = PW.product(m.productId);
-      const costTxt = U.el('span');
-      function lt() { costTxt.textContent = U.money((Number(m.qty) || 0) * Number(p ? p.cost : 0)); calc(); }
-      lt();
       matBody.appendChild(U.el('tr', null, [
         U.el('td', { class: 'center' }, String(idx + 1)),
-        U.el('td', null, [sel, p ? U.el('div', { style: 'font-size:11px;color:#7b8794' }, 'Tồn: ' + U.num(PW.stockOf(p.id)) + ' · vốn ' + U.money(p.cost)) : null].filter(Boolean)),
+        U.el('td', null, [sel, p ? U.el('div', { style: 'font-size:11px;color:#7b8794' },
+          'Tồn: ' + U.num(PW.stockOf(p.id)) + ' · vốn danh mục ' + U.money(PW.unitCost(p))) : null].filter(Boolean)),
         U.el('td', { style: 'width:90px' }, q),
-        U.el('td', { class: 'num', style: 'width:120px' }, costTxt),
-        U.el('td', { class: 'center', style: 'width:40px' }, U.el('button', { class: 'btn sm danger', onclick: () => { materials.splice(idx, 1); drawMats(); calc(); } }, '×')),
+        U.el('td', { style: 'width:120px' }, dg),
+        U.el('td', { style: 'width:130px' }, [tt, ghi]),
+        U.el('td', { class: 'center', style: 'width:40px' }, U.el('button', { class: 'btn sm danger', type: 'button', onclick: () => { materials.splice(idx, 1); drawMats(); calc(); } }, '×')),
       ]));
     });
   }
+  /* Khai định mức ngay trong lệnh sản xuất thay vì phải thoát ra màn Hàng hóa.
+     Định mức lưu cho MỘT đơn vị thành phẩm nên phải chia cho số lượng sản xuất. */
+  function luuDinhMuc() {
+    const p = PW.product(prodSel.ppValue());
+    if (!p) return U.toast('Chọn thành phẩm sản xuất trước', 'error');
+    const q = Number(qtyI.value) || 0;
+    if (!(q > 0)) return U.toast('Nhập số lượng sản xuất trước — định mức tính cho 1 đơn vị', 'error');
+    const ds = materials.filter(m => m.productId && Number(m.qty) > 0);
+    if (!ds.length) return U.toast('Khai nguyên vật liệu tiêu hao trước đã', 'error');
+
+    const bom = ds.map(m => ({ materialId: m.productId, qty: Number(m.qty) / q }));
+    const xem = bom.map(b => {
+      const mp = PW.product(b.materialId);
+      return '· ' + (mp ? mp.name : b.materialId) + ': ' + U.num(Math.round(b.qty * 1000) / 1000) + ' ' + (mp && mp.unit ? mp.unit : '');
+    }).join('\n');
+    /* Nhiều NVL mới khai chưa có giá vốn trong danh mục (bằng 0). Nếu chỉ lưu định
+       mức thì lần sau "Lấy theo định mức" ra đúng số lượng nhưng đơn giá vẫn 0,
+       phải gõ lại giá mỗi lần. Nên ghi luôn giá vừa gõ vào danh mục — CHỈ cho món
+       đang để 0, không bao giờ đè lên giá vốn đã có. */
+    const themGia = ds.filter(m => Number(m.cost) > 0 && Number(PW.unitCost(PW.product(m.productId)) || 0) === 0);
+    const xemGia = themGia.map(m => {
+      const mp = PW.product(m.productId);
+      return '· ' + (mp ? mp.name : '') + ': ' + U.money(m.cost) + ' đ/' + (mp && mp.unit ? mp.unit : 'đv');
+    }).join('\n');
+
+    const daCo = p.bom && p.bom.length;
+    if (!U.confirm((daCo ? 'GHI ĐÈ định mức hiện có của ' : 'Lưu định mức cho ') + p.name
+      + '?\n\nĐịnh mức cho 1 ' + (p.unit || 'đơn vị') + ':\n' + xem
+      + (themGia.length ? '\n\nĐồng thời ghi giá vốn cho NVL chưa có giá:\n' + xemGia : ''))) return;
+
+    themGia.forEach(m => { const mp = PW.product(m.productId); if (mp) mp.cost = Number(m.cost) || 0; });
+    p.bom = bom;
+    PW.logActivity('update', 'product', (p.code || '') + ' ' + p.name, 'khai định mức ' + bom.length + ' NVL');
+    PW.save();
+    U.toast('Đã lưu định mức cho ' + p.name
+      + (themGia.length ? ' và giá vốn cho ' + themGia.length + ' nguyên vật liệu' : '')
+      + ' — lần sau bấm "Lấy theo định mức"');
+  }
+
   function fillFromBom() {
     const p = PW.product(prodSel.ppValue());
     const q = Number(qtyI.value) || 0;
-    if (!p || !p.bom || !p.bom.length) { U.toast('Thành phẩm này chưa có định mức NVL. Vào Hàng hóa để khai báo.', 'error'); return; }
-    materials = p.bom.map(b => ({ productId: b.materialId, qty: Number(b.qty) * q }));
+    if (!p || !p.bom || !p.bom.length) {
+      U.toast('Chưa có định mức. Khai nguyên vật liệu bên dưới rồi bấm "Lưu thành định mức" — lần sau lấy lại một nút.', 'error');
+      return;
+    }
+    materials = p.bom.map(b => ({ productId: b.materialId, qty: Number(b.qty) * q, cost: giaMacDinh(b.materialId) }));
     drawMats(); calc();
   }
   // tự nạp theo định mức khi đổi số lượng (đổi thành phẩm -> onProd ở trên xử lý)
@@ -126,7 +201,7 @@ M.productionForm = function (po) {
   const matTable = U.el('table', { class: 'items-tbl' });
   matTable.appendChild(U.el('thead', null, U.el('tr', null, [
     U.el('th', { style: 'width:36px' }, '#'), U.el('th', null, 'Nguyên vật liệu'), U.el('th', null, 'SL tiêu hao'),
-    U.el('th', { class: 'num' }, 'Thành tiền'), U.el('th', null, ''),
+    U.el('th', null, 'Đơn giá'), U.el('th', { class: 'num' }, 'Thành tiền'), U.el('th', null, ''),
   ])));
   matTable.appendChild(matBody);
 
@@ -141,7 +216,8 @@ M.productionForm = function (po) {
       U.el('div', { style: 'font-weight:600' }, 'Nguyên vật liệu tiêu hao'),
       U.el('div', { class: 'spacer' }),
       C.btn('📋 Lấy theo định mức', fillFromBom, 'sm'),
-      C.btn('+ Thêm NVL', () => { materials.push({ productId: '', qty: 0 }); drawMats(); }, 'sm'),
+      C.btn('💾 Lưu thành định mức', luuDinhMuc, 'sm'),
+      C.btn('+ Thêm NVL', () => { materials.push({ productId: '', qty: 0, cost: 0 }); drawMats(); }, 'sm'),
     ]),
     U.el('div', { class: 'table-wrap' }, matTable),
     U.el('div', { style: 'margin-top:12px;display:flex;flex-direction:column;gap:6px;align-items:flex-end' }, [
@@ -166,7 +242,9 @@ M.productionForm = function (po) {
       const obj = {
         id: po.id || PW.uid(), code: codeI.value, date: dateI.value,
         productId: prodSel.ppValue(), qty: Number(qtyI.value),
-        materials: valid.map(m => ({ productId: m.productId, qty: Number(m.qty) })),
+        // Lưu kèm đơn giá của từng dòng để giá thành trong sổ đúng bằng số đang
+        // hiện trên form, kể cả khi sau này giá vốn ở danh mục thay đổi.
+        materials: valid.map(m => ({ productId: m.productId, qty: Number(m.qty), cost: Number(m.cost) || 0 })),
         laborCost: Number(laborI.value) || 0, otherCost: Number(otherI.value) || 0,
         note: noteI.value, updateCost: updateChk.checked,
       };

@@ -399,20 +399,22 @@ PW.bomMaterialCost = function (product) {
   }, 0);
 };
 // Giá thành 1 đơn vị của 1 lệnh sản xuất = (NVL + công + chi phí khác) / số lượng
-PW.productionUnitCost = function (po) {
-  const matCost = (po.materials || []).reduce((s, m) => {
-    const p = PW.product(m.productId);
-    return s + Number(m.qty) * PW.unitCost(p, po.date);
+/* Tiền nguyên vật liệu của một lệnh sản xuất.
+   Mỗi dòng có thể TỰ GHI ĐƠN GIÁ (m.cost) — dùng khi lô này mua giá khác với giá
+   vốn đang khai ở danh mục, hoặc khi mặt hàng chưa có giá vốn (bằng 0). Dòng nào
+   không ghi thì vẫn lấy giá vốn của sản phẩm như trước, nên lệnh cũ không đổi số. */
+PW.productionMaterialCost = function (po) {
+  return (po.materials || []).reduce((s, m) => {
+    const dg = (m.cost != null && m.cost !== '') ? Number(m.cost) : PW.unitCost(PW.product(m.productId), po.date);
+    return s + Number(m.qty || 0) * (Number(dg) || 0);
   }, 0);
-  const total = matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
-  return Number(po.qty) > 0 ? total / Number(po.qty) : 0;
 };
 PW.productionTotalCost = function (po) {
-  const matCost = (po.materials || []).reduce((s, m) => {
-    const p = PW.product(m.productId);
-    return s + Number(m.qty) * PW.unitCost(p, po.date);
-  }, 0);
-  return matCost + Number(po.laborCost || 0) + Number(po.otherCost || 0);
+  return PW.productionMaterialCost(po) + Number(po.laborCost || 0) + Number(po.otherCost || 0);
+};
+PW.productionUnitCost = function (po) {
+  const total = PW.productionTotalCost(po);
+  return Number(po.qty) > 0 ? total / Number(po.qty) : 0;
 };
 
 // Tổng giá trị 1 phiếu trả lại hàng bán (theo giá bán)
