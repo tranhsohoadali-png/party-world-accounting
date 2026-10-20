@@ -590,8 +590,8 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
   const nameI = C.input({ style: 'width:100%' });
   const groupI = C.input({ value: '', list: 'dl-qa-groups', placeholder: 'theo kích thước/chủ đề (không bắt buộc)', style: 'width:100%' });
   const unitI = M.unitSelect(kindObj.kind === 'dichvu' ? 'Lần' : 'Cái');
-  const priceI = C.input({ type: 'number', value: 0, style: 'width:100%' });
-  const costI = C.input({ type: 'number', value: 0, style: 'width:100%' });
+  const priceI = C.money({ value: 0, style: 'width:100%;text-align:right' });
+  const costI = C.money({ value: 0, style: 'width:100%;text-align:right' });
   const isNVL = kindObj.kind === 'nvl';
   const head = U.el('div', { class: 'qa-kind' }, [
     U.el('span', { class: 'kind-ic sm', html: U.icon(kindObj.icon) }),
@@ -644,7 +644,7 @@ M._quickAddProductForm = function (isSale, kindObj, onAdded) {
       if (!nm) return U.toast('Nhập tên hàng', 'error');
       const obj = { id: PW.uid(), code: codeP.value.trim() || PW.nextCode('HH'), name: nm,
         unit: unitI.value.trim() || 'Cái', group: groupI.value.trim(), kind: kindObj.kind,
-        price: Number(priceI.value) || 0, cost: Number(costI.value) || 0, openingStock: 0 };
+        price: priceI.soTien(), cost: costI.soTien(), openingStock: 0 };
       if (kindObj.kind === 'combo') obj.components = comboComps.filter(c => c.productId && Number(c.qty) > 0).map(c => ({ productId: c.productId, qty: Number(c.qty) }));
       PW.data.products.push(obj); PW.save(); C.closeMini(); onAdded(obj); U.toast('Đã thêm ' + kindObj.label.toLowerCase());
     }, 'primary')],

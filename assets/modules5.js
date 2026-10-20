@@ -144,7 +144,7 @@ M.purchaseOrderForm = function (o) {
   const dateI = C.input({ type: 'date', value: o.date });
   const supI = C.select(PW.data.suppliers.map(s => ({ value: s.id, label: s.name })), o.supplierId);
   const noteI = C.input({ value: o.note || '' });
-  const discI = C.input({ type: 'number', value: o.discount || 0, min: 0, style: 'width:140px;text-align:right' });
+  const discI = C.money({ value: o.discount || 0, style: 'width:140px;text-align:right' });
   const vatRateI = C.select([{ value: 0, label: '0%' }, { value: 5, label: '5%' }, { value: 8, label: '8%' }, { value: 10, label: '10%' }], o.vatRate || 0);
   const subCell = U.el('span');
   const vatLabel = U.el('span', { class: 'text-muted' });
@@ -158,7 +158,7 @@ M.purchaseOrderForm = function (o) {
   // giảm giá trừ trên tiền hàng, thuế tính trên phần SAU giảm giá.
   function calc() {
     const sub = editor.subtotal();
-    const base = sub - (Number(discI.value) || 0);
+    const base = sub - discI.soTien();
     const rate = Number(vatRateI.value) || 0;
     const vat = Math.round(base * rate / 100);
     subCell.textContent = U.money(sub) + ' đ';
@@ -171,6 +171,12 @@ M.purchaseOrderForm = function (o) {
   calc();
 
   const body = U.el('div', null, [
+    /* Nói rõ ngay từ đầu: đây mới là ĐƠN ĐẶT. Không có ô tiền nào ở đây nên
+       người dùng hay tưởng lưu xong là quỹ tự trừ, rồi nhìn quỹ không đổi lại
+       tưởng phần mềm sai. Tiền và kho chỉ động khi bấm "Nhập kho". */
+    U.el('p', { class: 'section-sub', html:
+      'ℹ️ Đây là <b>đơn đặt hàng</b> — chưa động vào quỹ tiền và kho. Khi hàng về, '
+      + 'bấm <b>➜ Nhập kho</b> ở danh sách để lập phiếu nhập; lúc đó mới khai số tiền đã trả.' }),
     U.el('div', { class: 'form-grid' }, [
       C.field('Số chứng từ', codeI),
       C.field('Ngày', dateI, { required: true }),
@@ -195,7 +201,7 @@ M.purchaseOrderForm = function (o) {
       if (!valid.length) return U.toast('Thêm ít nhất 1 dòng hàng', 'error');
       if (!supI.value) return U.toast('Chọn nhà cung cấp', 'error');
       const obj = { id: o.id || PW.uid(), code: codeI.value, date: dateI.value,
-        supplierId: supI.value, items: valid, discount: Number(discI.value) || 0,
+        supplierId: supI.value, items: valid, discount: discI.soTien(),
         vatRate: Number(vatRateI.value) || 0,
         status: o.status || 'open', note: noteI.value };
       if (isNew) PW.data.purchaseOrders.push(obj);
@@ -217,7 +223,13 @@ M.convertToPurchase = function (o) {
   PW.data.purchases.push(pu);
   o.status = 'converted';
   PW.logActivity('create', 'purchase', pu.code, 'Từ ' + o.code);
-  PW.save(); App.refresh(); U.toast('Đã tạo phiếu nhập ' + pu.code);
+  PW.save(); App.refresh();
+  U.toast('Đã tạo phiếu nhập ' + pu.code + ' — điền "Đã trả" nếu đã thanh toán');
+  /* Mở luôn phiếu nhập để điền thanh toán. Đơn mua hàng không có ô tiền nên
+     phiếu sinh ra mặc định CHƯA TRẢ (ghi công nợ nhà cung cấp) — trước đây
+     không có gì nhắc, người dùng tưởng nhập kho xong là quỹ tự trừ, nhìn quỹ
+     thấy không đổi lại tưởng phần mềm sai. */
+  setTimeout(() => M.purchaseForm(pu), 150);
 };
 
 /* =====================================================================
