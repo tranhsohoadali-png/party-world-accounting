@@ -577,6 +577,10 @@ PW.duePayables = function (fromYmd, toYmd) {
   const inR = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
   const out = [];
   PW.data.purchases.forEach(pu => {
+    // Vật tư GÓP VỐN có paid = 0 nên purchaseRemaining ra nguyên giá trị lô hàng,
+    // nhưng không ai nợ ai -> không được tính vào "phải trả đến hạn", kẻo dự báo
+    // dòng tiền trừ khống và bật cảnh báo số dư âm sai.
+    if (pu.isCapital) return;
     const rem = PW.purchaseRemaining(pu);
     if (rem <= 0) return;
     const due = pu.dueDate || pu.date;
@@ -600,6 +604,7 @@ PW.customerDebt = function (customerId) {
   // đã được phản ánh qua si.paid ở trên (dòng debt += grand - paid) -> trừ thêm sẽ nhân đôi.
   // Phiếu thu CŨ (data cũ) không có thuộc tính invoiceId (undefined) nên vẫn được trừ như trước => an toàn ngược.
   PW.data.receipts.forEach(r => {
+    if (r.isCapital || r.isAsset) return;   // cùng lý do như bên phải trả
     if (r.customerId === customerId && !r.invoiceId) debt -= Number(r.amount);
   });
   // Trả lại hàng bán -> giảm công nợ phải thu (gồm thuế theo HĐ gốc)
@@ -624,6 +629,10 @@ PW.supplierDebt = function (supplierId) {
     }
   });
   PW.data.payments.forEach(p => {
+    // Lớp chắn: phiếu chi rút vốn / chia lợi nhuận / mua tài sản vốn dĩ không gắn
+    // nhà cung cấp. Nếu dữ liệu cũ hoặc ai đó lỡ gán NCC vào thì nó sẽ XÓA KHỐNG
+    // công nợ phải trả -> chặn tại đây cho chắc.
+    if (p.isCapital || p.isAsset) return;
     if (p.supplierId === supplierId) debt -= Number(p.amount);
   });
   // Trả lại hàng mua -> giảm công nợ phải trả (gồm thuế theo phiếu nhập gốc)
@@ -662,6 +671,7 @@ PW.agingPayable = function (todayYmd) {
   const today = todayYmd || PW.todayStr();
   let overdue = 0;
   PW.data.purchases.forEach(pu => {
+    if (pu.isCapital) return;   // vật tư góp vốn không phải công nợ
     const rem = PW.purchaseRemaining(pu);
     if (rem > 0 && pu.dueDate && pu.dueDate < today) overdue += rem;
   });

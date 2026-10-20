@@ -373,6 +373,7 @@ M.purchases = function (root) {
           { label: 'Sao chép', title: 'Tạo phiếu nhập mới từ phiếu này', onClick: () => M.docCopy(pu, 'purchase') },
           { label: 'In', onClick: () => M.printDoc('purchase', pu) },
           { label: 'Xóa', cls: 'danger', onClick: () => {
+              if (M._chanSuaChungTuVon(pu, 'Phiếu nhập')) return;
               if (U.confirm('Xóa phiếu nhập ' + pu.code + '?')) {
                 PW.logActivity('delete', 'purchase', pu.code, U.money(PW.purchaseGrand(pu)) + ' đ');
                 PW.data.purchases = PW.data.purchases.filter(x => x.id !== pu.id);
@@ -390,7 +391,30 @@ M.purchases = function (root) {
   draw();
 };
 
+/* Chứng từ sinh từ phân hệ Góp vốn phải sửa Ở NGUỒN. Sửa trực tiếp tại đây sẽ
+   lệch hẳn với khoản góp vốn (bảng vốn một đằng, phiếu nhập một nẻo) và lần
+   đồng bộ sau sẽ ghi đè ngược lại mà không báo gì. */
+M._chanSuaChungTuVon = function (doc, loai) {
+  if (!doc || !doc.isCapital) return false;
+  const gv = (PW.data.capitalContributions || []).find(x => x.id === doc.capitalRef);
+  C.modal({
+    title: '🤝 Chứng từ của khoản góp vốn',
+    body: U.el('div', null, [
+      U.el('p', null, loai + ' ' + (doc.code || '') + ' được phần mềm tự lập từ một khoản góp vốn, '
+        + 'không sửa/xóa trực tiếp ở đây được.'),
+      U.el('p', { class: 'section-sub' }, gv
+        ? 'Hãy mở khoản góp vốn ' + gv.code + ' (' + M._capName(gv.memberId) + ') để sửa — chứng từ này tự cập nhật theo.'
+        : 'Khoản góp vốn gốc không còn. Bạn có thể xóa chứng từ này ở phân hệ Góp vốn.'),
+    ]),
+    footer: [C.btn('Đóng', C.closeModal)].concat(gv
+      ? [C.btn('Mở khoản góp vốn', () => { C.closeModal(); App.go('capital'); setTimeout(() => M.capitalContribForm(gv), 250); }, 'primary')]
+      : []),
+  });
+  return true;
+};
+
 M.purchaseForm = function (pu, presetSupplierId) {
+  if (M._chanSuaChungTuVon(pu, 'Phiếu nhập')) return;
   const isNew = !pu || !pu.id;   // không có id => phiếu mới (kể cả khi sao chép có sẵn dữ liệu)
   const isCopy = !!(pu && !pu.id);   // sao chép: bỏ qua khôi phục/tự lưu nháp
   pu = pu ? JSON.parse(JSON.stringify(pu)) : {
@@ -1206,7 +1230,15 @@ M.docForm = function (cfg) {
       };
       // Giữ lại trạng thái đối soát sàn + tham chiếu nguồn khi sửa lại hóa đơn
       ['reconciled', 'settledAmount', 'reconciledDate', 'sourceType', 'sourceId', 'sourceCode',
-       'packed', 'packedAt', 'orderStatus', 'trackingCode'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
+       'packed', 'packedAt', 'orderStatus', 'trackingCode',
+       /* Chứng từ sinh từ phân hệ Góp vốn. Mất hai khóa này thì: phiếu thành phiếu
+          mua thường (hiện "Chưa trả", lọt bộ lọc Còn nợ), và khoản góp vốn mất liên
+          kết -> lần sửa sau sinh THÊM một phiếu nhập nữa, tồn kho nhân đôi. */
+       'isCapital', 'capitalRef'].forEach(k => { if (doc[k] !== undefined) obj[k] = doc[k]; });
+      /* Ô Nhà cung cấp là <select> nên khi supplierId = null trình duyệt tự chọn
+         NCC ĐẦU TIÊN. Lưu lại là đẻ ra một khoản công nợ phải trả ảo bằng cả lô
+         vật tư góp vốn. Ép giữ nguyên "không nhà cung cấp" và "không thanh toán". */
+      if (obj.isCapital) { obj[partnerKey] = null; obj.paid = 0; obj.paidAccountId = null; }
       // Cảnh báo vượt hạn mức công nợ của khách hàng (chỉ HĐ bán lập mới)
       if (isSale && isNew) {
         const cust = PW.customer(partnerI.value);

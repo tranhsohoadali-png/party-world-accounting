@@ -1655,15 +1655,26 @@ M._cashLedgerTab = function () {
     host.appendChild(C.table(rows, [
       { label: 'Ngày', render: x => U.date(x.date) },
       { label: 'Số phiếu', render: x => U.esc(x.code) },
-      { label: 'Loại', center: true, render: x => x.kind === 'thu' ? '<span class="tag green">Phiếu thu</span>' : '<span class="tag orange">Phiếu chi</span>' },
+      { label: 'Loại', center: true, render: x => {
+          const co = x.kind === 'thu' ? '<span class="tag green">Phiếu thu</span>' : '<span class="tag orange">Phiếu chi</span>';
+          // Gắn nhãn cho dễ đọc: đây là dòng tiền VỐN / ĐẦU TƯ, không phải thu chi
+          // hoạt động, nên không nên gộp vào đầu khi nhìn "chênh lệch thu - chi".
+          if (x.isCapital) return co + ' <span class="tag green" title="Giao dịch vốn, không phải thu chi hoạt động">Góp vốn</span>';
+          if (x.isAsset) return co + ' <span class="tag gray" title="Mua / thanh lý tài sản cố định">Tài sản</span>';
+          return co;
+        } },
       { label: 'Tài khoản', render: x => { const a = PW.account(x.accountId); return a ? U.esc(a.name) : ''; } },
       { label: 'Đối tượng', render: x => { if (x.customerId) { const c = PW.customer(x.customerId); return c ? U.esc(c.name) : ''; } if (x.supplierId) { const s = PW.supplier(x.supplierId); return s ? U.esc(s.name) : ''; } return ''; } },
       { label: 'Diễn giải', render: x => U.esc(x.reason || '') },
       { label: 'Thu', num: true, render: x => x.kind === 'thu' ? `<span class="text-green">${U.money(x.amount)}</span>` : '' },
       { label: 'Chi', num: true, render: x => x.kind === 'chi' ? `<span class="text-red">${U.money(x.amount)}</span>` : '' },
       { label: '', render: x => C.actions([
-          { label: 'Sửa', onClick: () => x.kind === 'thu' ? M.receiptForm(x) : M.paymentForm(x) },
+          { label: 'Sửa', onClick: () => {
+              if (M._chanSuaChungTuAnTheo(x)) return;
+              return x.kind === 'thu' ? M.receiptForm(x) : M.paymentForm(x);
+            } },
           { label: 'Xóa', cls: 'danger', onClick: () => {
+              if (M._chanSuaChungTuAnTheo(x)) return;
               if (U.confirm('Xóa phiếu ' + x.code + '?')) {
                 PW.logActivity('delete', x.kind === 'thu' ? 'receipt' : 'payment', x.code, U.money(x.amount) + ' đ');
                 if (x.kind === 'thu') {
@@ -1681,9 +1692,41 @@ M._cashLedgerTab = function () {
     ] }));
     host.appendChild(U.el('div', { class: 'mt8', style: 'text-align:right;font-weight:700' },
       'Chênh lệch thu - chi: ' + U.money(totThu - totChi) + ' đ'));
+    // Nói rõ trong đó bao nhiêu là tiền vốn/đầu tư, kẻo đọc "chênh lệch" tưởng đó
+    // là hiệu quả kinh doanh trong khi phần lớn là góp vốn / mua máy.
+    const von = rows.filter(x => x.isCapital || x.isAsset);
+    if (von.length) {
+      const vThu = von.filter(x => x.kind === 'thu').reduce((s, x) => s + Number(x.amount || 0), 0);
+      const vChi = von.filter(x => x.kind === 'chi').reduce((s, x) => s + Number(x.amount || 0), 0);
+      host.appendChild(U.el('div', { class: 'text-muted', style: 'text-align:right;font-size:12.5px;margin-top:3px' },
+        'Trong đó giao dịch vốn / đầu tư: thu ' + U.money(vThu) + ' đ · chi ' + U.money(vChi)
+        + ' đ → chênh lệch từ hoạt động kinh doanh: ' + U.money((totThu - vThu) - (totChi - vChi)) + ' đ'));
+    }
   }
   draw();
   return wrap;
+};
+
+/* Phiếu thu/chi do phân hệ Góp vốn hoặc Tài sản cố định tự lập. Sửa/xóa thẳng ở
+   Sổ thu chi sẽ lệch với bản ghi gốc: xóa phiếu chi mua máy thì máy vẫn nằm trong
+   bảng tài sản và vẫn trích khấu hao, nhưng quỹ tiền tăng lại — tiền tự dưng xuất
+   hiện kèm một tài sản không ai trả tiền. */
+M._chanSuaChungTuAnTheo = function (x) {
+  if (!x || (!x.isCapital && !x.isAsset)) return false;
+  const laVon = !!x.isCapital;
+  C.modal({
+    title: laVon ? '🤝 Chứng từ của phân hệ Góp vốn' : '🏭 Chứng từ của Tài sản cố định',
+    body: U.el('div', null, [
+      U.el('p', null, 'Phiếu ' + (x.code || '') + ' được phần mềm tự lập, không sửa/xóa trực tiếp ở đây được.'),
+      U.el('p', { class: 'section-sub' }, laVon
+        ? 'Sửa ở phân hệ Góp vốn (khoản góp / phiếu rút vốn / phiếu chia lợi nhuận) — phiếu này tự cập nhật theo.'
+        : 'Sửa ở phân hệ Tài sản cố định — phiếu chi này tự cập nhật theo nguyên giá.'),
+    ]),
+    footer: [C.btn('Đóng', C.closeModal),
+      C.btn(laVon ? 'Mở phân hệ Góp vốn' : 'Mở Tài sản cố định',
+        () => { C.closeModal(); App.go(laVon ? 'capital' : 'fixed-assets'); }, 'primary')],
+  });
+  return true;
 };
 
 /* ---------- Tab 2: Kiểm kê quỹ ---------- */
@@ -1940,7 +1983,7 @@ M.paymentForm = function (p, presetSupplierId) {
       }
       const obj = { id: p.id || PW.uid(), code: f.code.value, date: f.date.value,
         accountId: f.account.value, supplierId: f.supplier.value || null,
-        amount: amt, reason: f.reason.value, note: '' };
+        amount: amt, reason: f.reason.value, note: p.note || '' };   // giữ note (đang chứa mã tài sản)
       if (isNew) PW.data.payments.push(obj); else Object.assign(p, obj);
       PW.logActivity(isNew ? 'create' : 'update', 'payment', obj.code, U.money(obj.amount) + ' đ — ' + (obj.reason || ''));
       PW.save(); C.closeModal(); App.refresh(); U.toast('Đã lưu phiếu chi');

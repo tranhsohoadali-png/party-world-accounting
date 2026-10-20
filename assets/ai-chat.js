@@ -143,9 +143,14 @@ AIC.run = {
     switch (inp.loai) {
       case 'hoadon': return pick(PW.data.salesInvoices, si => ({ so: si.code, ngay: si.date, khach: AIC._cusName(si.customerId), tong: PW.invoiceGrand(si), da_thu: si.paid || 0 }));
       case 'donhang': return pick(PW.data.salesOrders, o => ({ so: o.code, ngay: o.date, khach: AIC._cusName(o.customerId), tong: (o.items || []).reduce((s, i) => s + i.qty * i.price, 0), trang_thai: o.status }));
-      case 'phieuthu': return pick(PW.data.receipts, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khach: x.customerId ? AIC._cusName(x.customerId) : '' }));
-      case 'phieuchi': return pick(PW.data.payments, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khoan_muc: x.category || '', ncc: x.supplierId ? AIC._supName(x.supplierId) : '' }));
-      case 'nhapmua': return pick(PW.data.purchases, pu => ({ so: pu.code, ngay: pu.date, ncc: AIC._supName(pu.supplierId), tong: (pu.items || []).reduce((s, i) => s + i.qty * i.price, 0) }));
+      case 'phieuthu': return pick(PW.data.receipts, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khach: x.customerId ? AIC._cusName(x.customerId) : '', loai_giao_dich: x.isCapital ? 'gop_von' : (x.isAsset ? 'tai_san_co_dinh' : 'hoat_dong') }));
+      case 'phieuchi': return pick(PW.data.payments, x => ({ so: x.code, ngay: x.date, so_tien: x.amount, ly_do: x.reason || '', khoan_muc: x.category || '', ncc: x.supplierId ? AIC._supName(x.supplierId) : '', loai_giao_dich: x.isCapital ? 'gop_von' : (x.isAsset ? 'tai_san_co_dinh' : 'hoat_dong') }));
+      // Phiếu nhập mua lưu đơn giá ở it.cost (hóa đơn bán mới dùng it.price) -> trước
+      // đây i.price là undefined nên "tong" ra NaN cho MỌI phiếu nhập.
+      case 'nhapmua': return pick(PW.data.purchases, pu => ({ so: pu.code, ngay: pu.date,
+        ncc: pu.supplierId ? AIC._supName(pu.supplierId) : (pu.isCapital ? '(vật tư góp vốn)' : ''),
+        loai_giao_dich: pu.isCapital ? 'gop_von' : 'hoat_dong',
+        tong: (pu.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.cost != null ? i.cost : i.price || 0), 0) }));
       case 'baogia': return pick(PW.data.quotations, qo => ({ so: qo.code, ngay: qo.date, khach: AIC._cusName(qo.customerId), trang_thai: qo.status }));
     }
     return { loi: 'Loại chứng từ không hợp lệ' };
@@ -197,13 +202,17 @@ AIC.run = {
     for (const [loai, list, fk, nameFn] of pools) {
       const d = list.find(x => (x.code || '').toUpperCase() === code);
       if (!d) continue;
-      const out = { loai: loai, so: d.code, ngay: d.date, doi_tac: nameFn(d[fk]), ghi_chu: d.note || d.reason || '' };
+      const out = { loai: loai, so: d.code, ngay: d.date, doi_tac: nameFn(d[fk]), ghi_chu: d.note || d.reason || '',
+        // Không có trường này thì trợ lý AI dễ coi phiếu thu 500tr góp vốn là doanh
+        // thu, hoặc phiếu chi 150tr mua máy là chi phí trong kỳ.
+        loai_giao_dich: d.isCapital ? 'gop_von' : (d.isAsset ? 'tai_san_co_dinh' : 'hoat_dong') };
       if (d.items) {
         out.dong_hang = d.items.map(it => {
           const p = PW.data.products.find(x => x.id === it.productId);
-          return { hang: p ? p.code + ' - ' + p.name : it.productId, sl: it.qty, don_gia: it.price, thanh_tien: it.qty * it.price };
+          const dg = Number(it.cost != null ? it.cost : it.price || 0);   // nhập mua: cost, bán: price
+          return { hang: p ? p.code + ' - ' + p.name : it.productId, sl: it.qty, don_gia: dg, thanh_tien: Number(it.qty || 0) * dg };
         });
-        out.tong = d.items.reduce((s, i) => s + i.qty * i.price, 0);
+        out.tong = d.items.reduce((s, i) => s + Number(i.qty || 0) * Number(i.cost != null ? i.cost : i.price || 0), 0);
         if (d.paid != null) out.da_thu_tra = d.paid;
       }
       if (d.amount != null) out.so_tien = d.amount;
