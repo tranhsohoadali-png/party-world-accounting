@@ -1614,6 +1614,9 @@ M._cashLedgerTab = function () {
     const dung = x => x.reason && !x.isCapital && !x.isAsset;
     PW.data.receipts.forEach(x => { if (dung(x)) set.add(x.reason); });
     PW.data.payments.forEach(x => { if (dung(x)) set.add(x.reason); });
+    // Hai lý do của dòng lấy từ chứng từ gốc — không có trong hai bảng trên
+    if (PW.data.purchases.some(pu => Number(pu.paid) > 0)) set.add('Chi tiền mua hàng');
+    if (PW.data.salesInvoices.some(si => PW.invoiceCashPaid(si) > 0)) set.add('Thu tiền bán hàng');
     return [{ value: '', label: 'Tất cả' }].concat([...set].sort().map(r => ({ value: r, label: r })));
   }
   const fb = M.filterBar({
@@ -1643,6 +1646,24 @@ M._cashLedgerTab = function () {
     let rows = [];
     PW.data.receipts.forEach(x => rows.push(Object.assign({ kind: 'thu' }, x)));
     PW.data.payments.forEach(x => rows.push(Object.assign({ kind: 'chi' }, x)));
+    /* Tiền trả ngay TRÊN phiếu nhập mua và tiền thu ngay TRÊN hóa đơn bán không
+       tạo phiếu thu/chi riêng, nhưng vẫn ra/vào quỹ thật (db.js: accountBalance
+       trừ pu.paid, cộng invoiceCashPaid). Thiếu hai nguồn này thì ô TỔNG CỘNG của
+       bảng lệch hẳn với KPI "Tổng thu/chi" ngay phía trên cùng màn — mà KPI lại
+       dùng PW.cashIn/cashOut nên đã gồm sẵn. Bổ sung đúng cách Sổ quỹ bên Báo cáo
+       vẫn làm (reports.js).
+       si.paid gồm cả phần thu qua phiếu thu gắn hóa đơn -> PHẢI dùng
+       PW.invoiceCashPaid, nếu không sẽ đếm hai lần cùng một đồng. */
+    PW.data.purchases.forEach(pu => {
+      const t = Number(pu.paid || 0);
+      if (t > 0) rows.push({ kind: 'chi', id: pu.id, code: pu.code, date: pu.date, accountId: pu.paidAccountId,
+        amount: t, reason: 'Chi tiền mua hàng', supplierId: pu.supplierId, _goc: { loai: 'purchase', id: pu.id } });
+    });
+    PW.data.salesInvoices.forEach(si => {
+      const t = PW.invoiceCashPaid(si);
+      if (t > 0) rows.push({ kind: 'thu', id: si.id, code: si.code, date: si.date, accountId: si.paidAccountId,
+        amount: t, reason: 'Thu tiền bán hàng', customerId: si.customerId, _goc: { loai: 'sale', id: si.id } });
+    });
     rows = M.applyFilter(rows, st, {
       date: x => x.date,
       kind: x => x.kind,
@@ -1665,6 +1686,10 @@ M._cashLedgerTab = function () {
           // hoạt động, nên không nên gộp vào đầu khi nhìn "chênh lệch thu - chi".
           if (x.isCapital) return co + ' <span class="tag green" title="Giao dịch vốn, không phải thu chi hoạt động">Góp vốn</span>';
           if (x.isAsset) return co + ' <span class="tag gray" title="Mua / thanh lý tài sản cố định">Tài sản</span>';
+          // Dòng lấy từ chứng từ gốc, KHÔNG phải một phiếu thu/chi rời
+          if (x._goc) return (x.kind === 'thu' ? '<span class="tag green">Thu</span>' : '<span class="tag orange">Chi</span>')
+            + ' <span class="tag gray" title="Tiền trả/thu ngay trên chứng từ, không có phiếu riêng">'
+            + (x._goc.loai === 'purchase' ? 'Từ phiếu nhập' : 'Từ hóa đơn') + '</span>';
           return co;
         } },
       { label: 'Tài khoản', render: x => { const a = PW.account(x.accountId); return a ? U.esc(a.name) : ''; } },
@@ -1672,7 +1697,17 @@ M._cashLedgerTab = function () {
       { label: 'Diễn giải', render: x => U.esc(x.reason || '') },
       { label: 'Thu', num: true, render: x => x.kind === 'thu' ? `<span class="text-green">${U.money(x.amount)}</span>` : '' },
       { label: 'Chi', num: true, render: x => x.kind === 'chi' ? `<span class="text-red">${U.money(x.amount)}</span>` : '' },
-      { label: '', render: x => C.actions([
+      { label: '', render: x => x._goc ? C.actions([
+          { label: 'Mở chứng từ', cls: 'primary', title: 'Tiền này nằm trên chứng từ gốc, sửa ở đó', onClick: () => {
+              if (x._goc.loai === 'purchase') {
+                const pu = PW.data.purchases.find(y => y.id === x._goc.id);
+                if (pu) M.purchaseView ? M.purchaseView(pu) : M.purchaseForm(pu);
+              } else {
+                const si = PW.data.salesInvoices.find(y => y.id === x._goc.id);
+                if (si) M.salesForm(si);
+              }
+            } },
+        ]) : C.actions([
           { label: 'Sửa', onClick: () => {
               if (M._chanSuaChungTuAnTheo(x)) return;
               return x.kind === 'thu' ? M.receiptForm(x) : M.paymentForm(x);

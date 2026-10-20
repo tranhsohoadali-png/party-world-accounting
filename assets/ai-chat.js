@@ -150,7 +150,10 @@ AIC.run = {
       case 'nhapmua': return pick(PW.data.purchases, pu => ({ so: pu.code, ngay: pu.date,
         ncc: pu.supplierId ? AIC._supName(pu.supplierId) : (pu.isCapital ? '(vật tư góp vốn)' : ''),
         loai_giao_dich: pu.isCapital ? 'gop_von' : 'hoat_dong',
-        tong: (pu.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.cost != null ? i.cost : i.price || 0), 0) }));
+        tong: (pu.items || []).reduce((s, i) => s + Number(i.qty || 0) * Number(i.cost != null ? i.cost : i.price || 0), 0),
+        // Doi xung voi hoa don ban (co da_thu): khong co hai truong nay thi AI
+        // khong tra loi duoc cau "phieu nhap nao chua tra tien".
+        da_tra: Number(pu.paid || 0), con_no: PW.purchaseRemaining(pu) }));
       case 'baogia': return pick(PW.data.quotations, qo => ({ so: qo.code, ngay: qo.date, khach: AIC._cusName(qo.customerId), trang_thai: qo.status }));
     }
     return { loi: 'Loại chứng từ không hợp lệ' };
