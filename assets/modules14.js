@@ -472,7 +472,8 @@ M.consignImport = function (root) {
   srcCard.appendChild(U.el('div', { class: 'card-title' }, '🧩 Làm việc với AI — dán / tải file / chụp ảnh'));
   srcCard.appendChild(U.el('p', { class: 'section-sub' },
     'Dán danh sách bán từ nhà sách (copy từ Excel/Zalo), tải file Excel (.xlsx) / CSV, hoặc gửi ảnh chụp / PDF bảng kê để AI đọc. ' +
-    'Hệ thống tự nhận diện mã hàng (vd K452 20x25), số lượng, đơn giá rồi khớp về danh mục. Bí danh đã xác nhận sẽ được nhớ cho lần sau.'));
+    'Hệ thống tự nhận diện mã hàng (vd K452 20x25), số lượng, đơn giá rồi khớp về danh mục. Bí danh đã xác nhận sẽ được nhớ cho lần sau. ' +
+    'Đơn giá luôn lấy theo GIÁ GẦN NHẤT đã bán cho chính nhà sách này — ghi đè giá in trên chứng từ (giá bìa / giá bán lẻ của nhà sách).'));
 
   const ta = U.el('textarea', { class: 'inp', rows: 6, style: 'width:100%;font-family:Consolas,monospace',
     placeholder: 'Ví dụ:\nTranh cá chép hoa sen K452 20x25 - SL: 2 - 45.000\nk301 30x40 x3\nTranh tô màu công chúa (k512 20x20) 1 bức' });
@@ -620,7 +621,7 @@ M.consignImport = function (root) {
         unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
       PW.data.products.push(obj);
       r.productId = obj.id; r.manual = true;
-      if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value);
+      if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value, r.docPrice);
     });
     PW.save(); state.idx = M._ciProductIndex(); draw();
     U.toast('Đã tạo ' + todo.length + ' thành phẩm và gán vào các dòng');
@@ -677,8 +678,8 @@ M.consignImport = function (root) {
       if (!parsed) return;
       const m = M._ciMatch(parsed, state.idx, cusSel.ppValue() || null);
       const row = Object.assign(parsed, m);
-      if (row.price > 0) row.priceTouched = true;   // file có sẵn đơn giá -> giữ nguyên, không tự đè
-      else if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.ppValue(), chSel.value);  // giá gần nhất của KH
+      row.docPrice = Number(row.price) || 0;   // giá in trên chứng từ -> chỉ dùng khi đơn vị chưa có giá
+      if (row.productId) row.price = M._ciAutoPrice(row.productId, cusSel.ppValue(), chSel.value, row.docPrice);
       // SL theo từng cửa hàng con (đọc đúng cột) -> dùng khi tách hóa đơn per-store
       if (state.pnStores) {
         const cells = M._ciSplitCells(l) || [];
@@ -697,8 +698,8 @@ M.consignImport = function (root) {
     state.rows.forEach(r => {
       const m = M._ciMatch(r, state.idx, cusSel.ppValue() || null);
       r.productId = m.productId; r.status = m.status;
-      // đổi nhà sách/kênh -> cập nhật lại đơn giá gần nhất theo KH (trừ dòng đã sửa tay / có giá từ file)
-      if (r.productId && !r.priceTouched) r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value);
+      // đổi nhà sách/kênh -> đổi luôn giá gần nhất của đơn vị đó (trừ dòng đã sửa tay)
+      if (r.productId && !r.priceTouched) r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value, r.docPrice);
     });
     draw();
   }
@@ -711,6 +712,9 @@ M.consignImport = function (root) {
     const bad = state.rows.filter(r => !r.manual && r.status === 'none').length;
     sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
+    // Dấu vết để soát: bao nhiêu dòng đã bị thay giá chứng từ bằng giá gần nhất của đơn vị
+    const over = state.rows.filter(r => r.productId && !r.priceTouched && r.docPrice > 0 && r.price !== r.docPrice).length;
+    if (over) sumDiv.innerHTML += '<br>💰 <b>' + over + '</b> dòng lấy <b>giá gần nhất của nhà sách này</b>, ghi đè giá in trên chứng từ — sửa tay ở cột Đơn giá nếu cần.';
     if (scopeSel.value === 'perstore' && state.pnStores && state.pnStores.length) {
       const nWithQty = state.pnStores.filter(s => state.rows.some(r => r.productId && r._storeQty && r._storeQty[s.col] > 0)).length;
       sumDiv.innerHTML += '<br>🏬 Sẽ tách thành <b>' + nWithQty + '</b> chứng từ cho <b>' + nWithQty +
@@ -726,7 +730,7 @@ M.consignImport = function (root) {
           // Bộ chọn TÌM KIẾM (gõ mã/tên), mở sẵn theo mã đã nhận diện -> thao tác nhanh
           const sel = M.productPicker(r.productId, (p) => {
             r.productId = p.id; r.manual = true;
-            if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value); }
+            if (r.productId && !r.priceTouched) { r.price = M._ciAutoPrice(r.productId, cusSel.ppValue(), chSel.value, r.docPrice); }
             draw();
           }, { isSale: true, search: r.codeKey || '' });
           // Nút "+" thêm nhanh sản phẩm mới (điền sẵn tên/mã/kích thước từ dòng) rồi tự chọn vào dòng
@@ -741,7 +745,7 @@ M.consignImport = function (root) {
               onSaved: (obj) => {
                 r.productId = obj.id; r.manual = true;
                 state.idx = M._ciProductIndex();   // nạp lại chỉ mục -> dòng khác khớp được hàng vừa tạo
-                if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value);
+                if (!r.priceTouched) r.price = M._ciAutoPrice(obj.id, cusSel.ppValue(), chSel.value, r.docPrice);
                 draw();
               },
             });
@@ -870,6 +874,7 @@ M._ciPrice = function (productId, channelId) {
   return Number(p.price) || 0;
 };
 // Đơn giá GẦN NHẤT đã bán mặt hàng này CHO CHÍNH khách hàng này (theo hóa đơn/đơn hàng gần nhất)
+// -> đây là "giá của đơn vị", dùng làm giá chuẩn khi quét đơn (xem M._ciAutoPrice).
 M._ciLastPrice = function (productId, customerId) {
   if (!productId || !customerId) return 0;
   let best = null;
@@ -886,9 +891,30 @@ M._ciLastPrice = function (productId, customerId) {
   scan(PW.data.salesOrders);
   return best ? best.price : 0;
 };
-// Đơn giá tự điền: ưu tiên giá gần nhất của KHÁCH HÀNG này, nếu chưa từng bán -> giá theo kênh/giá bán
-M._ciAutoPrice = function (productId, customerId, channelId) {
-  return M._ciLastPrice(productId, customerId) || M._ciPrice(productId, channelId);
+// Đơn giá tự điền khi quét đơn — GIÁ CỦA ĐƠN VỊ THẮNG:
+//   1) giá gần nhất đã bán mặt hàng này cho CHÍNH nhà sách/khách hàng này — GHI ĐÈ cả giá in
+//      trên chứng từ (bảng kê nhà sách thường in giá bìa / giá bán lẻ, không phải giá DALI);
+//   2) chưa từng giao dịch với đơn vị này -> dùng giá đọc được trên chứng từ (docPrice);
+//   3) không có nữa -> giá theo kênh bán / giá niêm yết.
+M._ciAutoPrice = function (productId, customerId, channelId, docPrice) {
+  return M._ciLastPrice(productId, customerId) || Number(docPrice) || M._ciPrice(productId, channelId);
+};
+
+// Đơn giá NHẬP gần nhất đã mua mặt hàng này TỪ CHÍNH nhà cung cấp này ("giá của đơn vị" phía mua).
+// Dùng cho màn Quét hóa đơn mua (modules18.js) — thay vì giá bình quân trộn chung mọi NCC.
+M._ciLastCost = function (productId, supplierId) {
+  if (!productId || !supplierId) return 0;
+  let best = null;
+  (PW.data.purchases || []).forEach(pu => {
+    if (pu.supplierId !== supplierId) return;
+    (pu.items || []).forEach(it => {
+      if (it.productId === productId && Number(it.cost) > 0) {
+        const dt = (pu.date || '') + (pu.code || '');
+        if (!best || dt >= best.dt) best = { dt: dt, cost: Number(it.cost) };
+      }
+    });
+  });
+  return best ? best.cost : 0;
 };
 
 /* ---------- AI đọc ảnh / PDF (Claude qua api/ai-ocr.php) ---------- */

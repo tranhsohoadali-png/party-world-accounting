@@ -13,7 +13,8 @@ M.purchaseScan = function (root) {
   srcCard.appendChild(U.el('div', { class: 'card-title' }, '📷 Quét hóa đơn mua — chụp ảnh / tải PDF / dán'));
   srcCard.appendChild(U.el('p', { class: 'section-sub' },
     'Chụp ảnh hóa đơn của nhà cung cấp (hoặc tải PDF), AI đọc nhà cung cấp + các dòng hàng rồi tự khớp về danh mục hàng hóa / nguyên vật liệu. ' +
-    'Bí danh đã xác nhận sẽ được nhớ theo từng nhà cung cấp cho lần sau. Bạn cũng có thể dán danh sách dạng: TÊN HÀNG | SL | ĐƠN GIÁ.'));
+    'Bí danh đã xác nhận sẽ được nhớ theo từng nhà cung cấp cho lần sau. Bạn cũng có thể dán danh sách dạng: TÊN HÀNG | SL | ĐƠN GIÁ. ' +
+    'Đơn giá nhập luôn lấy theo GIÁ GẦN NHẤT đã mua của chính nhà cung cấp này — ghi đè giá đọc trên hóa đơn.'));
 
   const ta = U.el('textarea', { class: 'inp', rows: 5, style: 'width:100%;font-family:Consolas,monospace',
     placeholder: 'Ví dụ:\nGiấy in A4 80gsm | 10 | 65.000\nMực đen HP 12A x2 250000' });
@@ -93,7 +94,7 @@ M.purchaseScan = function (root) {
         unit: 'Cái', cost: 0, price: 0, openingStock: 0 };
       PW.data.products.push(obj);
       r.productId = obj.id; r.manual = true;
-      if (!r.priceTouched) r.price = costHint(obj.id);
+      if (!r.priceTouched) r.price = costHint(obj.id, r.docPrice);
     });
     PW.save(); state.idx = M._ciProductIndex(); draw();
     U.toast('Đã tạo ' + todo.length + ' NVL và gán vào các dòng');
@@ -105,7 +106,15 @@ M.purchaseScan = function (root) {
     manual: '<span class="tag green">Đã chọn</span>',
     fuzzy: '<span class="tag orange">Cần xem lại</span>', none: '<span class="tag red">Chưa khớp</span>',
   };
-  function costHint(pid) { return (PW.avgPurchaseCost ? PW.avgPurchaseCost(pid) : 0) || (PW.product(pid) || {}).cost || 0; }
+  // Giá nhập tự điền — GIÁ CỦA ĐƠN VỊ THẮNG:
+  //   1) giá nhập gần nhất đã mua mặt hàng này từ CHÍNH nhà cung cấp đang chọn — GHI ĐÈ giá đọc
+  //      trên hóa đơn (mỗi NCC một mức giá riêng, giá bình quân trộn chung mọi NCC là sai);
+  //   2) chưa từng mua của NCC này -> dùng giá đọc trên hóa đơn (docPrice);
+  //   3) không có nữa -> giá mua bình quân / giá vốn trong danh mục.
+  function costHint(pid, docPrice) {
+    return M._ciLastCost(pid, supSel.ppValue()) || Number(docPrice) ||
+      (PW.avgPurchaseCost ? PW.avgPurchaseCost(pid) : 0) || (PW.product(pid) || {}).cost || 0;
+  }
 
   function doParse() {
     const all = ta.value.split(/\r?\n/);
@@ -124,18 +133,20 @@ M.purchaseScan = function (root) {
       const parsed = M._ciParseLine(l, colMap); if (!parsed) return;
       const m = M._ciMatch(parsed, state.idx, supSel.ppValue() || null);
       const row = Object.assign(parsed, m);
-      if (row.price > 0) row.priceTouched = true;                 // giá nhập từ file -> giữ
-      else if (row.productId) row.price = costHint(row.productId);
+      row.docPrice = Number(row.price) || 0;   // giá in trên hóa đơn -> chỉ dùng khi NCC chưa có giá
+      if (row.productId) row.price = costHint(row.productId, row.docPrice);
       state.rows.push(row);
     });
     draw();
   }
   function rematch() {
     state.rows.forEach(r => {
-      if (r.manual) return;
-      const m = M._ciMatch(r, state.idx, supSel.ppValue() || null);
-      r.productId = m.productId; r.status = m.status;
-      if (r.productId && !r.priceTouched && !r.price) r.price = costHint(r.productId);
+      if (!r.manual) {
+        const m = M._ciMatch(r, state.idx, supSel.ppValue() || null);
+        r.productId = m.productId; r.status = m.status;
+      }
+      // đổi NCC -> đổi luôn giá nhập gần nhất của đơn vị đó (trừ dòng đã sửa tay)
+      if (r.productId && !r.priceTouched) r.price = costHint(r.productId, r.docPrice);
     });
     draw();
   }
@@ -147,12 +158,15 @@ M.purchaseScan = function (root) {
     const bad = state.rows.filter(r => r.status === 'none' && !r.manual).length;
     sumDiv.innerHTML = 'Tổng <b>' + state.rows.length + '</b> dòng — đã khớp <b class="text-green">' + ok +
       '</b>, cần xem lại <b style="color:#c77f0a">' + warn + '</b>, chưa khớp <b class="text-red">' + bad + '</b>.';
+    // Dấu vết để soát: bao nhiêu dòng đã bị thay giá hóa đơn bằng giá nhập gần nhất của NCC
+    const over = state.rows.filter(r => r.productId && !r.priceTouched && r.docPrice > 0 && r.price !== r.docPrice).length;
+    if (over) sumDiv.innerHTML += '<br>💰 <b>' + over + '</b> dòng lấy <b>giá nhập gần nhất của nhà cung cấp này</b>, ghi đè giá in trên hóa đơn — sửa tay ở cột Đơn giá nhập nếu cần.';
     host.appendChild(C.table(state.rows, [
       { label: '#', width: '34px', render: r => String(state.rows.indexOf(r) + 1) },
       { label: 'Dòng gốc', render: r => U.esc(r.raw) },
       { label: 'Hàng hóa / NVL khớp', render: r => {
           // Bộ chọn TÌM KIẾM (gõ mã/tên), mở sẵn theo mã đã nhận diện -> đỡ cuộn
-          const sel = M.productPicker(r.productId, (p) => { r.productId = p.id; r.manual = true; if (!r.priceTouched) r.price = costHint(p.id); draw(); },
+          const sel = M.productPicker(r.productId, (p) => { r.productId = p.id; r.manual = true; if (!r.priceTouched) r.price = costHint(p.id, r.docPrice); draw(); },
             { isSale: false, search: r.codeKey || '' });
           const newBtn = C.btn('+ Tạo mới', () => {
             M.productForm(null, {
@@ -161,7 +175,7 @@ M.purchaseScan = function (root) {
                 group: r.sizeKey ? r.sizeKey.toLowerCase() : '',
                 code: r.codeKey ? (r.codeKey + (r.sizeKey ? ' ' + r.sizeKey : '')).toUpperCase() : PW.nextCode('VT'),
               },
-              onSaved: (np) => { r.productId = np.id; r.manual = true; state.idx = M._ciProductIndex(); if (!r.priceTouched) r.price = costHint(np.id); draw(); },
+              onSaved: (np) => { r.productId = np.id; r.manual = true; state.idx = M._ciProductIndex(); if (!r.priceTouched) r.price = costHint(np.id, r.docPrice); draw(); },
             });
           }, 'sm');
           newBtn.title = 'Tạo hàng hóa / nguyên vật liệu mới (điền sẵn từ dòng)';
