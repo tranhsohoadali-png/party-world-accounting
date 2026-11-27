@@ -27,3 +27,13 @@ api/ai-key*
 
 # Ban do co so -> CSDL so MCP (duong dan rieng tung may chu)
 api/mcp-ws-map.php
+
+# DU LIEU KINH DOANH — TUYET DOI KHONG day len repo PUBLIC
+# (26/11/2026 auto-push da lo file doi-chieu-hddt-2026.xlsx len GitHub)
+*.xlsx
+*.xls
+*.csv
+doi-chieu-*
+mua-ct-*.json
+mua-vao-*.json
+hddt-*.json

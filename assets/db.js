@@ -31,7 +31,8 @@ PW._normalize = function () {
     'purchaseOrders', 'purchaseReturns', 'purchaseDiscounts',
     'employees', 'productGroups', 'units', 'warehouses', 'expenseItems', 'paymentTerms', 'partnerGroups',
     'payrolls', 'productionOrders', 'channels', 'stockAdjustments', 'productivityEntries', 'productAliases', 'taxInvoices', 'activityLog', 'cashCounts',
-    'capitalMembers', 'capitalContributions', 'capitalWithdrawals', 'profitShares', 'fixedAssets'];
+    'capitalMembers', 'capitalContributions', 'capitalWithdrawals', 'profitShares', 'fixedAssets',
+    'taxReturns'];
   tables.forEach(t => { if (!PW.data[t]) PW.data[t] = []; });
   if (!PW.data.meta) PW.data.meta = { companyName: 'DALI', counters: {} };
   if (!PW.data.meta.counters) PW.data.meta.counters = {};
@@ -1065,3 +1066,131 @@ PW.switchWorkspace = async function (id) {
 PW.quotation = id => PW.data.quotations.find(x => x.id === id);
 PW.salesOrder = id => PW.data.salesOrders.find(x => x.id === id);
 PW.purchaseOrder = id => PW.data.purchaseOrders.find(x => x.id === id);
+
+/* ============================================================
+   KÊ KHAI THUẾ GTGT (tờ khai 01/GTGT, phương pháp khấu trừ)
+
+   Nguồn số liệu là PW.data.taxInvoices — hóa đơn kéo từ cổng hóa đơn điện tử
+   của Tổng cục Thuế, KHÔNG phải sổ bán hàng. Lý do: cơ quan thuế đối chiếu
+   theo hóa đơn đã phát hành; sổ nội bộ còn chứa phiếu giao ký gửi, đơn gộp,
+   chứng từ nội bộ... nên lấy sổ đi kê khai là sai ngay từ gốc.
+   Chênh lệch giữa hai bên được bày ra ở màn hình tờ khai để soát, chứ không
+   tự ý lấy bên nào đè bên nào.
+   ============================================================ */
+
+// Kỳ tính thuế -> khoảng ngày. kieu: 'quy' | 'thang'
+PW.taxKy = function (kieu, ky, nam) {
+  ky = Number(ky); nam = Number(nam);
+  const hai = n => String(n).padStart(2, '0');
+  if (kieu === 'thang') {
+    const cuoi = new Date(nam, ky, 0).getDate();
+    return { from: nam + '-' + hai(ky) + '-01', to: nam + '-' + hai(ky) + '-' + hai(cuoi),
+             ten: 'Tháng ' + ky + '/' + nam, ma: nam + 'T' + hai(ky) };
+  }
+  const td = (ky - 1) * 3 + 1, tc = ky * 3;
+  const cuoi = new Date(nam, tc, 0).getDate();
+  return { from: nam + '-' + hai(td) + '-01', to: nam + '-' + hai(tc) + '-' + hai(cuoi),
+           ten: 'Quý ' + ky + '/' + nam, ma: nam + 'Q' + ky };
+};
+
+// Kỳ liền trước (để lấy số thuế còn được khấu trừ chuyển sang)
+PW.taxKyTruoc = function (kieu, ky, nam) {
+  if (kieu === 'thang') return ky > 1 ? { kieu: kieu, ky: ky - 1, nam: nam } : { kieu: kieu, ky: 12, nam: nam - 1 };
+  return ky > 1 ? { kieu: kieu, ky: ky - 1, nam: nam } : { kieu: kieu, ky: 4, nam: nam - 1 };
+};
+
+/* Chuẩn hóa thuế suất về nhãn dùng trong tờ khai.
+   Hóa đơn ghi nhiều kiểu: 8, '8%', 'KCT', 'KKKNT', '\' (không kê khai), null. */
+PW.taxSuat = function (v) {
+  const s = String(v == null ? '' : v).trim().toUpperCase();
+  if (!s || s === 'KCT' || s === 'KHONG' || s === 'KHÔNG') return 'KCT';
+  if (s === 'KKKNT' || s === String.fromCharCode(92) || s === '-') return 'KKKNT';
+  const n = parseFloat(s.replace('%', '').replace(',', '.'));
+  if (!isFinite(n)) return 'KCT';
+  if (n === 0) return '0%';
+  return n + '%';
+};
+
+/* Tổng hợp hóa đơn thuế trong kỳ, tách theo chiều và theo thuế suất.
+   Bỏ hóa đơn đã bị thay thế / đã bị hủy (không còn hiệu lực). Hóa đơn "đã bị
+   điều chỉnh" thì GIỮ: hóa đơn điều chỉnh chỉ ghi phần chênh nên bản gốc vẫn
+   còn hiệu lực, bỏ đi là mất doanh thu. */
+PW.TAX_BO_TRANG_THAI = ['đã bị thay thế', 'đã bị hủy', 'da bi thay the', 'da bi huy'];
+PW.taxConHieuLuc = function (inv) {
+  const t = String(inv.status == null ? '' : inv.status).toLowerCase();
+  if (inv.tthai === 4 || inv.tthai === 6) return false;
+  return !PW.TAX_BO_TRANG_THAI.some(x => t.indexOf(x) >= 0);
+};
+
+PW.vatTongHop = function (fromYmd, toYmd) {
+  const trong = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  const rong = () => ({ n: 0, base: 0, vat: 0, theoSuat: {} });
+  const ra = rong(), vao = rong();
+  (PW.data.taxInvoices || []).forEach(inv => {
+    if (!trong(inv.date) || !PW.taxConHieuLuc(inv)) return;
+    const o = inv.direction === 'in' ? vao : ra;
+    const s = PW.taxSuat(inv.vatRate);
+    const b = Number(inv.base) || 0, v = Number(inv.vat) || 0;
+    o.n++; o.base += b; o.vat += v;
+    if (!o.theoSuat[s]) o.theoSuat[s] = { n: 0, base: 0, vat: 0 };
+    o.theoSuat[s].n++; o.theoSuat[s].base += b; o.theoSuat[s].vat += v;
+  });
+  return { ra: ra, vao: vao, phatSinh: ra.vat - vao.vat };
+};
+
+/* Số liệu tương ứng lấy từ SỔ (hóa đơn bán + phiếu nhập mua) — chỉ để đối chiếu,
+   không dùng để kê khai. */
+PW.vatTheoSo = function (fromYmd, toYmd) {
+  const trong = d => (!fromYmd || d >= fromYmd) && (!toYmd || d <= toYmd);
+  let raBase = 0, raVat = 0, vaoBase = 0, vaoVat = 0;
+  PW.data.salesInvoices.filter(si => trong(si.date)).forEach(si => {
+    const t = PW.invoiceTotal(si);
+    raBase += t; raVat += t * (Number(si.vatRate) || 0) / 100;
+  });
+  PW.data.purchases.filter(pu => trong(pu.date)).forEach(pu => {
+    const t = (pu.items || []).reduce((s, it) => s + Number(it.qty || 0) * Number(it.cost || 0), 0);
+    vaoBase += t; vaoVat += t * (Number(pu.vatRate) || 0) / 100;
+  });
+  return { raBase: raBase, raVat: raVat, vaoBase: vaoBase, vaoVat: vaoVat };
+};
+
+// Tờ khai đã lưu của một kỳ
+PW.taxReturnOf = function (ma) { return (PW.data.taxReturns || []).find(t => t.ma === ma); };
+
+/* Thuế còn được khấu trừ chuyển sang kỳ này = chỉ tiêu [43] của kỳ trước.
+   Chưa có tờ khai kỳ trước thì bằng 0 (phải tự nhập nếu thực tế có). */
+PW.taxKhauTruKyTruoc = function (kieu, ky, nam) {
+  const t = PW.taxKyTruoc(kieu, ky, nam);
+  const tk = PW.taxReturnOf(PW.taxKy(t.kieu, t.ky, t.nam).ma);
+  return tk ? Number(tk.ct43 || 0) : 0;
+};
+
+/* Tính các chỉ tiêu tờ khai 01/GTGT.
+   [22] khấu trừ kỳ trước chuyển sang · [23][24] mua vào · [25] được khấu trừ kỳ này
+   [26] bán ra không chịu thuế · [27][28] bán ra chịu thuế · [34][35] tổng
+   [36] thuế phát sinh = [35]-[25] · [40a] phải nộp · [43] còn khấu trừ chuyển kỳ sau */
+PW.taxTinhToKhai = function (kieu, ky, nam, opts) {
+  opts = opts || {};
+  const kyInfo = PW.taxKy(kieu, ky, nam);
+  const th = PW.vatTongHop(kyInfo.from, kyInfo.to);
+  const ct22 = opts.ct22 != null ? Number(opts.ct22) : PW.taxKhauTruKyTruoc(kieu, ky, nam);
+  const ct23 = th.vao.base, ct24 = th.vao.vat;
+  const ct25 = opts.ct25 != null ? Number(opts.ct25) : ct24;   // mặc định khấu trừ toàn bộ
+  const kct = th.ra.theoSuat['KCT'] || { base: 0, vat: 0 };
+  const kkknt = th.ra.theoSuat['KKKNT'] || { base: 0, vat: 0 };
+  const ct26 = kct.base + kkknt.base;
+  const chiuThue = Object.keys(th.ra.theoSuat)
+    .filter(k => k !== 'KCT' && k !== 'KKKNT')
+    .reduce((s, k) => { const o = th.ra.theoSuat[k]; s.base += o.base; s.vat += o.vat; return s; }, { base: 0, vat: 0 });
+  const ct27 = chiuThue.base, ct28 = chiuThue.vat;
+  const ct34 = ct26 + ct27, ct35 = ct28;
+  const ct36 = ct35 - (ct22 + ct25);
+  const ct40a = ct36 > 0 ? ct36 : 0;
+  const ct43 = ct36 < 0 ? -ct36 : 0;
+  return {
+    kieu: kieu, ky: ky, nam: nam, ma: kyInfo.ma, ten: kyInfo.ten, from: kyInfo.from, to: kyInfo.to,
+    soHdRa: th.ra.n, soHdVao: th.vao.n, theoSuatRa: th.ra.theoSuat, theoSuatVao: th.vao.theoSuat,
+    ct22: ct22, ct23: ct23, ct24: ct24, ct25: ct25, ct26: ct26, ct27: ct27, ct28: ct28,
+    ct34: ct34, ct35: ct35, ct36: ct36, ct40a: ct40a, ct43: ct43,
+  };
+};

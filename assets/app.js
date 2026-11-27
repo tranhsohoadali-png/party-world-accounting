@@ -48,6 +48,7 @@ App.menu = [
   ]},
   { group: 'SẢN XUẤT', items: [
     { id: 'production', label: 'Lệnh sản xuất', icon: 'factory', title: 'Sản xuất & Giá thành', roles: ['admin', 'ketoan'] },
+    { id: 'costing', label: 'Tính giá thành', icon: 'coins', title: 'Tính giá thành — phân bổ nguyên vật liệu & nhân công', roles: ['admin', 'ketoan'] },
     { id: 'productivity', label: 'Năng suất', icon: 'trending-up', title: 'Năng suất theo nhân viên' },
   ]},
   // Phân hệ góp vốn: chỉ hiện ở sổ nào bật cờ meta.features.capital (xem Dữ liệu & Sao lưu)
@@ -66,6 +67,7 @@ App.menu = [
   ]},
   { group: 'THUẾ', roles: ['admin', 'ketoan'], items: [
     { id: 'tax-sync', label: 'Hóa đơn thuế (cổng)', icon: 'doc', title: 'Đồng bộ hóa đơn từ cổng thuế', roles: ['admin', 'ketoan'] },
+    { id: 'tax-return', label: 'Tờ khai GTGT', icon: 'report', title: 'Tờ khai thuế GTGT 01/GTGT', roles: ['admin', 'ketoan'] },
   ]},
   { group: 'BÁO CÁO', roles: ['admin', 'ketoan'], items: [
     { id: 'reports', label: 'Báo cáo', icon: 'report', title: 'Báo cáo', roles: ['admin', 'ketoan'] },
@@ -201,6 +203,8 @@ App.refresh = function () {
     case 'consign-import': return M.consignImport(root);
     case 'consign-report': return M.consignReport(root);
     case 'tax-sync': return M.taxSync(root);
+    case 'tax-return': return M.taxReturn(root);
+    case 'costing': return M.costing(root);
     case 'cash': return M.cash(root);
     case 'sales': return M.sales(root);
     case 'purchases': return M.purchases(root);
